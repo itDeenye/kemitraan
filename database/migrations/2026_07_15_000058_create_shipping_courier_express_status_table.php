@@ -1,0 +1,44 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+/**
+ * Tabel: shipping_courier_express_status
+ * Modul: Shipping (Status Log)
+ *
+ * Log riwayat status pengiriman kurir express.
+ */
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('shipping_courier_express_status', function (Blueprint $table) {
+            $table->comment('Log riwayat status pengiriman kurir express.');
+            $table->increments('shipping_courier_express_status_id')->comment('ID Log Status');
+            $table->unsignedInteger('shipping_courier_express_status_shipping_courier_express_id')->comment('ID Detail Pengiriman Express');
+            
+            // Referensi Polymorphic
+            $table->enum('shipping_courier_express_status_ref_type', ['trx', 'return'])->comment('Tipe entitas pengirim (trx=Transaksi, return=Retur)');
+            $table->unsignedInteger('shipping_courier_express_status_ref_id')->comment('ID entitas pengirim (trx_id atau return_id)');
+            
+            $table->enum('shipping_courier_express_status_value', [
+                'pending', 'processed_packages', 'shipped_packages', 'cancelled_packages',
+                'finished_packages', 'returned_packages', 'completed',
+            ])->default('pending')->comment('Nilai status pengiriman');
+            $table->string('shipping_courier_express_status_note', 255)->nullable()->comment('Catatan status (posisi paket)');
+            $table->dateTime('shipping_courier_express_status_datetime')->nullable()->comment('Waktu perubahan status');
+            $table->char('shipping_courier_express_status_ref_code', 20)->default('')->comment('Kode referensi status');
+            $table->string('shipping_courier_express_status_external_ref_code', 50)->nullable()->comment('Kode referensi eksternal kurir');
+
+            $table->index('shipping_courier_express_status_shipping_courier_express_id', 'idx_express_stat_express_id');
+            $table->index(['shipping_courier_express_status_ref_type', 'shipping_courier_express_status_ref_id'], 'idx_express_stat_ref');
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('shipping_courier_express_status');
+    }
+};

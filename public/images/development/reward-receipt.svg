@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="460" viewBox="0 0 800 460">
+  <rect width="800" height="460" rx="24" fill="#fff7ed"/>
+  <rect x="32" y="32" width="736" height="396" rx="16" fill="white" stroke="#ea580c" stroke-width="3"/>
+  <g text-anchor="middle" font-family="Arial, sans-serif" fill="#431407">
+    <text x="400" y="135" font-size="48" font-weight="bold">DUMMY / SIMULASI</text>
+    <text x="400" y="220" font-size="26">Contoh bukti pembayaran development</text>
+    <text x="400" y="280" font-size="22">BUKAN BUKTI TRANSFER YANG SAH</text>
+    <text x="400" y="342" font-size="20">Tidak ada uang yang dikirim melalui seeder ini.</text>
+  </g>
+</svg>

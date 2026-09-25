@@ -1,0 +1,27 @@
+{
+    "id": "/member/",
+    "name": "DNY Skincare Kemitraan",
+    "short_name": "DNY Mitra",
+    "description": "Aplikasi kemitraan DNY Skincare untuk distributor, agent, dan reseller.",
+    "lang": "id-ID",
+    "start_url": "/member/login",
+    "scope": "/member/",
+    "display": "standalone",
+    "orientation": "portrait",
+    "background_color": "#fff7f8",
+    "theme_color": "#A01526",
+    "icons": [
+        {
+            "src": "/pwa/icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "/pwa/icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ]
+}
