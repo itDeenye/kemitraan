@@ -30,6 +30,10 @@ class PasswordResetService
             : $this->findActiveAdminAccountByIdentifier($identifier);
 
         if (! $account) {
+            if ($audience === self::MEMBER) {
+                throw new ProcessException('Email atau kode member tidak terdaftar.');
+            }
+
             return;
         }
 

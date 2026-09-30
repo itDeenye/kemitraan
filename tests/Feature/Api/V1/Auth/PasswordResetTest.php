@@ -86,14 +86,21 @@ class PasswordResetTest extends TestCase
             ->assertJsonPath('error_code', 'process_error');
     }
 
-    public function test_unknown_member_email_returns_generic_success_without_sending_email(): void
+    public function test_unknown_member_email_or_code_is_rejected_without_sending_email(): void
     {
         Mail::fake();
 
         $this->postJson('/api/v1/member/auth/forgot-password', [
             'identifier' => '0000/9999/0000',
-        ])->assertOk()
-            ->assertJsonPath('message', 'Tautan reset password sudah dikirim ke email Anda. Silakan cek email.');
+        ])->assertUnprocessable()
+            ->assertJsonPath('message', 'Email atau kode member tidak terdaftar.')
+            ->assertJsonPath('error_code', 'process_error');
+
+        $this->postJson('/api/v1/member/auth/forgot-password', [
+            'identifier' => 'unknown@example.test',
+        ])->assertUnprocessable()
+            ->assertJsonPath('message', 'Email atau kode member tidak terdaftar.')
+            ->assertJsonPath('error_code', 'process_error');
 
         Mail::assertNothingSent();
     }
