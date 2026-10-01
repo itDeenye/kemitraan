@@ -41,7 +41,7 @@
                             <v-col cols="12" md="6">
                                 <v-select
                                     :model-value="[options.sponsor]"
-                                    label="Upline"
+                                    label="Pendaftar"
                                     variant="outlined"
                                     density="compact"
                                     disabled
@@ -80,6 +80,25 @@
                                     :error-messages="errors.level_id"
                                     class="mb-2"
                                 />
+                            </v-col>
+                            <v-col v-if="requiresAgentUpline" cols="12">
+                                <v-autocomplete
+                                    v-model="form.upline_member_id"
+                                    :items="options.agents"
+                                    :item-title="agentTitle"
+                                    item-value="id"
+                                    label="Agen Utama untuk Reseller *"
+                                    placeholder="Pilih Agen Utama tujuan"
+                                    variant="outlined"
+                                    density="compact"
+                                    :rules="[required('Agen Utama')]"
+                                    :error-messages="errors.upline_member_id"
+                                    no-data-text="Belum ada Agen Utama aktif pada jaringan Distributor"
+                                    class="mb-2"
+                                />
+                                <div class="soft-label mt-[-4px] mb-2">
+                                    Reseller akan ditempatkan langsung di bawah Agen Utama yang dipilih.
+                                </div>
                             </v-col>
                         </v-row>
                     </div>
@@ -516,6 +535,7 @@ const hasMoreRegistrations = computed(
 
 const form = reactive({
     level_id: null as number | null,
+    upline_member_id: null as number | null,
     name: "",
     email: "",
     mobile_phone: "",
@@ -533,6 +553,14 @@ const form = reactive({
     identity_no: "",
     nib: "",
 });
+const selectedLevel = computed(() =>
+    options.value?.levels.find((level) => level.id === form.level_id),
+);
+const requiresAgentUpline = computed(
+    () =>
+        options.value?.sponsor.level_code === "DST" &&
+        selectedLevel.value?.code === "RSL",
+);
 
 Object.keys(form).forEach((key) => {
     watch(
@@ -552,6 +580,16 @@ const validPhone = (label: string) => (v: any) =>
     !v || /^(08|628)/.test(v) || `${label} harus diawali 08 atau 628`;
 const validEmail = (label: string) => (v: any) =>
     !v || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) || `${label} tidak valid`;
+const agentTitle = (agent: { name: string; code: string }) =>
+    `${agent.name} - ${agent.code}`;
+
+watch(
+    () => form.level_id,
+    () => {
+        form.upline_member_id = null;
+        delete errors.upline_member_id;
+    },
+);
 
 function handleProvinceChange(val: any) {
     form.city_id = null;
@@ -637,6 +675,9 @@ async function submitRegistration() {
     try {
         const response = await networkService.storeRegistration({
             level_id: form.level_id as number,
+            upline_member_id: requiresAgentUpline.value
+                ? form.upline_member_id
+                : null,
             name: form.name,
             email: form.email || null,
             mobile_phone: form.mobile_phone,
@@ -681,6 +722,7 @@ async function submitRegistration() {
 function resetForm() {
     Object.assign(form, {
         level_id: options.value?.target_level.id ?? null,
+        upline_member_id: null,
         name: "",
         email: "",
         mobile_phone: "",

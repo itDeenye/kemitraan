@@ -75,6 +75,7 @@ export interface RegistrationOptions {
     target_level: MemberLevel;
     levels: MemberLevel[];
     sponsor: RegistrationSponsor;
+    agents: RegistrationSponsor[];
     genders: string[];
     identity_types: string[];
 }
@@ -146,6 +147,7 @@ export interface RegistrationListResponse {
 
 export interface RegistrationPayload {
     level_id: number;
+    upline_member_id: number | null;
     name: string;
     email: string | null;
     mobile_phone: string;

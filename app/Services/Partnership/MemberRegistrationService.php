@@ -35,7 +35,10 @@ class MemberRegistrationService
      */
     public function memberRegistrations(array $params, int $sponsorId): array
     {
-        return $this->registrationList($params, $sponsorId);
+        return $this->registrationList(
+            $params,
+            $this->accessibleRegistrationSponsorIds($sponsorId),
+        );
     }
 
     /**
@@ -51,7 +54,8 @@ class MemberRegistrationService
     {
         $targetLevels = $this->targetLevelsForSponsor($sponsor);
         $targetLevel = $targetLevels->firstOrFail();
-        $sponsor = [
+        $agents = $this->availableAgentsForDistributor($sponsor);
+        $sponsorData = [
             'id' => $sponsor->member_id,
             'code' => $sponsor->member_code,
             'name' => $sponsor->member_name,
@@ -69,7 +73,8 @@ class MemberRegistrationService
                 'code' => $level->member_level_code,
                 'name' => $level->member_level_name,
             ])->values()->all(),
-            'sponsor' => $sponsor,
+            'sponsor' => $sponsorData,
+            'agents' => $agents,
             'genders' => ['Laki-laki', 'Perempuan'],
             'identity_types' => ['KTP', 'SIM', 'PASPOR'],
         ];
@@ -86,7 +91,10 @@ class MemberRegistrationService
     ): MemberRegistration {
         return $this->detailQuery()
             ->whereKey($registration->getKey())
-            ->where('member_registration_upline_member_id', $sponsorId)
+            ->whereIn(
+                'member_registration_upline_member_id',
+                $this->accessibleRegistrationSponsorIds($sponsorId),
+            )
             ->firstOrFail();
     }
 
@@ -98,7 +106,7 @@ class MemberRegistrationService
     /** @param array<string, mixed> $data */
     public function createByMember(MemberAccount $account, array $data): MemberRegistration
     {
-        $sponsor = Member::query()
+        $submitter = Member::query()
             ->with('level')
             ->whereKey($account->member_account_member_id)
             ->where('member_status', 1)
@@ -108,6 +116,12 @@ class MemberRegistrationService
             ->where('member_level_is_active', 1)
             ->firstOrFail();
 
+        $this->ensureSubmitterCanRegister($submitter, $targetLevel);
+        $sponsor = $this->registrationSponsorForSubmitter(
+            $submitter,
+            $targetLevel,
+            ! empty($data['upline_member_id']) ? (int) $data['upline_member_id'] : null,
+        );
         $this->ensureSponsorCanRecruit($sponsor, $targetLevel);
 
         return $this->createRegistration($data, $targetLevel, $sponsor);
@@ -248,7 +262,7 @@ class MemberRegistrationService
      * @param  array<string, mixed>  $params
      * @return array{results: Collection<int, object>, pagination?: array<string, mixed>}
      */
-    private function registrationList(array $params, ?int $sponsorId = null): array
+    private function registrationList(array $params, ?array $sponsorIds = null): array
     {
         $registrationTable = (new MemberRegistration)->getTable();
         $levelTable = (new MemberLevel)->getTable();
@@ -281,8 +295,11 @@ class MemberRegistrationService
                 "{$administratorTable}.administrator_id = {$registrationTable}.member_registration_status_administrator_id"
             );
 
-        if ($sponsorId !== null) {
-            $query->where("{$registrationTable}.member_registration_upline_member_id", $sponsorId);
+        if ($sponsorIds !== null) {
+            $query->whereIn(
+                "{$registrationTable}.member_registration_upline_member_id",
+                $sponsorIds,
+            );
         }
 
         return $query
@@ -387,20 +404,7 @@ class MemberRegistrationService
 
     private function ensureSponsorCanRecruit(Member $sponsor, MemberLevel $targetLevel): void
     {
-        if ($sponsor->member_status !== 1 || ! $sponsor->level?->member_level_is_active) {
-            throw new ProcessException('Sponsor tidak aktif atau tidak tersedia.');
-        }
-
-        $hasPendingDowngrade = MemberNetworkSwitch::query()
-            ->where('network_switch_member_id', $sponsor->getKey())
-            ->where('network_switch_type', 'downgrade')
-            ->whereIn('network_switch_status', ['scheduled', 'approved'])
-            ->whereNull('network_switch_applied_datetime')
-            ->exists();
-
-        if ($hasPendingDowngrade) {
-            throw new ProcessException('Mitra yang sedang dijadwalkan turun tingkat tidak dapat menerima pendaftaran mitra baru.');
-        }
+        $this->ensureMemberCanRecruit($sponsor);
 
         if (! in_array($targetLevel->member_level_code, $this->allowedTargetLevelCodes($sponsor), true)) {
             throw new ProcessException('Sponsor tidak memiliki hak untuk mendaftarkan tingkat mitra tersebut.');
@@ -411,7 +415,7 @@ class MemberRegistrationService
     private function allowedTargetLevelCodes(Member $sponsor): array
     {
         return match ($sponsor->level?->member_level_code) {
-            'DST' => ['AGT', 'RSL'],
+            'DST' => ['AGT'],
             'AGT' => ['RSL'],
             default => [],
         };
@@ -420,7 +424,7 @@ class MemberRegistrationService
     /** @return Collection<int, MemberLevel> */
     private function targetLevelsForSponsor(Member $sponsor): Collection
     {
-        $targetCodes = $this->allowedTargetLevelCodes($sponsor);
+        $targetCodes = $this->submissionTargetLevelCodes($sponsor);
 
         if ($targetCodes === []) {
             throw new ProcessException('Hanya Distributor dan Agen Utama yang dapat mendaftarkan mitra.', 403);
@@ -437,6 +441,130 @@ class MemberRegistrationService
         }
 
         return $targetLevels;
+    }
+
+    private function ensureSubmitterCanRegister(Member $submitter, MemberLevel $targetLevel): void
+    {
+        $this->ensureMemberCanRecruit($submitter);
+
+        if (! in_array($targetLevel->member_level_code, $this->submissionTargetLevelCodes($submitter), true)) {
+            throw new ProcessException('Mitra tidak memiliki hak untuk mendaftarkan tingkat mitra tersebut.');
+        }
+    }
+
+    private function ensureMemberCanRecruit(Member $member): void
+    {
+        if ($member->member_status !== 1 || ! $member->level?->member_level_is_active) {
+            throw new ProcessException('Sponsor tidak aktif atau tidak tersedia.');
+        }
+
+        $hasPendingDowngrade = MemberNetworkSwitch::query()
+            ->where('network_switch_member_id', $member->getKey())
+            ->where('network_switch_type', 'downgrade')
+            ->whereIn('network_switch_status', ['scheduled', 'approved'])
+            ->whereNull('network_switch_applied_datetime')
+            ->exists();
+
+        if ($hasPendingDowngrade) {
+            throw new ProcessException('Mitra yang sedang dijadwalkan turun tingkat tidak dapat menerima pendaftaran mitra baru.');
+        }
+    }
+
+    /** @return array<int, string> */
+    private function submissionTargetLevelCodes(Member $submitter): array
+    {
+        return match ($submitter->level?->member_level_code) {
+            'DST' => ['AGT', 'RSL'],
+            'AGT' => ['RSL'],
+            default => [],
+        };
+    }
+
+    private function registrationSponsorForSubmitter(
+        Member $submitter,
+        MemberLevel $targetLevel,
+        ?int $uplineMemberId,
+    ): Member {
+        if ($submitter->level?->member_level_code !== 'DST'
+            || $targetLevel->member_level_code !== 'RSL') {
+            if ($uplineMemberId !== null) {
+                throw new ProcessException('Agen Utama hanya dipilih saat Distributor mendaftarkan Reseller.');
+            }
+
+            return $submitter;
+        }
+
+        if (! $uplineMemberId) {
+            throw new ProcessException('Agen Utama untuk Reseller wajib dipilih.');
+        }
+
+        $agent = Member::query()
+            ->with('level')
+            ->whereKey($uplineMemberId)
+            ->where('member_parent_member_id', $submitter->getKey())
+            ->where('member_status', 1)
+            ->whereHas('level', fn ($query) => $query
+                ->where('member_level_code', 'AGT')
+                ->where('member_level_is_active', 1))
+            ->first();
+
+        if (! $agent) {
+            throw new ProcessException('Agen Utama tidak aktif atau bukan bagian dari jaringan Distributor.');
+        }
+
+        return $agent;
+    }
+
+    /** @return array<int, array{id: int, code: string, name: string, level_code: string}> */
+    private function availableAgentsForDistributor(Member $distributor): array
+    {
+        if ($distributor->level?->member_level_code !== 'DST') {
+            return [];
+        }
+
+        return Member::query()
+            ->select(['member_id', 'member_code', 'member_name'])
+            ->where('member_parent_member_id', $distributor->getKey())
+            ->where('member_status', 1)
+            ->whereHas('level', fn ($query) => $query
+                ->where('member_level_code', 'AGT')
+                ->where('member_level_is_active', 1))
+            ->orderBy('member_name')
+            ->orderBy('member_code')
+            ->get()
+            ->map(fn (Member $agent): array => [
+                'id' => (int) $agent->getKey(),
+                'code' => $agent->member_code,
+                'name' => $agent->member_name,
+                'level_code' => 'AGT',
+            ])
+            ->all();
+    }
+
+    /** @return array<int, int> */
+    private function accessibleRegistrationSponsorIds(int $memberId): array
+    {
+        $member = Member::query()
+            ->with('level')
+            ->whereKey($memberId)
+            ->where('member_status', 1)
+            ->firstOrFail();
+        $sponsorIds = [(int) $member->getKey()];
+
+        if ($member->level?->member_level_code !== 'DST') {
+            return $sponsorIds;
+        }
+
+        return [
+            ...$sponsorIds,
+            ...Member::query()
+                ->where('member_parent_member_id', $member->getKey())
+                ->where('member_status', 1)
+                ->whereHas('level', fn ($query) => $query->where('member_level_code', 'AGT'))
+                ->pluck('member_id')
+                ->map(fn ($id): int => (int) $id)
+                ->all(),
+        ];
     }
 
     private function ensureRequested(MemberRegistration $registration): void
