@@ -133,7 +133,7 @@ class DevelopmentUpgradeApprovalSeeder extends Seeder
 
         $this->command?->info(
             "Skenario approval upgrade berhasil disiapkan untuk {$reseller->member_code} "
-            ."({$reseller->member_name}), Reseller menjadi Agent."
+            ."({$reseller->member_name}), Reseller menjadi Agen Utama."
         );
         $this->command?->line(
             "ID approval: {$qualification->getKey()}; status: requested."
@@ -161,7 +161,7 @@ class DevelopmentUpgradeApprovalSeeder extends Seeder
         if ($reseller->parent?->level?->member_level_code !== 'AGT'
             || $reseller->parent?->parent?->level?->member_level_code !== 'DST') {
             throw new LogicException(
-                'Reseller harus berada pada jalur Agent ke Distributor.'
+                'Reseller harus berada pada jalur Agen Utama ke Distributor.'
             );
         }
 

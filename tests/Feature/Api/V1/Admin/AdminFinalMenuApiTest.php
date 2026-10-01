@@ -30,30 +30,42 @@ class AdminFinalMenuApiTest extends TestCase
 
         $this->getJson('/api/v1/admin/dashboard/analytics?date_from=2026-07-01&date_to=2026-07-31')
             ->assertOk()
-            ->assertJsonPath('data.summary.total_partners', 2)
-            ->assertJsonPath('data.summary.turnover', 250000)
-            ->assertJsonPath('data.summary.total_orders', 1)
+            ->assertJsonPath('data.summary.total_partners', 3)
+            ->assertJsonPath('data.summary.turnover', 425000)
+            ->assertJsonPath('data.summary.total_orders', 4)
             ->assertJsonPath('data.summary.total_commission', 2500)
-            ->assertJsonPath('data.summary.products_sold', 2)
+            ->assertJsonPath('data.summary.products_sold', 5)
             ->assertJsonPath('data.summary.active_orders', 0)
             ->assertJsonPath('data.summary.warehouse_stock', 20);
 
         $this->getJson('/api/v1/admin/user-analytics/statistics?date_from=2026-07-01&date_to=2026-07-31')
             ->assertOk()
             ->assertJsonPath('message', 'Statistik operasional berhasil dimuat.')
-            ->assertJsonPath('data.summary.total_partners', 2)
+            ->assertJsonPath('data.summary.total_partners', 3)
             ->assertJsonPath('data.summary.total_commission', 2500)
-            ->assertJsonPath('data.summary.products_sold', 2)
+            ->assertJsonPath('data.summary.products_sold', 5)
             ->assertJsonPath('data.order_statuses.8.code', 'completed')
-            ->assertJsonPath('data.order_statuses.8.total', 1)
-            ->assertJsonPath('data.recent_orders.0.code', 'TRX-001')
-            ->assertJsonPath('data.recent_orders.0.buyer.name', 'Agent Satu')
+            ->assertJsonPath('data.order_statuses.8.total', 4)
+            ->assertJsonPath('data.recent_orders.0.code', 'TRX-004')
+            ->assertJsonPath('data.recent_orders.0.buyer.name', 'Pelanggan DNY')
             ->assertJsonPath('data.stock_alerts.0.code', 'LOW-001')
-            ->assertJsonPath('data.stock_alerts.0.balance', 0);
+            ->assertJsonPath('data.stock_alerts.0.balance', 0)
+            ->assertJsonPath('data.product_sales.0.code', 'SRM-001')
+            ->assertJsonPath('data.product_sales.0.total_quantity', 5)
+            ->assertJsonPath('data.product_sales.1.code', 'LOW-001')
+            ->assertJsonPath('data.product_sales.1.movement', 'slow_moving')
+            ->assertJsonPath('data.consumer_sales_trend.0.total_orders', 2)
+            ->assertJsonPath('data.consumer_sales_trend.0.turnover', 75000)
+            ->assertJsonPath('data.member_sales_rankings.distributors.0.code', 'DST-001')
+            ->assertJsonPath('data.member_sales_rankings.agents.0.code', 'AGT-001')
+            ->assertJsonPath('data.member_sales_rankings.resellers.0.code', 'RSL-001')
+            ->assertJsonPath('data.recruitment_rankings.distributors.0.total_recruits', 1)
+            ->assertJsonPath('data.recruitment_rankings.agents.0.total_recruits', 1);
 
         $this->getJson('/api/v1/admin/partnership/genealogy?member_id=1&depth=2')
             ->assertOk()
             ->assertJsonPath('data.results.0.code', 'DST-001')
+            ->assertJsonPath('data.results.0.level.name', 'Distributor Utama Prioritas')
             ->assertJsonPath('data.results.0.image', 'https://example.test/avatar-dst.webp')
             ->assertJsonPath('data.results.0.image_url', 'https://example.test/avatar-dst.webp')
             ->assertJsonPath('data.results.0.downlines.0.code', 'AGT-001')
@@ -180,6 +192,15 @@ class AdminFinalMenuApiTest extends TestCase
             'member_join_datetime' => '2026-07-02 08:00:00',
             'member_status' => 1,
         ]);
+        Member::query()->create([
+            'member_id' => 3,
+            'member_code' => 'RSL-001',
+            'member_member_level_id' => 3,
+            'member_parent_member_id' => 2,
+            'member_name' => 'Reseller Satu',
+            'member_join_datetime' => '2026-07-03 08:00:00',
+            'member_status' => 1,
+        ]);
         DB::table('customer')->insert([
             'customer_id' => 1,
             'customer_member_id' => 2,
@@ -194,6 +215,50 @@ class AdminFinalMenuApiTest extends TestCase
             'warehouse_stock_balance' => 20,
         ]);
         DB::table('trx')->insert($this->trxPayload());
+        DB::table('trx')->insert([
+            array_merge($this->trxPayload(), [
+                'trx_id' => 2,
+                'trx_code' => 'TRX-002',
+                'trx_seller_type' => 'distributor',
+                'trx_seller_id' => 1,
+                'trx_buyer_type' => 'agent',
+                'trx_buyer_id' => 2,
+                'trx_total_price' => 100000,
+                'trx_grand_total_price' => 100000,
+                'trx_grand_total_nett_price' => 100000,
+                'trx_bill_amount' => 100000,
+                'trx_status_datetime' => '2026-07-11 08:00:00',
+                'trx_datetime' => '2026-07-11 08:00:00',
+            ]),
+            array_merge($this->trxPayload(), [
+                'trx_id' => 3,
+                'trx_code' => 'TRX-003',
+                'trx_seller_type' => 'agent',
+                'trx_seller_id' => 2,
+                'trx_buyer_type' => 'customer',
+                'trx_buyer_id' => 1,
+                'trx_total_price' => 50000,
+                'trx_grand_total_price' => 50000,
+                'trx_grand_total_nett_price' => 50000,
+                'trx_bill_amount' => 50000,
+                'trx_status_datetime' => '2026-07-13 07:00:00',
+                'trx_datetime' => '2026-07-13 07:00:00',
+            ]),
+            array_merge($this->trxPayload(), [
+                'trx_id' => 4,
+                'trx_code' => 'TRX-004',
+                'trx_seller_type' => 'reseller',
+                'trx_seller_id' => 3,
+                'trx_buyer_type' => 'customer',
+                'trx_buyer_id' => 1,
+                'trx_total_price' => 25000,
+                'trx_grand_total_price' => 25000,
+                'trx_grand_total_nett_price' => 25000,
+                'trx_bill_amount' => 25000,
+                'trx_status_datetime' => '2026-07-13 08:00:00',
+                'trx_datetime' => '2026-07-13 08:00:00',
+            ]),
+        ]);
         DB::table('trx_detail')->insert([
             'trx_detail_id' => 1,
             'trx_detail_trx_id' => 1,
@@ -203,6 +268,38 @@ class AdminFinalMenuApiTest extends TestCase
             'trx_detail_product_price' => 125000,
             'trx_detail_nett_price' => 125000,
             'trx_detail_qty' => 2,
+        ]);
+        DB::table('trx_detail')->insert([
+            [
+                'trx_detail_id' => 2,
+                'trx_detail_trx_id' => 2,
+                'trx_detail_product_id' => $product->getKey(),
+                'trx_detail_product_code' => $product->product_code,
+                'trx_detail_product_name' => $product->product_name,
+                'trx_detail_product_price' => 100000,
+                'trx_detail_nett_price' => 100000,
+                'trx_detail_qty' => 1,
+            ],
+            [
+                'trx_detail_id' => 3,
+                'trx_detail_trx_id' => 3,
+                'trx_detail_product_id' => $product->getKey(),
+                'trx_detail_product_code' => $product->product_code,
+                'trx_detail_product_name' => $product->product_name,
+                'trx_detail_product_price' => 50000,
+                'trx_detail_nett_price' => 50000,
+                'trx_detail_qty' => 1,
+            ],
+            [
+                'trx_detail_id' => 4,
+                'trx_detail_trx_id' => 4,
+                'trx_detail_product_id' => $product->getKey(),
+                'trx_detail_product_code' => $product->product_code,
+                'trx_detail_product_name' => $product->product_name,
+                'trx_detail_product_price' => 25000,
+                'trx_detail_nett_price' => 25000,
+                'trx_detail_qty' => 1,
+            ],
         ]);
         DB::table('trx_spread_payment')->insert([
             'trx_spread_payment_id' => 1,

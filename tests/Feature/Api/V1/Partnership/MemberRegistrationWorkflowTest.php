@@ -58,6 +58,7 @@ class MemberRegistrationWorkflowTest extends TestCase
         $agent = $this->createNetworkMember('0001/0001/0000', $agentLevel, $distributor);
         $this->assertSame('0001/0002/0000', $service->next($agentLevel, $distributor));
         $this->assertSame('0001/0001/0001', $service->next($resellerLevel, $agent));
+        $this->assertSame('0001/0000/0001', $service->next($resellerLevel, $distributor));
 
         $this->createNetworkMember('0001/0001/0001', $resellerLevel, $agent);
         $this->assertSame('0001/0001/0002', $service->next($resellerLevel, $agent));
@@ -113,8 +114,9 @@ class MemberRegistrationWorkflowTest extends TestCase
         $this->getJson('/api/v1/member/network/registrations/options')
             ->assertOk()
             ->assertJsonPath('data.target_level.code', 'AGT')
-            ->assertJsonPath('data.target_level.name', 'Agent')
-            ->assertJsonMissingPath('data.levels')
+            ->assertJsonPath('data.target_level.name', 'Agen Utama')
+            ->assertJsonPath('data.levels.0.code', 'AGT')
+            ->assertJsonPath('data.levels.1.code', 'RSL')
             ->assertJsonMissingPath('data.provinces')
             ->assertJsonMissingPath('data.banks');
 
@@ -192,7 +194,7 @@ class MemberRegistrationWorkflowTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.target_level.code', 'RSL')
             ->assertJsonPath('data.target_level.name', 'Reseller')
-            ->assertJsonMissingPath('data.levels');
+            ->assertJsonCount(1, 'data.levels');
 
         $payload = $this->registrationPayload('agent.invalid', '081234567802', '3578010101010002');
         $payload['level_id'] = $this->level('AGT')->getKey();
@@ -207,7 +209,8 @@ class MemberRegistrationWorkflowTest extends TestCase
         $resellerPayload = $this->registrationPayload(
             'reseller.downline',
             '081234567806',
-            '3578010101010006'
+            '3578010101010006',
+            'RSL',
         );
         $registrationId = $this->postJson(
             '/api/v1/member/network/registrations',
@@ -239,6 +242,49 @@ class MemberRegistrationWorkflowTest extends TestCase
             ->assertJsonPath('error_code', 'process_error');
     }
 
+    public function test_distributor_can_choose_reseller_as_registration_level(): void
+    {
+        Mail::fake();
+        config()->set('initial_data.development_approval_password', 'Approve123');
+        $this->createReferenceData();
+        $this->createMemberGroups();
+        [$distributor, $distributorAccount] = $this->createMemberAccount(
+            'DST',
+            '0001/0000/0000',
+            'distributor.reseller',
+        );
+        $this->actingAs($distributorAccount, 'member_api');
+
+        $response = $this->postJson(
+            '/api/v1/member/network/registrations',
+            $this->registrationPayload(
+                'reseller.direct',
+                '081234567818',
+                '3578010101010018',
+                'RSL',
+            ),
+        )->assertSuccessful()
+            ->assertJsonPath('data.level.code', 'RSL')
+            ->assertJsonPath('data.sponsor.id', $distributor->getKey());
+
+        $this->assertDatabaseHas('member_registration', [
+            'member_registration_id' => $response->json('data.id'),
+            'member_registration_member_level_id' => $this->level('RSL')->getKey(),
+            'member_registration_upline_member_id' => $distributor->getKey(),
+        ]);
+
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $this->postJson(
+            "/api/v1/admin/partnership/registrations/{$response->json('data.id')}/approve",
+        )->assertOk();
+
+        $this->assertDatabaseHas('member', [
+            'member_code' => '0001/0000/0001',
+            'member_member_level_id' => $this->level('RSL')->getKey(),
+            'member_parent_member_id' => $distributor->getKey(),
+        ]);
+    }
+
     public function test_admin_can_create_and_approve_distributor_registration_atomically(): void
     {
         Mail::fake();
@@ -250,7 +296,7 @@ class MemberRegistrationWorkflowTest extends TestCase
 
         $response = $this->postJson(
             '/api/v1/admin/partnership/registrations',
-            $this->registrationPayload('distributor.new', '081234567803', '3578010101010003')
+            $this->registrationPayload('distributor.new', '081234567803', '3578010101010003', null)
         )->assertSuccessful()
             ->assertJsonPath('data.level.code', 'DST')
             ->assertJsonPath('data.sponsor', null)
@@ -436,7 +482,7 @@ class MemberRegistrationWorkflowTest extends TestCase
 
     private function createMemberGroups(): void
     {
-        foreach ([1 => 'Distributor', 2 => 'Agent', 3 => 'Reseller'] as $id => $name) {
+        foreach ([1 => 'Distributor', 2 => 'Agen Utama', 3 => 'Reseller'] as $id => $name) {
             $group = new MemberGroup;
             $group->member_group_id = $id;
             $group->fill([
@@ -519,9 +565,13 @@ class MemberRegistrationWorkflowTest extends TestCase
     }
 
     /** @return array<string, mixed> */
-    private function registrationPayload(string $username, string $mobilePhone, string $identityNo): array
-    {
-        return [
+    private function registrationPayload(
+        string $username,
+        string $mobilePhone,
+        string $identityNo,
+        ?string $levelCode = 'AGT',
+    ): array {
+        $payload = [
             'name' => 'Calon Mitra',
             'email' => "{$username}@example.test",
             'mobile_phone' => $mobilePhone,
@@ -542,5 +592,11 @@ class MemberRegistrationWorkflowTest extends TestCase
             'identity_no' => $identityNo,
             'nib' => null,
         ];
+
+        if ($levelCode !== null) {
+            $payload['level_id'] = $this->level($levelCode)->getKey();
+        }
+
+        return $payload;
     }
 }

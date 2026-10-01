@@ -390,7 +390,7 @@ const partySubtitle = (party: any) => {
     const labels: Record<string, string> = {
         warehouse: "Gudang Pusat",
         distributor: "Distributor",
-        agent: "Agent",
+        agent: "Agen Utama",
         reseller: "Reseller",
         customer: "Pelanggan",
     };

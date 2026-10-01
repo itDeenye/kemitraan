@@ -180,7 +180,7 @@ function loadMore() {
 onMounted(() => {
     if (!isAllowed.value) {
         snackbar.showMessage(
-            "Penyesuaian stok hanya untuk Agent dan Reseller.",
+            "Penyesuaian stok hanya untuk Agen Utama dan Reseller.",
             "error",
         );
         void router.replace("/member/stock");

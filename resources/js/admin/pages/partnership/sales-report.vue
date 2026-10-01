@@ -165,7 +165,7 @@ const headers = [
         filter: true,
         options: [
             { value: "distributor", label: "Distributor" },
-            { value: "agent", label: "Agent" },
+            { value: "agent", label: "Agen Utama" },
             { value: "reseller", label: "Reseller" },
         ],
         placeholder: "Pilih Peran Penjual",
@@ -209,7 +209,7 @@ const headers = [
         filter: true,
         options: [
             { value: "distributor", label: "Distributor" },
-            { value: "agent", label: "Agent" },
+            { value: "agent", label: "Agen Utama" },
             { value: "reseller", label: "Reseller" },
             { value: "customer", label: "Customer" },
         ],
@@ -282,7 +282,7 @@ const partySubtitle = (party: any) => {
     const labels: Record<string, string> = {
         warehouse: "Gudang Pusat",
         distributor: "Distributor",
-        agent: "Agent",
+        agent: "Agen Utama",
         reseller: "Reseller",
         customer: "Pelanggan",
     };

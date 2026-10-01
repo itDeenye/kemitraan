@@ -44,11 +44,13 @@ class MemberGenealogyTest extends TestCase
             ->assertOk()
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.context.root_member.id', $distributor->getKey())
+            ->assertJsonPath('data.context.root_member.level.name', 'Distributor Utama Prioritas')
             ->assertJsonPath('data.context.viewing_member.id', $distributor->getKey())
             ->assertJsonPath('data.context.can_register', true)
             ->assertJsonCount(1, 'data.context.breadcrumbs')
             ->assertJsonCount(1, 'data.results')
             ->assertJsonPath('data.results.0.id', $agentAlpha->getKey())
+            ->assertJsonPath('data.results.0.level.name', 'Agen Utama')
             ->assertJsonPath('data.results.0.total_direct_downlines', 1)
             ->assertJsonPath('data.results.0.has_downlines', true)
             ->assertJsonPath('data.pagination.total_data', 2)
@@ -91,12 +93,31 @@ class MemberGenealogyTest extends TestCase
         $this->getJson('/api/v1/member/network/total-downlines')->assertForbidden();
     }
 
+    public function test_only_root_distributor_uses_priority_label_in_network_view(): void
+    {
+        [$distributorLevel] = $this->createLevels();
+        $root = $this->createMember('9100/0000/0000', 'Distributor Root', $distributorLevel);
+        $child = $this->createMember(
+            '9101/0000/0000',
+            'Distributor Turunan',
+            $distributorLevel,
+            $root,
+        );
+        $this->actingAs($this->createAccount($root, 'distributor.root'), 'member_api');
+
+        $this->getJson('/api/v1/member/network/genealogy')
+            ->assertOk()
+            ->assertJsonPath('data.context.root_member.level.name', 'Distributor Utama Prioritas')
+            ->assertJsonPath('data.results.0.id', $child->getKey())
+            ->assertJsonPath('data.results.0.level.name', 'Distributor');
+    }
+
     /** @return array{MemberLevel, MemberLevel, MemberLevel} */
     private function createLevels(): array
     {
         return [
             $this->createLevel('DST', 'Distributor', 1),
-            $this->createLevel('AGT', 'Agent', 2),
+            $this->createLevel('AGT', 'Agen Utama', 2),
             $this->createLevel('RSL', 'Reseller', 3),
         ];
     }

@@ -11,7 +11,7 @@ class SeedDevelopmentUpgradeApproval extends Command
     protected $signature = 'development:seed-upgrade-approval
                             {member_id : ID Reseller yang akan disiapkan untuk approval upgrade}';
 
-    protected $description = 'Menyiapkan skenario approval upgrade Reseller menjadi Agent pada environment development';
+    protected $description = 'Menyiapkan skenario approval upgrade Reseller menjadi Agen Utama pada environment development';
 
     public function handle(DevelopmentUpgradeApprovalSeeder $seeder): int
     {

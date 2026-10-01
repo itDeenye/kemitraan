@@ -68,12 +68,16 @@
                                 </v-select>
                             </v-col>
                             <v-col cols="12" md="6">
-                                <v-text-field
-                                    :model-value="options.target_level.name"
-                                    label="Level Pendaftaran"
+                                <v-select
+                                    v-model="form.level_id"
+                                    :items="options.levels"
+                                    item-title="name"
+                                    item-value="id"
+                                    label="Level Mitra yang Didaftarkan *"
                                     variant="outlined"
                                     density="compact"
-                                    disabled
+                                    :rules="[required('Level Mitra')]"
+                                    :error-messages="errors.level_id"
                                     class="mb-2"
                                 />
                             </v-col>
@@ -511,6 +515,7 @@ const hasMoreRegistrations = computed(
 );
 
 const form = reactive({
+    level_id: null as number | null,
     name: "",
     email: "",
     mobile_phone: "",
@@ -574,6 +579,7 @@ async function loadOptions() {
             referenceService.getBanks(),
         ]);
         options.value = opts;
+        form.level_id = opts.target_level.id;
         banks.value = bankList;
         await fetchProvinces();
     } catch (e: any) {
@@ -630,6 +636,7 @@ async function submitRegistration() {
 
     try {
         const response = await networkService.storeRegistration({
+            level_id: form.level_id as number,
             name: form.name,
             email: form.email || null,
             mobile_phone: form.mobile_phone,
@@ -673,6 +680,7 @@ async function submitRegistration() {
 
 function resetForm() {
     Object.assign(form, {
+        level_id: options.value?.target_level.id ?? null,
         name: "",
         email: "",
         mobile_phone: "",

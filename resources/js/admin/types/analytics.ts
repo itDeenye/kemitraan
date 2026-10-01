@@ -67,6 +67,44 @@ export interface StockAlertAnalytic {
     stock: number;
 }
 
+export interface ProductSalesAnalytic {
+    rank: number;
+    id: number;
+    code: string;
+    name: string;
+    total_quantity: number;
+    turnover: number;
+    movement: "selling" | "slow_moving";
+}
+
+export interface MemberSalesRankingAnalytic {
+    rank: number;
+    id: number;
+    code: string;
+    name: string;
+    total_orders: number;
+    turnover: number;
+}
+
+export interface RecruitmentRankingAnalytic {
+    rank: number;
+    id: number;
+    code: string;
+    name: string;
+    total_recruits: number;
+}
+
+export interface MemberSalesRankingsAnalytic {
+    distributors: MemberSalesRankingAnalytic[];
+    agents: MemberSalesRankingAnalytic[];
+    resellers: MemberSalesRankingAnalytic[];
+}
+
+export interface RecruitmentRankingsAnalytic {
+    distributors: RecruitmentRankingAnalytic[];
+    agents: RecruitmentRankingAnalytic[];
+}
+
 export interface AnalyticsResponseData {
     period: {
         date_from: string;
@@ -80,4 +118,8 @@ export interface AnalyticsResponseData {
     highlighted_members: HighlightedMemberAnalytic[];
     recent_orders: RecentOrderAnalytic[];
     stock_alerts: StockAlertAnalytic[];
+    product_sales: ProductSalesAnalytic[];
+    consumer_sales_trend: SalesTrendAnalytic[];
+    member_sales_rankings: MemberSalesRankingsAnalytic;
+    recruitment_rankings: RecruitmentRankingsAnalytic;
 }

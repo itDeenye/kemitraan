@@ -44,7 +44,7 @@ class UpdateCommissionConfigRequest extends FormRequest
         return [
             'value' => 'nilai konfigurasi',
             'value.reward_monthly_min_qty_distributor' => 'minimum kuantitas Distributor',
-            'value.reward_monthly_min_qty_agent' => 'minimum kuantitas Agent',
+            'value.reward_monthly_min_qty_agent' => 'minimum kuantitas Agen Utama',
             'value.reward_monthly_min_qty_reseller' => 'minimum kuantitas Reseller',
             'value.reward_stockist_min_amount' => 'minimum omzet Reward Stokis',
             'value.reward_stockist_percentage_basis_points' => 'persentase Reward Stokis',

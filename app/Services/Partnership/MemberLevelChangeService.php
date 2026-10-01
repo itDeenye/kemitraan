@@ -443,7 +443,7 @@ class MemberLevelChangeService
         };
 
         if (! $valid) {
-            throw new ProcessException('Downgrade hanya dapat dilakukan satu tingkat: Distributor ke Agent atau Agent ke Reseller.');
+            throw new ProcessException('Downgrade hanya dapat dilakukan satu tingkat: Distributor ke Agen Utama atau Agen Utama ke Reseller.');
         }
     }
 
@@ -484,7 +484,7 @@ class MemberLevelChangeService
             return (int) $parent->parent->getKey();
         }
 
-        throw new ProcessException('Distributor yang menaungi Agent tidak ditemukan.');
+        throw new ProcessException('Distributor yang menaungi Agen Utama tidak ditemukan.');
     }
 
     private function ensureNoPendingTransfer(Member $member): void
@@ -739,7 +739,7 @@ class MemberLevelChangeService
     {
         return match ($code) {
             'DST' => 'Distributor',
-            'AGT' => 'Agent',
+            'AGT' => 'Agen Utama',
             'RSL' => 'Reseller',
             default => $code,
         };

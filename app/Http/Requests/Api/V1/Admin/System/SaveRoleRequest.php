@@ -17,6 +17,17 @@ class SaveRoleRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $role = $this->route('role');
+        $type = $role instanceof SiteAdministratorGroup
+            && $role->administrator_group_type === 'superuser'
+                ? 'superuser'
+                : 'administrator';
+
+        $this->merge(['type' => $type]);
+    }
+
     /**
      * Get the validation rules that apply to the request.
      *

@@ -70,7 +70,7 @@ class DevelopmentSeeder extends Seeder
                 ->firstOrFail();
             $agent = $this->member(
                 $memberCodeService,
-                'Ayu Agent Development',
+                'Ayu Agen Utama Development',
                 $agentLevel,
                 $member->getKey(),
                 '+6281200000101',
@@ -78,7 +78,7 @@ class DevelopmentSeeder extends Seeder
             );
             $secondAgent = $this->member(
                 $memberCodeService,
-                'Bima Agent Development',
+                'Bima Agen Utama Development',
                 $agentLevel,
                 $member->getKey(),
                 '+6281200000102',

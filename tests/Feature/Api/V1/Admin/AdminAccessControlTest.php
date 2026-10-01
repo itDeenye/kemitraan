@@ -49,9 +49,11 @@ class AdminAccessControlTest extends TestCase
 
         $roleId = $this->postJson('/api/v1/admin/system/roles', [
             'title' => 'Product Administrator',
-            'type' => 'administrator',
+            'type' => 'superuser',
             'is_active' => true,
-        ])->assertSuccessful()->json('data.id');
+        ])->assertSuccessful()
+            ->assertJsonPath('data.type', 'administrator')
+            ->json('data.id');
 
         $this->putJson("/api/v1/admin/system/roles/{$roleId}/privileges", [
             'menus' => [

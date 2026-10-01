@@ -46,24 +46,6 @@
                                 class="mb-4"
                             ></v-text-field>
 
-                            <label
-                                class="text-caption font-weight-medium mb-1 d-block text-medium-emphasis"
-                            >
-                                Tipe Role <span class="text-error">*</span>
-                            </label>
-                            <v-select
-                                v-model="form.type"
-                                :items="typeOptions"
-                                item-title="label"
-                                item-value="value"
-                                :rules="[rules.requiredSelect('Tipe role')]"
-                                placeholder="Pilih tipe role"
-                                variant="outlined"
-                                density="comfortable"
-                                hide-details="auto"
-                                class="mb-4"
-                            ></v-select>
-
                             <v-switch
                                 v-model="form.is_active"
                                 :label="
@@ -123,11 +105,6 @@ const loading = ref(false);
 const formRef = ref<any>(null);
 const isFormValid = ref(false);
 
-const typeOptions = [
-    { value: "administrator", label: "Administrator" },
-    { value: "superuser", label: "Super User" },
-];
-
 const form = reactive<RolePayload>({
     title: "",
     type: "administrator",
@@ -139,8 +116,6 @@ const isEdit = computed(() => editId.value !== null);
 
 const rules = {
     required: (field: string) => (v: any) => !!v || `${field} wajib diisi`,
-    requiredSelect: (field: string) => (v: any) =>
-        !!v || `${field} wajib dipilih`,
 };
 
 const resetForm = () => {
@@ -156,7 +131,7 @@ const open = (role?: Role) => {
     if (role) {
         editId.value = role.id;
         form.title = role.title;
-        form.type = role.type;
+        form.type = "administrator";
         form.is_active = role.is_active;
     }
     dialog.value = true;

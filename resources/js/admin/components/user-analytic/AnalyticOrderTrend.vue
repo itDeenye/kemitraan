@@ -1,12 +1,12 @@
 <template>
     <v-card variant="outlined" class="pa-4 h-100 rounded-lg">
-        <h2 class="text-h6 font-weight-bold mb-4">Trend Penjualan & Omzet</h2>
+        <h2 class="text-h6 font-weight-bold mb-4">{{ title }}</h2>
 
         <div
             v-if="!trends.length"
             class="d-flex align-center justify-center text-medium-emphasis py-10"
         >
-            Tidak ada data tren penjualan.
+            {{ emptyText }}
         </div>
 
         <div v-else class="chart-container">
@@ -43,7 +43,14 @@ ChartJS.register(
 
 const props = defineProps<{
     trends: SalesTrendAnalytic[];
+    title?: string;
+    emptyText?: string;
 }>();
+
+const title = computed(() => props.title ?? "Tren Penjualan & Omzet");
+const emptyText = computed(
+    () => props.emptyText ?? "Tidak ada data tren penjualan.",
+);
 
 const { formatPrice } = useFormatter();
 const theme = useTheme();

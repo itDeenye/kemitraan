@@ -10,11 +10,21 @@ use App\Models\TrxDetail;
 use App\Models\TrxSpreadPayment;
 use App\Models\WarehouseStock;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 class AdminDashboardService
 {
     private const LOW_STOCK_MAXIMUM = 5;
+
+    /** @var list<string> */
+    private const UNSOLD_ORDER_STATUSES = [
+        'waiting_stock_screening',
+        'waiting_payment',
+        'waiting_payment_approval',
+        'cancelled',
+        'rejected',
+    ];
 
     /** @var list<string> */
     private const ORDER_STATUSES = [
@@ -54,13 +64,7 @@ class AdminDashboardService
         $productsSold = DB::table($detailTable)
             ->join($trxTable, "{$trxTable}.trx_id", '=', "{$detailTable}.trx_detail_trx_id")
             ->whereBetween("{$trxTable}.trx_datetime", [$dateFrom, $dateTo])
-            ->whereNotIn("{$trxTable}.trx_status", [
-                'waiting_stock_screening',
-                'waiting_payment',
-                'waiting_payment_approval',
-                'cancelled',
-                'rejected',
-            ])
+            ->whereNotIn("{$trxTable}.trx_status", self::UNSOLD_ORDER_STATUSES)
             ->sum("{$detailTable}.trx_detail_qty");
 
         $totalCommission = DB::table($spreadTable)
@@ -244,6 +248,41 @@ class AdminDashboardService
                 'balance' => (int) $row->balance,
             ]);
 
+        $productSales = $this->productSales(
+            $productTable,
+            $detailTable,
+            $trxTable,
+            $dateFrom,
+            $dateTo,
+        );
+        $consumerSalesTrend = $this->consumerSalesTrend($trxTable, $dateFrom, $dateTo);
+        $memberSalesRankings = collect([
+            'distributors' => 'DST',
+            'agents' => 'AGT',
+            'resellers' => 'RSL',
+        ])->mapWithKeys(fn (string $levelCode, string $key): array => [
+            $key => $this->memberSalesRanking(
+                $trxTable,
+                $memberTable,
+                $levelTable,
+                $levelCode,
+                $dateFrom,
+                $dateTo,
+            ),
+        ])->all();
+        $recruitmentRankings = collect([
+            'distributors' => 'DST',
+            'agents' => 'AGT',
+        ])->mapWithKeys(fn (string $levelCode, string $key): array => [
+            $key => $this->recruitmentRanking(
+                $memberTable,
+                $levelTable,
+                $levelCode,
+                $dateFrom,
+                $dateTo,
+            ),
+        ])->all();
+
         return [
             'period' => [
                 'date_from' => $dateFrom->toDateString(),
@@ -257,7 +296,160 @@ class AdminDashboardService
             'highlighted_members' => $highlightedMembers,
             'recent_orders' => $recentOrders,
             'stock_alerts' => $stockAlerts,
+            'product_sales' => $productSales,
+            'consumer_sales_trend' => $consumerSalesTrend,
+            'member_sales_rankings' => $memberSalesRankings,
+            'recruitment_rankings' => $recruitmentRankings,
         ];
+    }
+
+    private function productSales(
+        string $productTable,
+        string $detailTable,
+        string $trxTable,
+        CarbonImmutable $dateFrom,
+        CarbonImmutable $dateTo,
+    ): Collection {
+        $sales = DB::table($detailTable)
+            ->join($trxTable, "{$trxTable}.trx_id", '=', "{$detailTable}.trx_detail_trx_id")
+            ->whereBetween("{$trxTable}.trx_datetime", [$dateFrom, $dateTo])
+            ->whereNotIn("{$trxTable}.trx_status", self::UNSOLD_ORDER_STATUSES)
+            ->selectRaw("{$detailTable}.trx_detail_product_id as product_id")
+            ->selectRaw("SUM({$detailTable}.trx_detail_qty) as total_quantity")
+            ->selectRaw("SUM({$detailTable}.trx_detail_nett_price * {$detailTable}.trx_detail_qty) as turnover")
+            ->groupBy("{$detailTable}.trx_detail_product_id");
+
+        return DB::table($productTable)
+            ->leftJoinSub($sales, 'product_sales', function ($join) use ($productTable): void {
+                $join->on('product_sales.product_id', '=', "{$productTable}.product_id");
+            })
+            ->where("{$productTable}.product_is_active", 1)
+            ->where("{$productTable}.product_is_deleted", 0)
+            ->orderByDesc('product_sales.total_quantity')
+            ->orderBy("{$productTable}.product_name")
+            ->get([
+                "{$productTable}.product_id as id",
+                "{$productTable}.product_code as code",
+                "{$productTable}.product_name as name",
+                DB::raw('COALESCE(product_sales.total_quantity, 0) as total_quantity'),
+                DB::raw('COALESCE(product_sales.turnover, 0) as turnover'),
+            ])
+            ->values()
+            ->map(fn (object $row, int $index): array => [
+                'rank' => $index + 1,
+                'id' => (int) $row->id,
+                'code' => $row->code,
+                'name' => $row->name,
+                'total_quantity' => (int) $row->total_quantity,
+                'turnover' => (int) $row->turnover,
+                'movement' => (int) $row->total_quantity === 0 ? 'slow_moving' : 'selling',
+            ]);
+    }
+
+    private function consumerSalesTrend(
+        string $trxTable,
+        CarbonImmutable $dateFrom,
+        CarbonImmutable $dateTo,
+    ): Collection {
+        return DB::table($trxTable)
+            ->where('trx_buyer_type', 'customer')
+            ->whereBetween('trx_datetime', [$dateFrom, $dateTo])
+            ->whereNotIn('trx_status', self::UNSOLD_ORDER_STATUSES)
+            ->selectRaw('DATE(trx_datetime) as date')
+            ->selectRaw('COUNT(*) as total_orders')
+            ->selectRaw('COALESCE(SUM(trx_grand_total_nett_price), 0) as turnover')
+            ->groupByRaw('DATE(trx_datetime)')
+            ->orderBy('date')
+            ->get()
+            ->map(fn (object $row): array => [
+                'date' => $row->date,
+                'total_orders' => (int) $row->total_orders,
+                'turnover' => (int) $row->turnover,
+            ]);
+    }
+
+    private function memberSalesRanking(
+        string $trxTable,
+        string $memberTable,
+        string $levelTable,
+        string $levelCode,
+        CarbonImmutable $dateFrom,
+        CarbonImmutable $dateTo,
+    ): Collection {
+        $sellerType = match ($levelCode) {
+            'DST' => 'distributor',
+            'AGT' => 'agent',
+            'RSL' => 'reseller',
+        };
+
+        return DB::table($trxTable)
+            ->join($memberTable, "{$memberTable}.member_id", '=', "{$trxTable}.trx_seller_id")
+            ->join($levelTable, "{$levelTable}.member_level_id", '=', "{$memberTable}.member_member_level_id")
+            ->where("{$levelTable}.member_level_code", $levelCode)
+            ->where("{$trxTable}.trx_seller_type", $sellerType)
+            ->where("{$memberTable}.member_status", '!=', 3)
+            ->whereBetween("{$trxTable}.trx_datetime", [$dateFrom, $dateTo])
+            ->whereNotIn("{$trxTable}.trx_status", self::UNSOLD_ORDER_STATUSES)
+            ->groupBy([
+                "{$memberTable}.member_id",
+                "{$memberTable}.member_code",
+                "{$memberTable}.member_name",
+            ])
+            ->orderByDesc('turnover')
+            ->orderByDesc('total_orders')
+            ->limit(10)
+            ->get([
+                "{$memberTable}.member_id as id",
+                "{$memberTable}.member_code as code",
+                "{$memberTable}.member_name as name",
+                DB::raw('COUNT(*) as total_orders'),
+                DB::raw("COALESCE(SUM({$trxTable}.trx_grand_total_nett_price), 0) as turnover"),
+            ])
+            ->values()
+            ->map(fn (object $row, int $index): array => [
+                'rank' => $index + 1,
+                'id' => (int) $row->id,
+                'code' => $row->code,
+                'name' => $row->name,
+                'total_orders' => (int) $row->total_orders,
+                'turnover' => (int) $row->turnover,
+            ]);
+    }
+
+    private function recruitmentRanking(
+        string $memberTable,
+        string $levelTable,
+        string $levelCode,
+        CarbonImmutable $dateFrom,
+        CarbonImmutable $dateTo,
+    ): Collection {
+        return DB::table("{$memberTable} as sponsor")
+            ->join("{$levelTable} as sponsor_level", 'sponsor_level.member_level_id', '=', 'sponsor.member_member_level_id')
+            ->join("{$memberTable} as recruit", function ($join) use ($dateFrom, $dateTo): void {
+                $join->on('recruit.member_parent_member_id', '=', 'sponsor.member_id')
+                    ->where('recruit.member_status', '!=', 3)
+                    ->whereBetween('recruit.member_join_datetime', [$dateFrom, $dateTo]);
+            })
+            ->where('sponsor_level.member_level_code', $levelCode)
+            ->where('sponsor.member_status', '!=', 3)
+            ->groupBy(['sponsor.member_id', 'sponsor.member_code', 'sponsor.member_name'])
+            ->orderByDesc('total_recruits')
+            ->orderBy('sponsor.member_name')
+            ->limit(10)
+            ->get([
+                'sponsor.member_id as id',
+                'sponsor.member_code as code',
+                'sponsor.member_name as name',
+                DB::raw('COUNT(recruit.member_id) as total_recruits'),
+            ])
+            ->values()
+            ->map(fn (object $row, int $index): array => [
+                'rank' => $index + 1,
+                'id' => (int) $row->id,
+                'code' => $row->code,
+                'name' => $row->name,
+                'total_recruits' => (int) $row->total_recruits,
+            ]);
     }
 
     private function orderStatusLabel(string $status): string

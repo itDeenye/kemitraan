@@ -106,7 +106,7 @@ class DevelopmentPartnershipDataSeeder extends Seeder
             $base + [
                 'member_registration_member_level_id' => $agentLevelId,
                 'member_registration_upline_member_id' => $distributor->getKey(),
-                'member_registration_name' => 'Calon Agent Development',
+                'member_registration_name' => 'Calon Agen Utama Development',
                 'member_registration_email' => 'calon.agent@dny.example.test',
                 'member_registration_mobilephone' => '+6281500000001',
                 'member_registration_identity_no' => '3578000000000001',

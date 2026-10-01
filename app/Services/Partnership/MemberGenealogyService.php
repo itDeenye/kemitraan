@@ -9,6 +9,7 @@ use App\Models\MemberLevel;
 use App\Support\MediaUrl;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 class MemberGenealogyService
 {
@@ -103,7 +104,12 @@ class MemberGenealogyService
             "{$memberTable}.member_join_datetime as joined_at",
             "{$levelTable}.member_level_id as level_id",
             "{$levelTable}.member_level_code as level_code",
-            "{$levelTable}.member_level_name as level_name",
+            DB::raw("CASE
+                WHEN {$levelTable}.member_level_code = 'DST'
+                    AND {$memberTable}.member_parent_member_id = 0
+                THEN 'Distributor Utama Prioritas'
+                ELSE {$levelTable}.member_level_name
+            END as level_name"),
         ])
             ->selectRaw(
                 "(SELECT COUNT(*) FROM {$memberTable} AS direct_downline
@@ -204,8 +210,18 @@ class MemberGenealogyService
             'level' => $member->level ? [
                 'id' => (int) $member->level->getKey(),
                 'code' => $member->level->member_level_code,
-                'name' => $member->level->member_level_name,
+                'name' => $this->networkLevelName($member),
             ] : null,
         ];
+    }
+
+    private function networkLevelName(Member $member): string
+    {
+        if ($member->level?->member_level_code === 'DST'
+            && (int) $member->member_parent_member_id === 0) {
+            return 'Distributor Utama Prioritas';
+        }
+
+        return (string) $member->level?->member_level_name;
     }
 }

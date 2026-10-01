@@ -186,7 +186,7 @@ const headers = [
         filter: true,
         options: [
             { value: "Distributor", label: "Distributor" },
-            { value: "Agent", label: "Agen" },
+            { value: "Agen Utama", label: "Agen Utama" },
             { value: "Reseller", label: "Reseller" },
         ],
         placeholder: "Pilih Level",

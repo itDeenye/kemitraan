@@ -39,7 +39,7 @@
                     icon="mdi-account-switch-outline"
                 >
                     Jaringan bawahan akan disesuaikan otomatis tanpa mengubah
-                    susunan Agent dan Reseller yang masih valid.
+                    susunan Agen Utama dan Reseller yang masih valid.
                 </v-alert>
 
                 <v-form
@@ -210,7 +210,7 @@ const form = reactive({
 
 const levelOptions = [
     { value: 1, label: "Distributor" },
-    { value: 2, label: "Agent" },
+    { value: 2, label: "Agen Utama" },
     { value: 3, label: "Reseller" },
 ];
 

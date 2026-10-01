@@ -48,6 +48,28 @@
             </v-row>
 
             <v-row class="mb-4">
+                <v-col cols="12" md="6">
+                    <AnalyticOrderTrend
+                        :trends="analyticsData.consumer_sales_trend"
+                        title="Tren Penjualan ke Konsumen dari POS"
+                        empty-text="Belum ada penjualan POS ke konsumen pada periode ini."
+                    />
+                </v-col>
+                <v-col cols="12" md="6">
+                    <AnalyticProductSales :products="analyticsData.product_sales" />
+                </v-col>
+            </v-row>
+
+            <div class="text-h6 font-weight-bold mb-3">
+                Peringkat Bulanan Penjualan & Recruitment
+            </div>
+            <AnalyticMemberRankings
+                class="mb-4"
+                :sales="analyticsData.member_sales_rankings"
+                :recruitment="analyticsData.recruitment_rankings"
+            />
+
+            <v-row class="mb-4">
                 <!-- Trend Chart -->
                 <v-col cols="12" md="8">
                     <AnalyticOrderTrend :trends="analyticsData.sales_trend" />
@@ -99,6 +121,8 @@ import AnalyticOrderStatus from "../../components/user-analytic/AnalyticOrderSta
 import AnalyticRecentOrders from "../../components/user-analytic/AnalyticRecentOrders.vue";
 import AnalyticMembersOverview from "../../components/user-analytic/AnalyticMembersOverview.vue";
 import AnalyticStockAlerts from "../../components/user-analytic/AnalyticStockAlerts.vue";
+import AnalyticProductSales from "../../components/user-analytic/AnalyticProductSales.vue";
+import AnalyticMemberRankings from "../../components/user-analytic/AnalyticMemberRankings.vue";
 
 const { isLoading, analyticsData, fetchAnalytics } = useAnalytics();
 const { formatPrice } = useFormatter();

@@ -61,7 +61,7 @@ class DevelopmentRewardScenarioSeeder extends Seeder
             }
             $type = $this->memberType($member);
             if ($type !== 'distributor' && in_array($only, ['stockist', 'sharing', 'history'], true)) {
-                throw new LogicException('Reward Stokis dan Sharing Profit khusus Distributor. Gunakan --only=monthly untuk Agent/Reseller.');
+                throw new LogicException('Reward Stokis dan Sharing Profit khusus Distributor. Gunakan --only=monthly untuk Agen Utama/Reseller.');
             }
 
             $rows = [['Mitra', "{$member->member_code} - {$member->member_name}"], ['Periode', $month->format('Y-m')]];

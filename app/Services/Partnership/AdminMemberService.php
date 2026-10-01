@@ -279,7 +279,7 @@ class AdminMemberService
                 'level' => $member->level ? [
                     'id' => $member->level->member_level_id,
                     'code' => $member->level->member_level_code,
-                    'name' => $member->level->member_level_name,
+                    'name' => $this->networkLevelName($member),
                 ] : null,
                 'status' => (int) $member->member_status,
                 'parent_id' => (int) $member->member_parent_member_id ?: null,
@@ -325,6 +325,16 @@ class AdminMemberService
         }
 
         return $ancestor;
+    }
+
+    private function networkLevelName(Member $member): string
+    {
+        if ($member->level?->member_level_code === 'DST'
+            && (int) $member->member_parent_member_id === 0) {
+            return 'Distributor Utama Prioritas';
+        }
+
+        return (string) $member->level?->member_level_name;
     }
 
     /** @param array<string, mixed> $node */

@@ -32,7 +32,7 @@
                 </div>
                 <div class="row-main">
                     <strong>Jaringan Mitra</strong
-                    ><span>Downline Agent dan Reseller bertingkat</span>
+                    ><span>Downline Agen Utama dan Reseller bertingkat</span>
                 </div>
                 <div class="row-side">&rsaquo;</div>
             </div>

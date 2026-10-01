@@ -49,7 +49,8 @@ class MemberRegistrationService
 
     public function memberOptions(Member $sponsor): array
     {
-        $targetLevel = $this->targetLevelForSponsor($sponsor);
+        $targetLevels = $this->targetLevelsForSponsor($sponsor);
+        $targetLevel = $targetLevels->firstOrFail();
         $sponsor = [
             'id' => $sponsor->member_id,
             'code' => $sponsor->member_code,
@@ -63,6 +64,11 @@ class MemberRegistrationService
                 'code' => $targetLevel->member_level_code,
                 'name' => $targetLevel->member_level_name,
             ],
+            'levels' => $targetLevels->map(fn (MemberLevel $level): array => [
+                'id' => (int) $level->getKey(),
+                'code' => $level->member_level_code,
+                'name' => $level->member_level_name,
+            ])->values()->all(),
             'sponsor' => $sponsor,
             'genders' => ['Laki-laki', 'Perempuan'],
             'identity_types' => ['KTP', 'SIM', 'PASPOR'],
@@ -97,7 +103,10 @@ class MemberRegistrationService
             ->whereKey($account->member_account_member_id)
             ->where('member_status', 1)
             ->firstOrFail();
-        $targetLevel = $this->targetLevelForSponsor($sponsor);
+        $targetLevel = MemberLevel::query()
+            ->whereKey((int) $data['level_id'])
+            ->where('member_level_is_active', 1)
+            ->firstOrFail();
 
         $this->ensureSponsorCanRecruit($sponsor, $targetLevel);
 
@@ -402,30 +411,32 @@ class MemberRegistrationService
     private function allowedTargetLevelCodes(Member $sponsor): array
     {
         return match ($sponsor->level?->member_level_code) {
-            'DST' => ['AGT'],
+            'DST' => ['AGT', 'RSL'],
             'AGT' => ['RSL'],
             default => [],
         };
     }
 
-    private function targetLevelForSponsor(Member $sponsor): MemberLevel
+    /** @return Collection<int, MemberLevel> */
+    private function targetLevelsForSponsor(Member $sponsor): Collection
     {
-        $targetCode = $this->allowedTargetLevelCodes($sponsor)[0] ?? null;
+        $targetCodes = $this->allowedTargetLevelCodes($sponsor);
 
-        if (! $targetCode) {
-            throw new ProcessException('Hanya Distributor dan Agent yang dapat mendaftarkan mitra.', 403);
+        if ($targetCodes === []) {
+            throw new ProcessException('Hanya Distributor dan Agen Utama yang dapat mendaftarkan mitra.', 403);
         }
 
-        $targetLevel = MemberLevel::query()
-            ->where('member_level_code', $targetCode)
+        $targetLevels = MemberLevel::query()
+            ->whereIn('member_level_code', $targetCodes)
             ->where('member_level_is_active', 1)
-            ->first();
+            ->orderBy('member_level_sort_order')
+            ->get();
 
-        if (! $targetLevel) {
+        if ($targetLevels->count() !== count($targetCodes)) {
             throw new ProcessException('Tingkat mitra tujuan yang aktif belum tersedia.');
         }
 
-        return $targetLevel;
+        return $targetLevels;
     }
 
     private function ensureRequested(MemberRegistration $registration): void

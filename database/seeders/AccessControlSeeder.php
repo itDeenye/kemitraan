@@ -25,11 +25,11 @@ class AccessControlSeeder extends Seeder
         SiteAdministratorMenu::query()->whereNotIn('administrator_menu_id', $adminMenus['menu_ids'])->delete();
 
         $this->memberLevel(1, 'DST', 'Distributor', 'Level kemitraan Distributor', 5_000, 1);
-        $this->memberLevel(2, 'AGT', 'Agent', 'Level kemitraan Agent', 4_000, 2);
+        $this->memberLevel(2, 'AGT', 'Agen Utama', 'Level kemitraan Agen Utama', 4_000, 2);
         $this->memberLevel(3, 'RSL', 'Reseller', 'Level kemitraan Reseller', 3_000, 3);
 
         $this->memberGroup(1, 'Distributor', 'Akses portal distributor');
-        $this->memberGroup(2, 'Agent', 'Akses portal agent');
+        $this->memberGroup(2, 'Agen Utama', 'Akses portal Agen Utama');
         $this->memberGroup(3, 'Reseller', 'Akses portal reseller');
     }
 

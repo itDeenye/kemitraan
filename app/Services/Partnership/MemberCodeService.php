@@ -41,7 +41,7 @@ class MemberCodeService
             : $this->segments($sponsor->member_code)[0];
 
         if ($sponsor !== null && $distributorSequence === 0) {
-            throw new ProcessException('Kode Distributor sponsor tidak valid untuk pendaftaran Agent.');
+            throw new ProcessException('Kode Distributor sponsor tidak valid untuk pendaftaran Agen Utama.');
         }
 
         return $this->format(
@@ -59,12 +59,20 @@ class MemberCodeService
     private function nextResellerCode(Collection $members, ?Member $sponsor): string
     {
         if ($sponsor === null) {
-            throw new ProcessException('Sponsor Agent wajib tersedia untuk pendaftaran Reseller.');
+            throw new ProcessException('Sponsor Distributor atau Agen Utama wajib tersedia untuk pendaftaran Reseller.');
         }
 
+        $sponsor->loadMissing('level');
         [$distributorSequence, $agentSequence] = $this->segments($sponsor->member_code);
-        if ($agentSequence === 0) {
-            throw new ProcessException('Kode Agent sponsor tidak valid untuk pendaftaran Reseller.');
+        $sponsorLevelCode = $sponsor->level?->member_level_code;
+        $validDistributorSponsor = $sponsorLevelCode === 'DST'
+            && $distributorSequence > 0
+            && $agentSequence === 0;
+        $validAgentSponsor = $sponsorLevelCode === 'AGT'
+            && $agentSequence > 0;
+
+        if (! $validDistributorSponsor && ! $validAgentSponsor) {
+            throw new ProcessException('Kode Agen Utama sponsor tidak valid untuk pendaftaran Reseller.');
         }
 
         return $this->format(
@@ -80,8 +88,8 @@ class MemberCodeService
     }
 
     /**
-     * @param Collection<int, Member> $members
-     * @param callable(array{int, int, int}): bool $matches
+     * @param  Collection<int, Member>  $members
+     * @param  callable(array{int, int, int}): bool  $matches
      */
     private function nextSequence(Collection $members, callable $matches, int $segmentIndex = 0): int
     {
