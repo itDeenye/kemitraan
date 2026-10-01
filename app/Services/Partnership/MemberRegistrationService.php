@@ -124,7 +124,7 @@ class MemberRegistrationService
         );
         $this->ensureSponsorCanRecruit($sponsor, $targetLevel);
 
-        return $this->createRegistration($data, $targetLevel, $sponsor);
+        return $this->createRegistration($data, $targetLevel, $sponsor, $submitter);
     }
 
     /** @param array<string, mixed> $data */
@@ -331,7 +331,8 @@ class MemberRegistrationService
     private function createRegistration(
         array $data,
         MemberLevel $targetLevel,
-        ?Member $sponsor = null
+        ?Member $sponsor = null,
+        ?Member $submitter = null,
     ): MemberRegistration {
         $bankName = isset($data['bank_id'])
             ? (string) RefBank::query()->where('bank_id', $data['bank_id'])->value('bank_name')
@@ -339,6 +340,7 @@ class MemberRegistrationService
         $registration = MemberRegistration::query()->create([
             'member_registration_member_level_id' => $targetLevel->getKey(),
             'member_registration_upline_member_id' => $sponsor?->getKey() ?? 0,
+            'member_registration_submitter_member_id' => $submitter?->getKey() ?? 0,
             'member_registration_name' => $data['name'],
             'member_registration_email' => $data['email'] ?? '',
             'member_registration_mobilephone' => $data['mobile_phone'],
@@ -658,6 +660,8 @@ class MemberRegistrationService
         return MemberRegistration::query()->with([
             'level',
             'parent.level',
+            'parent.parent.level',
+            'submittedBy.level',
             'statusAdministrator',
             'province',
             'city',

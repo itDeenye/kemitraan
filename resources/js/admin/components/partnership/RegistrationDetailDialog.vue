@@ -274,14 +274,20 @@
                                 </v-list>
                             </v-card>
 
-                            <template v-if="detail.sponsor">
+                            <template
+                                v-if="
+                                    detail.submitted_by ||
+                                    showNetworkDistributor ||
+                                    detail.sponsor
+                                "
+                            >
                                 <h3
                                     class="text-subtitle-1 font-weight-bold mb-3 mt-4 d-flex align-center ga-2 text-grey-darken-3"
                                 >
                                     <v-icon size="22" color="primary"
                                         >mdi-account-group-outline</v-icon
                                     >
-                                    Upline
+                                    Informasi Jaringan
                                 </h3>
                                 <v-card
                                     variant="flat"
@@ -291,7 +297,94 @@
                                         density="compact"
                                         class="bg-transparent pa-2"
                                     >
-                                        <v-list-item>
+                                        <v-list-item
+                                            v-if="detail.submitted_by"
+                                        >
+                                            <v-list-item-title
+                                                class="text-body-2 text-medium-emphasis"
+                                                >Didaftarkan oleh</v-list-item-title
+                                            >
+                                            <template #append>
+                                                <div class="text-right">
+                                                    <div
+                                                        class="font-weight-bold text-body-2"
+                                                    >
+                                                        {{
+                                                            detail.submitted_by
+                                                                ?.name || "-"
+                                                        }}
+                                                    </div>
+                                                    <div
+                                                        class="text-caption text-medium-emphasis"
+                                                    >
+                                                        {{
+                                                            detail.submitted_by
+                                                                ?.code || "-"
+                                                        }}
+                                                        <span
+                                                            v-if="
+                                                                detail
+                                                                    .submitted_by
+                                                                    ?.level_name
+                                                            "
+                                                        >
+                                                            ·
+                                                            {{
+                                                                detail
+                                                                    .submitted_by
+                                                                    .level_name
+                                                            }}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </template>
+                                        </v-list-item>
+                                        <v-divider
+                                            v-if="
+                                                detail.submitted_by &&
+                                                (showNetworkDistributor ||
+                                                    detail.sponsor)
+                                            "
+                                            class="my-1 border-opacity-50"
+                                        ></v-divider>
+                                        <v-list-item
+                                            v-if="showNetworkDistributor"
+                                        >
+                                            <v-list-item-title
+                                                class="text-body-2 text-medium-emphasis"
+                                                >Distributor Jaringan</v-list-item-title
+                                            >
+                                            <template #append>
+                                                <div class="text-right">
+                                                    <div
+                                                        class="font-weight-bold text-body-2"
+                                                    >
+                                                        {{
+                                                            detail
+                                                                .network_distributor
+                                                                ?.name || "-"
+                                                        }}
+                                                    </div>
+                                                    <div
+                                                        class="text-caption text-medium-emphasis"
+                                                    >
+                                                        {{
+                                                            detail
+                                                                .network_distributor
+                                                                ?.code || "-"
+                                                        }}
+                                                    </div>
+                                                </div>
+                                            </template>
+                                        </v-list-item>
+                                        <v-divider
+                                            v-if="
+                                                showNetworkDistributor &&
+                                                detail.sponsor
+                                            "
+                                            class="my-1 border-opacity-50"
+                                        ></v-divider>
+                                        <v-list-item v-if="detail.sponsor">
                                             <v-list-item-title
                                                 class="text-body-2 text-medium-emphasis"
                                                 >Mitra Upline</v-list-item-title
@@ -456,7 +549,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import api from "@/shared/services/api";
 import { useFormatter } from "@/shared/composables/useFormatter";
 import BaseBadge from "@/shared/components/BaseBadge.vue";
@@ -468,6 +561,11 @@ const snackbar = useSnackbarStore();
 const dialog = ref(false);
 const loading = ref(false);
 const detail = ref<any>(null);
+const showNetworkDistributor = computed(
+    () =>
+        detail.value?.network_distributor &&
+        detail.value.network_distributor.id !== detail.value.submitted_by?.id,
+);
 
 const open = async (id: number) => {
     dialog.value = true;

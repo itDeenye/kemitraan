@@ -149,6 +149,7 @@ class MemberRegistrationWorkflowTest extends TestCase
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.level.code', 'AGT')
             ->assertJsonPath('data.sponsor.id', $distributor->getKey())
+            ->assertJsonPath('data.submitted_by.id', $distributor->getKey())
             ->assertJsonMissingPath('data.upline')
             ->assertJsonPath('data.status.code', 'requested')
             ->assertJsonPath('data.identity.image_url', null)
@@ -231,7 +232,9 @@ class MemberRegistrationWorkflowTest extends TestCase
         $registrationId = $this->postJson(
             '/api/v1/member/network/registrations',
             $resellerPayload
-        )->assertSuccessful()->json('data.id');
+        )->assertSuccessful()
+            ->assertJsonPath('data.submitted_by.id', $agentAccount->member_account_member_id)
+            ->json('data.id');
 
         $administrator = $this->createAdministrator();
         $this->actingAs($administrator, 'admin_api');
@@ -322,12 +325,16 @@ class MemberRegistrationWorkflowTest extends TestCase
             ],
         )->assertSuccessful()
             ->assertJsonPath('data.level.code', 'RSL')
-            ->assertJsonPath('data.sponsor.id', $agent->getKey());
+            ->assertJsonPath('data.sponsor.id', $agent->getKey())
+            ->assertJsonPath('data.submitted_by.id', $distributor->getKey())
+            ->assertJsonPath('data.submitted_by.level_code', 'DST')
+            ->assertJsonPath('data.network_distributor.id', $distributor->getKey());
 
         $this->assertDatabaseHas('member_registration', [
             'member_registration_id' => $response->json('data.id'),
             'member_registration_member_level_id' => $this->level('RSL')->getKey(),
             'member_registration_upline_member_id' => $agent->getKey(),
+            'member_registration_submitter_member_id' => $distributor->getKey(),
         ]);
         $this->getJson('/api/v1/member/network/registrations?search=reseller.under-agent')
             ->assertOk()
@@ -335,9 +342,16 @@ class MemberRegistrationWorkflowTest extends TestCase
             ->assertJsonPath('data.results.0.sponsor.id', $agent->getKey());
         $this->getJson("/api/v1/member/network/registrations/{$response->json('data.id')}")
             ->assertOk()
-            ->assertJsonPath('data.sponsor.id', $agent->getKey());
+            ->assertJsonPath('data.sponsor.id', $agent->getKey())
+            ->assertJsonPath('data.submitted_by.id', $distributor->getKey());
 
         $this->actingAs($this->createAdministrator(), 'admin_api');
+        $this->getJson(
+            "/api/v1/admin/partnership/registrations/{$response->json('data.id')}",
+        )->assertOk()
+            ->assertJsonPath('data.submitted_by.id', $distributor->getKey())
+            ->assertJsonPath('data.submitted_by.name', $distributor->member_name)
+            ->assertJsonPath('data.sponsor.id', $agent->getKey());
         $this->postJson(
             "/api/v1/admin/partnership/registrations/{$response->json('data.id')}/approve",
         )->assertOk();

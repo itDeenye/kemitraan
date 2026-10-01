@@ -69,6 +69,7 @@ export interface RegistrationSponsor {
     code: string;
     name: string;
     level_code: string;
+    level_name?: string;
 }
 
 export interface RegistrationOptions {
@@ -103,6 +104,8 @@ export interface RegistrationListItem {
 
 export interface RegistrationDetail extends RegistrationListItem {
     upline: RegistrationSponsor | null;
+    submitted_by: RegistrationSponsor | null;
+    network_distributor: RegistrationSponsor | null;
     applicant: {
         name: string;
         email: string | null;

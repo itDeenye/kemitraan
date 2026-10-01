@@ -26,6 +26,10 @@ class MemberRegistrationResource extends ApiResource
                 'name' => $registration?->level?->member_level_name ?? $this->resource->level_name,
             ],
             'sponsor' => $this->sponsor($registration),
+            ...($registration === null ? [] : [
+                'submitted_by' => $this->submittedBy($registration),
+                'network_distributor' => $this->networkDistributor($registration),
+            ]),
             'applicant' => [
                 'name' => $this->value('name', 'member_registration_name'),
                 'email' => $this->value('email', 'member_registration_email'),
@@ -80,6 +84,46 @@ class MemberRegistrationResource extends ApiResource
             'code' => $registration?->parent?->member_code ?? $this->resource->sponsor_code,
             'name' => $registration?->parent?->member_name ?? $this->resource->sponsor_name,
             'level_code' => $registration?->parent?->level?->member_level_code,
+        ];
+    }
+
+    /** @return array<string, mixed>|null */
+    private function submittedBy(MemberRegistration $registration): ?array
+    {
+        if ((int) $registration->member_registration_submitter_member_id === 0
+            || $registration->submittedBy === null) {
+            return null;
+        }
+
+        return [
+            'id' => (int) $registration->submittedBy->getKey(),
+            'code' => $registration->submittedBy->member_code,
+            'name' => $registration->submittedBy->member_name,
+            'level_code' => $registration->submittedBy->level?->member_level_code,
+            'level_name' => $registration->submittedBy->level?->member_level_name,
+        ];
+    }
+
+    /** @return array<string, mixed>|null */
+    private function networkDistributor(MemberRegistration $registration): ?array
+    {
+        $sponsor = $registration->parent;
+
+        if ($sponsor?->level?->member_level_code === 'DST') {
+            $distributor = $sponsor;
+        } elseif ($sponsor?->level?->member_level_code === 'AGT'
+            && $sponsor->parent?->level?->member_level_code === 'DST') {
+            $distributor = $sponsor->parent;
+        } else {
+            return null;
+        }
+
+        return [
+            'id' => (int) $distributor->getKey(),
+            'code' => $distributor->member_code,
+            'name' => $distributor->member_name,
+            'level_code' => $distributor->level?->member_level_code,
+            'level_name' => $distributor->level?->member_level_name,
         ];
     }
 

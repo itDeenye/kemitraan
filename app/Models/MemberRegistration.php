@@ -16,6 +16,7 @@ class MemberRegistration extends Model
     protected $fillable = [
         'member_registration_member_level_id',
         'member_registration_upline_member_id',
+        'member_registration_submitter_member_id',
         'member_registration_member_id',
         'member_registration_name',
         'member_registration_email',
@@ -58,6 +59,11 @@ class MemberRegistration extends Model
     public function parent(): BelongsTo
     {
         return $this->belongsTo(Member::class, 'member_registration_upline_member_id', 'member_id');
+    }
+
+    public function submittedBy(): BelongsTo
+    {
+        return $this->belongsTo(Member::class, 'member_registration_submitter_member_id', 'member_id');
     }
 
     public function registeredMember(): BelongsTo
