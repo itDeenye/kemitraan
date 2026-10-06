@@ -75,9 +75,9 @@ class StoreRegistrationRequest extends FormRequest
                 }
 
                 $uplineMemberId = $this->integer('upline_member_id');
-                $requiresAgentUpline = $memberLevelCode === 'DST' && $targetCode === 'RSL';
+                $canChooseAgentUpline = $memberLevelCode === 'DST' && $targetCode === 'RSL';
 
-                if (! $requiresAgentUpline) {
+                if (! $canChooseAgentUpline) {
                     if ($uplineMemberId !== 0) {
                         $validator->errors()->add(
                             'upline_member_id',
@@ -89,11 +89,6 @@ class StoreRegistrationRequest extends FormRequest
                 }
 
                 if ($uplineMemberId === 0) {
-                    $validator->errors()->add(
-                        'upline_member_id',
-                        'Agen Utama untuk Reseller wajib dipilih.',
-                    );
-
                     return;
                 }
 

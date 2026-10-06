@@ -81,23 +81,23 @@
                                     class="mb-2"
                                 />
                             </v-col>
-                            <v-col v-if="requiresAgentUpline" cols="12">
+                            <v-col v-if="canChooseAgentUpline" cols="12">
                                 <v-autocomplete
                                     v-model="form.upline_member_id"
                                     :items="options.agents"
                                     :item-title="agentTitle"
                                     item-value="id"
-                                    label="Agen Utama untuk Reseller *"
-                                    placeholder="Pilih Agen Utama tujuan"
+                                    label="Agen Utama untuk Reseller (Opsional)"
+                                    placeholder="Kosongkan untuk langsung di bawah Distributor"
                                     variant="outlined"
                                     density="compact"
-                                    :rules="[required('Agen Utama')]"
+                                    clearable
                                     :error-messages="errors.upline_member_id"
                                     no-data-text="Belum ada Agen Utama aktif pada jaringan Distributor"
                                     class="mb-2"
                                 />
                                 <div class="soft-label mt-[-4px] mb-2">
-                                    Reseller akan ditempatkan langsung di bawah Agen Utama yang dipilih.
+                                    Kosongkan agar Reseller langsung di bawah Distributor, atau pilih Agen Utama tujuan.
                                 </div>
                             </v-col>
                         </v-row>
@@ -556,7 +556,7 @@ const form = reactive({
 const selectedLevel = computed(() =>
     options.value?.levels.find((level) => level.id === form.level_id),
 );
-const requiresAgentUpline = computed(
+const canChooseAgentUpline = computed(
     () =>
         options.value?.sponsor.level_code === "DST" &&
         selectedLevel.value?.code === "RSL",
@@ -675,7 +675,7 @@ async function submitRegistration() {
     try {
         const response = await networkService.storeRegistration({
             level_id: form.level_id as number,
-            upline_member_id: requiresAgentUpline.value
+            upline_member_id: canChooseAgentUpline.value
                 ? form.upline_member_id
                 : null,
             name: form.name,

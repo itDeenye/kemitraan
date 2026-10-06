@@ -2,7 +2,6 @@
 
 namespace Tests\Feature\Api\V1\Partnership;
 
-use App\Exceptions\ProcessException;
 use App\Mail\MemberCredentialsMail;
 use App\Mail\MemberRegistrationApprovedMail;
 use App\Mail\MemberRegistrationRejectedMail;
@@ -64,19 +63,22 @@ class MemberRegistrationWorkflowTest extends TestCase
         $this->assertSame('0001/0001/0002', $service->next($resellerLevel, $agent));
     }
 
-    public function test_reseller_code_requires_agent_sponsor(): void
+    public function test_reseller_code_supports_distributor_or_agent_sponsor(): void
     {
         $this->createReferenceData();
         [$distributor] = $this->createMemberAccount(
             'DST',
             '0001/0000/0000',
-            'distributor.invalid-reseller-sponsor',
+            'distributor.direct-reseller-sponsor',
         );
+        $resellerLevel = $this->level('RSL');
+        $service = app(MemberCodeService::class);
 
-        $this->expectException(ProcessException::class);
-        $this->expectExceptionMessage('Kode Agen Utama sponsor tidak valid');
+        $this->assertSame('0001/0000/0001', $service->next($resellerLevel, $distributor));
 
-        app(MemberCodeService::class)->next($this->level('RSL'), $distributor);
+        $this->createNetworkMember('0001/0000/0001', $resellerLevel, $distributor);
+
+        $this->assertSame('0001/0000/0002', $service->next($resellerLevel, $distributor));
     }
 
     public function test_registration_workflow_requires_authentication(): void
@@ -261,7 +263,52 @@ class MemberRegistrationWorkflowTest extends TestCase
             ->assertJsonPath('error_code', 'process_error');
     }
 
-    public function test_distributor_must_choose_own_agent_when_registering_reseller(): void
+    public function test_distributor_can_register_reseller_directly(): void
+    {
+        Mail::fake();
+        config()->set('initial_data.development_approval_password', 'Approve123');
+        $this->createReferenceData();
+        $this->createMemberGroups();
+        [$distributor, $distributorAccount] = $this->createMemberAccount(
+            'DST',
+            '0001/0000/0000',
+            'distributor.direct-reseller',
+        );
+        $this->actingAs($distributorAccount, 'member_api');
+
+        $payload = $this->registrationPayload(
+            'reseller.direct',
+            '081234567818',
+            '3578010101010018',
+            'RSL',
+        );
+        $response = $this->postJson('/api/v1/member/network/registrations', $payload)
+            ->assertSuccessful()
+            ->assertJsonPath('data.level.code', 'RSL')
+            ->assertJsonPath('data.sponsor.id', $distributor->getKey())
+            ->assertJsonPath('data.submitted_by.id', $distributor->getKey())
+            ->assertJsonPath('data.network_distributor.id', $distributor->getKey());
+
+        $this->assertDatabaseHas('member_registration', [
+            'member_registration_id' => $response->json('data.id'),
+            'member_registration_member_level_id' => $this->level('RSL')->getKey(),
+            'member_registration_upline_member_id' => $distributor->getKey(),
+            'member_registration_submitter_member_id' => $distributor->getKey(),
+        ]);
+
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $this->postJson(
+            "/api/v1/admin/partnership/registrations/{$response->json('data.id')}/approve",
+        )->assertOk();
+
+        $this->assertDatabaseHas('member', [
+            'member_code' => '0001/0000/0001',
+            'member_member_level_id' => $this->level('RSL')->getKey(),
+            'member_parent_member_id' => $distributor->getKey(),
+        ]);
+    }
+
+    public function test_distributor_can_choose_own_agent_when_registering_reseller(): void
     {
         Mail::fake();
         config()->set('initial_data.development_approval_password', 'Approve123');
@@ -302,12 +349,6 @@ class MemberRegistrationWorkflowTest extends TestCase
             '3578010101010018',
             'RSL',
         );
-        $this->postJson('/api/v1/member/network/registrations', $payload)
-            ->assertUnprocessable()
-            ->assertJsonPath(
-                'errors.upline_member_id.0',
-                'Agen Utama untuk Reseller wajib dipilih.',
-            );
         $this->postJson('/api/v1/member/network/registrations', [
             ...$payload,
             'upline_member_id' => $otherAgent->getKey(),

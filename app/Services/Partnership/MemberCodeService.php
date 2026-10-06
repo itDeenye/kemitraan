@@ -59,14 +59,21 @@ class MemberCodeService
     private function nextResellerCode(Collection $members, ?Member $sponsor): string
     {
         if ($sponsor === null) {
-            throw new ProcessException('Sponsor Agen Utama wajib tersedia untuk pendaftaran Reseller.');
+            throw new ProcessException('Sponsor Distributor atau Agen Utama wajib tersedia untuk pendaftaran Reseller.');
         }
 
         $sponsor->loadMissing('level');
         [$distributorSequence, $agentSequence] = $this->segments($sponsor->member_code);
+        $sponsorLevelCode = $sponsor->level?->member_level_code;
+        $isDistributorSponsor = $sponsorLevelCode === 'DST'
+            && $distributorSequence > 0
+            && $agentSequence === 0;
+        $isAgentSponsor = $sponsorLevelCode === 'AGT'
+            && $distributorSequence > 0
+            && $agentSequence > 0;
 
-        if ($sponsor->level?->member_level_code !== 'AGT' || $agentSequence === 0) {
-            throw new ProcessException('Kode Agen Utama sponsor tidak valid untuk pendaftaran Reseller.');
+        if (! $isDistributorSponsor && ! $isAgentSponsor) {
+            throw new ProcessException('Kode sponsor tidak valid untuk pendaftaran Reseller.');
         }
 
         return $this->format(

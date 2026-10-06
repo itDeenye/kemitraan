@@ -417,7 +417,7 @@ class MemberRegistrationService
     private function allowedTargetLevelCodes(Member $sponsor): array
     {
         return match ($sponsor->level?->member_level_code) {
-            'DST' => ['AGT'],
+            'DST' => ['AGT', 'RSL'],
             'AGT' => ['RSL'],
             default => [],
         };
@@ -497,7 +497,7 @@ class MemberRegistrationService
         }
 
         if (! $uplineMemberId) {
-            throw new ProcessException('Agen Utama untuk Reseller wajib dipilih.');
+            return $submitter;
         }
 
         $agent = Member::query()
