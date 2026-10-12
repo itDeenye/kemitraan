@@ -397,7 +397,7 @@ class MemberLevelChangeTest extends TestCase
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.member.id', $targetAgent->getKey())
             ->assertJsonPath('data.to_level.code', 'RSL')
-            ->assertJsonPath('data.required_sponsor_level', 'Agent')
+            ->assertJsonPath('data.required_sponsor_level', 'Agen Utama')
             ->assertJsonCount(1, 'data.results')
             ->assertJsonPath('data.results.0.id', $eligibleAgent->getKey())
             ->assertJsonPath('data.results.0.label', 'DNY000003 - Ayu Agent');
@@ -414,7 +414,7 @@ class MemberLevelChangeTest extends TestCase
             ->assertJsonPath('error_code', 'process_error')
             ->assertJsonPath(
                 'message',
-                'Downgrade hanya dapat dilakukan satu tingkat: Distributor ke Agent atau Agent ke Reseller.'
+                'Downgrade hanya dapat dilakukan satu tingkat: Distributor ke Agen Utama atau Agen Utama ke Reseller.'
             );
     }
 
@@ -448,7 +448,7 @@ class MemberLevelChangeTest extends TestCase
     {
         return [
             $this->level(1, 'DST', 'Distributor', 1),
-            $this->level(2, 'AGT', 'Agent', 2),
+            $this->level(2, 'AGT', 'Agen Utama', 2),
             $this->level(3, 'RSL', 'Reseller', 3),
         ];
     }

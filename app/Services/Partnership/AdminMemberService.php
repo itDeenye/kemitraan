@@ -19,6 +19,8 @@ class AdminMemberService
      */
     public function list(array $params): array
     {
+        $params = $this->normalizeLevelFilter($params);
+
         return DataTable::select([
             'member.member_id as id',
             'member.member_code as code',
@@ -39,6 +41,25 @@ class AdminMemberService
             ->search(['code', 'name', 'email', 'mobile_phone'])
             ->defaultSort('-id')
             ->get($params);
+    }
+
+    /** @param array<string, mixed> $params */
+    private function normalizeLevelFilter(array $params): array
+    {
+        $level = strtolower(trim((string) data_get($params, 'filter.level', '')));
+        $levelCode = match ($level) {
+            'distributor', 'dst' => 'DST',
+            'agent', 'agen utama', 'agt' => 'AGT',
+            'reseller', 'rsl' => 'RSL',
+            default => null,
+        };
+
+        if ($levelCode !== null) {
+            $params['filter']['level_code'] = $levelCode;
+            unset($params['filter']['level']);
+        }
+
+        return $params;
     }
 
     public function detail(Member $member): Member

@@ -69,4 +69,19 @@ return [
             ],
         ],
     ],
+
+    'references' => [
+        'ref_country' => ['country_flag'],
+        'ref_bank' => ['bank_logo'],
+        'warehouse' => ['warehouse_logo'],
+        'site_administrator' => ['administrator_image'],
+        'member' => ['member_identity_image', 'member_image'],
+        'member_registration' => ['member_registration_identity_image'],
+        'product' => ['product_image'],
+        'stockist' => ['stockist_image'],
+        'reward_annual' => ['reward_annual_image'],
+        'trx_payment_transfer' => ['payment_transfer_receipt_file'],
+        'trx_spread_payment' => ['trx_spread_payment_receipt_file'],
+        'return' => ['return_attachment_image_url_json', 'return_attachment_video_url'],
+    ],
 ];

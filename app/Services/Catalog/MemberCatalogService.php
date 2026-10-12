@@ -8,9 +8,10 @@ use App\Models\MemberAccount;
 use App\Models\MemberStock;
 use App\Models\Product;
 use App\Models\ProductCategory;
+use App\Models\ProductPrice;
 use App\Models\WarehouseStock;
-use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Query\Builder;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 class MemberCatalogService
@@ -24,7 +25,7 @@ class MemberCatalogService
         $levelId = $this->memberLevelId($account);
         $sellerStock = $this->sellerStockQuery($account, $params);
 
-        return DataTable::select($this->catalogColumns())
+        $catalog = DataTable::select($this->catalogColumns())
             ->selectRaw(
                 'COALESCE((SELECT product_price_value FROM product_price WHERE product_price_product_id = product.product_id AND product_price_member_level_id = ? LIMIT 1), product.product_customer_price) as price',
                 [$levelId],
@@ -55,6 +56,12 @@ class MemberCatalogService
             ->search(['code', 'name'])
             ->defaultSort('-id')
             ->get($params);
+
+        if ($this->memberLevelCode($account) === 'DST') {
+            $this->attachAllLevelPrices($catalog['results']);
+        }
+
+        return $catalog;
     }
 
     /** @return Collection<int, ProductCategory> */
@@ -70,7 +77,7 @@ class MemberCatalogService
     {
         $levelId = $this->memberLevelId($account);
         $catalogProduct = Product::query()
-            ->with(['category', 'levelPrices'])
+            ->with(['category', 'levelPrices.level'])
             ->availableInCatalog()
             ->findOrFail($product->getKey());
 
@@ -78,6 +85,12 @@ class MemberCatalogService
             ->firstWhere('product_price_member_level_id', $levelId)
             ?->product_price_value;
         $catalogProduct->setAttribute('catalog_price', $price ?? $catalogProduct->product_customer_price);
+        if ($this->memberLevelCode($account) === 'DST') {
+            $catalogProduct->setAttribute(
+                'member_prices',
+                $this->formatLevelPrices($catalogProduct->levelPrices),
+            );
+        }
         $stock = $this->sellerStockQuery($account, [
             'warehouse_id' => $warehouseId,
             'product_id' => $catalogProduct->getKey(),
@@ -93,6 +106,48 @@ class MemberCatalogService
         $account->loadMissing('member.level');
 
         return (int) ($account->member?->member_member_level_id ?? 0);
+    }
+
+    private function memberLevelCode(MemberAccount $account): string
+    {
+        $account->loadMissing('member.level');
+
+        return (string) ($account->member?->level?->member_level_code ?? '');
+    }
+
+    /** @param Collection<int, object> $products */
+    private function attachAllLevelPrices(Collection $products): void
+    {
+        $prices = ProductPrice::query()
+            ->with('level')
+            ->whereIn('product_price_product_id', $products->pluck('product_id')->all())
+            ->get()
+            ->groupBy('product_price_product_id');
+
+        foreach ($products as $product) {
+            $product->member_prices = $this->formatLevelPrices(
+                $prices->get($product->product_id, collect()),
+            );
+        }
+    }
+
+    /**
+     * @param  Collection<int, ProductPrice>  $prices
+     * @return list<array{member_level_id: int, member_level_code: string, member_level_name: string, price: int}>
+     */
+    private function formatLevelPrices(Collection $prices): array
+    {
+        return $prices
+            ->filter(fn (ProductPrice $price): bool => (bool) $price->level?->member_level_is_active)
+            ->sortBy(fn (ProductPrice $price): int => (int) $price->level?->member_level_sort_order)
+            ->map(fn (ProductPrice $price): array => [
+                'member_level_id' => (int) $price->product_price_member_level_id,
+                'member_level_code' => (string) $price->level?->member_level_code,
+                'member_level_name' => (string) $price->level?->member_level_name,
+                'price' => (int) $price->product_price_value,
+            ])
+            ->values()
+            ->all();
     }
 
     /** @param array<string, mixed> $params */

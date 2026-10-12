@@ -201,7 +201,7 @@ class MemberSalesAndShippingWorkflowTest extends TestCase
         $this->getJson('/api/v1/member/sales/options')
             ->assertOk()
             ->assertJsonPath('success', true)
-            ->assertJsonPath('data.seller.level', 'Agent')
+            ->assertJsonPath('data.seller.level', 'Agen Utama')
             ->assertJsonPath('data.seller.address', 'Jalan Distributor Nomor 1')
             ->assertJsonPath('data.seller.origin.name', 'Agent DNY')
             ->assertJsonPath('data.seller.origin.phone', '081234567890')

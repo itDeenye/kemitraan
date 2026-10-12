@@ -69,12 +69,45 @@ class MemberCatalogTest extends TestCase
             ->assertJsonMissingPath('data.results.0.pv')
             ->assertJsonPath('data.results.0.category.name', 'Skincare')
             ->assertJsonPath('data.pagination.total_data', 1)
-            ->assertJsonMissingPath('data.results.0.product_agent_price');
+            ->assertJsonMissingPath('data.results.0.product_agent_price')
+            ->assertJsonMissingPath('data.results.0.member_prices');
 
         $this->getJson('/api/v1/member/purchases/catalog/products?pagination=false')
             ->assertOk()
             ->assertJsonCount(1, 'data.results')
             ->assertJsonMissingPath('data.pagination');
+    }
+
+    public function test_distributor_catalog_exposes_all_member_level_prices(): void
+    {
+        $this->actingAs($this->createMemberAccount('distributor'), 'member_api');
+
+        $category = $this->createCategory('Distributor Catalog');
+        $product = $this->createProduct($category, [
+            'product_code' => 'ALL-LEVEL-PRICE',
+            'member_prices' => [
+                ['member_level_id' => 1, 'price' => 10000],
+                ['member_level_id' => 2, 'price' => 20000],
+                ['member_level_id' => 3, 'price' => 30000],
+            ],
+        ]);
+
+        $this->getJson('/api/v1/member/purchases/catalog/products?search=ALL-LEVEL-PRICE')
+            ->assertOk()
+            ->assertJsonCount(3, 'data.results.0.member_prices')
+            ->assertJsonPath('data.results.0.member_prices.0.member_level_code', 'DST')
+            ->assertJsonPath('data.results.0.member_prices.0.price', 10000)
+            ->assertJsonPath('data.results.0.member_prices.1.member_level_code', 'AGT')
+            ->assertJsonPath('data.results.0.member_prices.1.price', 20000)
+            ->assertJsonPath('data.results.0.member_prices.2.member_level_code', 'RSL')
+            ->assertJsonPath('data.results.0.member_prices.2.price', 30000);
+
+        $this->getJson("/api/v1/member/purchases/catalog/products/{$product->getKey()}")
+            ->assertOk()
+            ->assertJsonCount(3, 'data.member_prices')
+            ->assertJsonPath('data.member_prices.0.price', 10000)
+            ->assertJsonPath('data.member_prices.1.price', 20000)
+            ->assertJsonPath('data.member_prices.2.price', 30000);
     }
 
     public function test_catalog_can_be_filtered_and_validates_query_parameters(): void

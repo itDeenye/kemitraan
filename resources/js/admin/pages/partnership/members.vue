@@ -375,14 +375,15 @@ const headers = [
     {
         title: "Level",
         key: "level",
+        filterKey: "level_code",
         align: "center",
         type: "select",
         sortable: false,
         filter: true,
         options: [
-            { value: "distributor", label: "Distributor" },
-            { value: "agent", label: "Agen Utama" },
-            { value: "reseller", label: "Reseller" },
+            { value: "DST", label: "Distributor" },
+            { value: "AGT", label: "Agen Utama" },
+            { value: "RSL", label: "Reseller" },
         ],
         placeholder: "Pilih Level",
     },

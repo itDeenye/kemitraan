@@ -53,6 +53,12 @@ class AdminMemberDirectoryTest extends TestCase
             ->assertJsonPath('data.results.0.code', 'MEM-001')
             ->assertJsonPath('data.results.0.status.label', 'active');
 
+        $this->getJson('/api/v1/admin/partnership/members?filter[level]=agent')
+            ->assertOk()
+            ->assertJsonCount(1, 'data.results')
+            ->assertJsonPath('data.results.0.code', 'MEM-002')
+            ->assertJsonPath('data.results.0.level.code', 'AGT');
+
         $this->getJson('/api/v1/admin/partnership/members?limit=100')
             ->assertOk()
             ->assertJsonCount(2, 'data.results')

@@ -21,7 +21,7 @@ class MemberProductResource extends ApiResource
         $availableStock = max(0, (int) ($this->available_stock ?? 0));
         $directAvailableStock = max(0, (int) ($this->direct_available_stock ?? 0));
 
-        return [
+        $data = [
             'id' => $this->product_id,
             'code' => $this->resource instanceof Product ? $this->product_code : $this->code,
             'name' => $this->resource instanceof Product ? $this->product_name : $this->name,
@@ -46,6 +46,13 @@ class MemberProductResource extends ApiResource
             ],
             'category' => $this->categoryData(),
         ];
+
+        $memberPrices = $this->memberPrices();
+        if ($memberPrices !== null) {
+            $data['member_prices'] = $memberPrices;
+        }
+
+        return $data;
     }
 
     /** @return array{code: string, label: string} */
@@ -84,5 +91,15 @@ class MemberProductResource extends ApiResource
             'name' => $this->category_name,
             'description' => $this->category_description,
         ];
+    }
+
+    /** @return list<array<string, mixed>>|null */
+    private function memberPrices(): ?array
+    {
+        $prices = $this->resource instanceof Product
+            ? $this->resource->getAttribute('member_prices')
+            : ($this->resource->member_prices ?? null);
+
+        return $prices === null ? null : collect($prices)->values()->all();
     }
 }
