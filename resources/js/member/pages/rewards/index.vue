@@ -3,7 +3,7 @@
         <div class="card hero-balance">
             <div class="balance-top">
                 <div>
-                    <div class="soft-label">Reward bulanan</div>
+                    <div class="soft-label">Reward Bulanan</div>
                     <div class="money">
                         Rp{{
                             formatPrice(growthData?.summary.monthly_reward || 0)
@@ -21,7 +21,7 @@
         </div>
 
         <div class="section-heading mt-6">
-            <h3>Jenis reward</h3>
+            <h3>Jenis Reward</h3>
         </div>
         <div class="quick-grid">
             <button
@@ -67,7 +67,7 @@
         </div>
 
         <div class="section-heading mt-6">
-            <h3>Pertumbuhan reward</h3>
+            <h3>Pertumbuhan Reward</h3>
             <span v-if="!isLoading">{{
                 growthData?.period.range_label || "-"
             }}</span>

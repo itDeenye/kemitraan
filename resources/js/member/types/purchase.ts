@@ -46,6 +46,15 @@ export interface PurchaseCategory {
     description: string;
 }
 
+export interface PurchaseMemberPrice {
+    id?: number;
+    level?: string;
+    member_level_id?: number;
+    member_level_code?: string;
+    member_level_name?: string;
+    price: number;
+}
+
 export interface PurchaseProduct {
     id: number;
     code: string;
@@ -73,6 +82,7 @@ export interface PurchaseProduct {
         requires_preorder: boolean;
     };
     category: PurchaseCategory;
+    member_prices?: PurchaseMemberPrice[];
 }
 
 export interface PurchaseCheckoutBuyer {

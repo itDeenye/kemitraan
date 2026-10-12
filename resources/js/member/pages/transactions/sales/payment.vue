@@ -61,7 +61,11 @@
                     <strong>{{ shippingLabel }}</strong>
                 </div>
                 <div class="detail-row" v-if="order.seller?.origin">
-                    <span>{{ order.shipping?.method === "pickup" ? "Lokasi Pengambilan" : "Asal Barang" }}</span>
+                    <span>{{
+                        order.shipping?.method === "pickup"
+                            ? "Lokasi Pengambilan"
+                            : "Asal Barang"
+                    }}</span>
                     <strong>{{ order.seller.origin.name || "-" }}</strong>
                 </div>
                 <div
@@ -101,9 +105,25 @@
                         height="48"
                         cover
                         class="product-image"
-                    />
+                    >
+                        <template #error>
+                            <img
+                                src="/images/default-product.svg"
+                                alt="Default Product"
+                                style="
+                                    width: 100%;
+                                    height: 100%;
+                                    object-fit: cover;
+                                "
+                            />
+                        </template>
+                    </v-img>
                     <div v-else class="product-image product-placeholder">
-                        <v-icon icon="mdi-image-outline" size="22" />
+                        <img
+                            src="/images/default-product.svg"
+                            alt="Default Product"
+                            style="width: 100%; height: 100%; object-fit: cover"
+                        />
                     </div>
                     <div class="product-info min-w-0">
                         <strong class="text-[13px] text-[var(--text)] block">{{

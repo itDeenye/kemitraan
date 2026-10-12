@@ -79,7 +79,14 @@
                 >
                     <div
                         class="product-art"
-                        style="border: 1px solid #eaeaea; background: #fff"
+                        style="
+                            border: 1px solid #eaeaea;
+                            background: #fff;
+                            width: 100%;
+                            aspect-ratio: 1 / 1;
+                            height: auto;
+                            min-height: unset;
+                        "
                     >
                         <v-img
                             v-if="
@@ -87,14 +94,31 @@
                                 !product.image.includes('default')
                             "
                             :src="product.image"
-                            cover
-                        ></v-img>
-                        <v-icon
+                            aspect-ratio="1"
+                            style="width: 100%; height: 100%"
+                        >
+                            <template #error>
+                                <img
+                                    src="/images/default-product.svg"
+                                    alt="Default Product"
+                                    style="
+                                        width: 100%;
+                                        height: 100%;
+                                        object-fit: contain;
+                                    "
+                                />
+                            </template>
+                        </v-img>
+                        <img
                             v-else
-                            icon="mdi-image-outline"
-                            color="#ccc"
-                            size="32"
-                        ></v-icon>
+                            src="/images/default-product.svg"
+                            alt="Default Product"
+                            style="
+                                width: 100%;
+                                height: 100%;
+                                object-fit: contain;
+                            "
+                        />
                     </div>
                     <div
                         style="
@@ -118,6 +142,27 @@
                             >
                                 BPOM: {{ product.bpom_number || "-" }}
                             </p>
+                            <div
+                                v-if="
+                                    product.member_prices &&
+                                    product.member_prices.length
+                                "
+                                style="
+                                    margin-top: 4px;
+                                    font-size: 11px;
+                                    color: var(--muted);
+                                    line-height: 1.4;
+                                "
+                            >
+                                <div
+                                    v-for="mp in product.member_prices"
+                                    :key="mp.id ?? mp.member_level_id"
+                                >
+                                    Harga {{ mp.level || mp.member_level_name }}: Rp{{
+                                        formatPrice(mp.price)
+                                    }}
+                                </div>
+                            </div>
                         </div>
                         <v-btn
                             icon
@@ -146,18 +191,29 @@
                         <span
                             :class="{
                                 'available-label':
-                                    product.stock?.status?.code === 'available',
+                                    product.stock?.status?.code ===
+                                        'available' ||
+                                    (!product.stock?.status &&
+                                        product.stock?.available > 0),
                                 'low-stock-label':
                                     product.stock?.status?.code === 'low_stock',
                                 'po-label':
                                     product.stock?.status?.code === 'preorder',
+                                'out-of-stock-label':
+                                    product.stock?.status?.code ===
+                                        'out_of_stock' ||
+                                    (!product.stock?.status &&
+                                        product.stock?.available <= 0) ||
+                                    (product.stock?.available <= 0 &&
+                                        product.stock?.status?.code !==
+                                            'preorder'),
                             }"
                         >
                             {{
                                 product.stock?.status?.label ||
                                 (product.stock?.available > 0
                                     ? "Tersedia"
-                                    : "PO")
+                                    : "Habis")
                             }}
                         </span>
                         <span
@@ -305,7 +361,11 @@
             <div
                 v-if="isPreorderCart"
                 class="card mb-3 mt-3"
-                style="padding: 14px; background: #fff7ec; border-color: #ffe0ad"
+                style="
+                    padding: 14px;
+                    background: #fff7ec;
+                    border-color: #ffe0ad;
+                "
             >
                 <div style="display: flex; gap: 10px; align-items: flex-start">
                     <v-icon
@@ -315,12 +375,20 @@
                     />
                     <div>
                         <strong
-                            style="display: block; font-size: 14px; color: #9a5a00"
+                            style="
+                                display: block;
+                                font-size: 14px;
+                                color: #9a5a00;
+                            "
                         >
                             Pesanan PO (inden)
                         </strong>
                         <span
-                            style="font-size: 12px; color: #805000; line-height: 1.5"
+                            style="
+                                font-size: 12px;
+                                color: #805000;
+                                line-height: 1.5;
+                            "
                         >
                             Stok belum tersedia di penjual ini. Pesanan akan
                             disiapkan terlebih dahulu sebelum dikirim atau
@@ -348,13 +416,30 @@
                                 !item.product.image.includes('default')
                             "
                             :src="item.product.image"
-                        ></v-img>
-                        <v-icon
+                            style="width: 100%; height: 100%"
+                        >
+                            <template #error>
+                                <img
+                                    src="/images/default-product.svg"
+                                    alt="Default Product"
+                                    style="
+                                        width: 100%;
+                                        height: 100%;
+                                        object-fit: contain;
+                                    "
+                                />
+                            </template>
+                        </v-img>
+                        <img
                             v-else
-                            icon="mdi-image-outline"
-                            color="#ccc"
-                            size="24"
-                        ></v-icon>
+                            src="/images/default-product.svg"
+                            alt="Default Product"
+                            style="
+                                width: 100%;
+                                height: 100%;
+                                object-fit: contain;
+                            "
+                        />
                     </div>
                     <div class="checkout-copy" style="flex: 1">
                         <div
@@ -393,6 +478,27 @@
                             "
                         >
                             BPOM: {{ item.product.bpom_number || "-" }}
+                        </div>
+                        <div
+                            v-if="
+                                item.product.member_prices &&
+                                item.product.member_prices.length
+                            "
+                            style="
+                                font-size: 11px;
+                                color: var(--muted);
+                                margin-top: 2px;
+                                line-height: 1.4;
+                            "
+                        >
+                            <div
+                                v-for="mp in item.product.member_prices"
+                                :key="mp.id ?? mp.member_level_id"
+                            >
+                                Harga {{ mp.level || mp.member_level_name }}: Rp{{
+                                    formatPrice(mp.price)
+                                }}
+                            </div>
                         </div>
                         <div
                             style="
@@ -1262,18 +1368,36 @@ const loadCheckoutOptions = async () => {
 const getQuantity = (id: number) => cart.value[id] || 0;
 
 const canIncreaseProduct = (product: PurchaseProduct) => {
+    if (
+        product.stock?.status?.code === "out_of_stock" ||
+        (!product.stock?.status && (product.stock?.available ?? 0) <= 0)
+    ) {
+        return false;
+    }
+
     const availableStock = product.stock?.available || 0;
 
-    return availableStock === 0 || getQuantity(product.id) < availableStock;
+    return (
+        product.stock?.requires_preorder ||
+        product.stock?.status?.code === "preorder" ||
+        getQuantity(product.id) < availableStock
+    );
 };
 
 const updateQuantity = (id: number, delta: number) => {
     const product = products.value.find((item) => item.id === id);
     if (delta > 0 && product && !canIncreaseProduct(product)) {
-        snackbar.showMessage(
-            `Jumlah ${product.name} tidak boleh melebihi stok tersedia.`,
-            "error",
-        );
+        if (product.stock?.status?.code === "out_of_stock") {
+            snackbar.showMessage(
+                `Produk ${product.name} sedang habis dan tidak dapat dipesan.`,
+                "error",
+            );
+        } else {
+            snackbar.showMessage(
+                `Jumlah ${product.name} tidak boleh melebihi stok tersedia.`,
+                "error",
+            );
+        }
 
         return;
     }
@@ -1284,10 +1408,27 @@ const updateQuantity = (id: number, delta: number) => {
 };
 
 const setQuantity = (product: PurchaseProduct, value: number) => {
+    if (
+        product.stock?.status?.code === "out_of_stock" ||
+        (!product.stock?.status && (product.stock?.available ?? 0) <= 0)
+    ) {
+        cart.value[product.id] = 0;
+        snackbar.showMessage(
+            `Produk ${product.name} sedang habis dan tidak dapat dipesan.`,
+            "error",
+        );
+        return;
+    }
+
     const qty = Math.max(0, Math.floor(value) || 0);
     const availableStock = product.stock?.available || 0;
 
-    if (availableStock > 0 && qty > availableStock) {
+    if (
+        !product.stock?.requires_preorder &&
+        product.stock?.status?.code !== "preorder" &&
+        availableStock > 0 &&
+        qty > availableStock
+    ) {
         snackbar.showMessage(
             `Jumlah ${product.name} tidak boleh melebihi stok tersedia (${availableStock}).`,
             "error",

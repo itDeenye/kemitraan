@@ -1,7 +1,7 @@
 <template>
     <div class="screen-body">
         <div class="section-heading mt-4">
-            <h3>Pilih transaksi</h3>
+            <h3>Pilih Transaksi</h3>
         </div>
 
         <div class="card menu-list">
@@ -133,11 +133,11 @@
         </div>
 
         <div class="section-heading mt-4">
-            <h3>Transaksi terbaru</h3>
+            <h3>Transaksi Terbaru</h3>
             <a
                 @click="router.push('/member/transactions/orders')"
                 style="cursor: pointer"
-                >Lihat semua</a
+                >Lihat Semua</a
             >
         </div>
 

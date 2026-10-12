@@ -93,13 +93,13 @@
         </div>
 
         <div class="section-heading mt-6">
-            <h3>Akses cepat</h3>
+            <h3>Akses Cepat</h3>
             <button
                 class="section-link"
                 type="button"
                 @click="router.push('/member/menus')"
             >
-                Semua menu &rarr;
+                Semua Menu &rarr;
             </button>
         </div>
 
@@ -150,13 +150,13 @@
 
         <div v-if="isDistributorOrAgent" class="mb-8">
             <div class="section-heading">
-                <h3>Downline terbaru</h3>
+                <h3>Downline Terbaru</h3>
                 <button
                     class="section-link"
                     type="button"
                     @click="router.push('/member/network')"
                 >
-                    Lihat jaringan &rarr;
+                    Lihat Jaringan &rarr;
                 </button>
             </div>
             <div

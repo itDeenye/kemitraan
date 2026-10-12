@@ -34,6 +34,9 @@
             </button>
         </div>
 
+        <div class="menu-group-title">Digital Card Mitra</div>
+        <DigitalMemberCard :member="profileData?.member" />
+
         <div class="menu-group-title">Pengaturan akun</div>
         <div class="card menu-list">
             <div
@@ -142,6 +145,7 @@ import { useAuthStore } from "@/shared/stores/auth";
 import profileService from "@/member/services/profile.service";
 import type { MemberProfile } from "@/member/types/profile";
 import MobileConfirm from "@/member/components/MobileConfirm.vue";
+import DigitalMemberCard from "@/member/components/profile/DigitalMemberCard.vue";
 import { useSnackbarStore } from "@/shared/stores/snackbar";
 
 const router = useRouter();

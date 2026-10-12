@@ -196,6 +196,15 @@ export interface ProductCatalogCategory {
     name: string;
 }
 
+export interface SaleMemberPrice {
+    id?: number;
+    level?: string;
+    member_level_id?: number;
+    member_level_code?: string;
+    member_level_name?: string;
+    price: number;
+}
+
 export interface ProductCatalog {
     id: number;
     code: string;
@@ -203,10 +212,12 @@ export interface ProductCatalog {
     bpom_number: string;
     image: string | null;
     price: number;
+    customer_price: number;
     available_stock: number;
     weight_grams: number;
     unit: string;
     category: ProductCatalogCategory;
+    member_prices?: SaleMemberPrice[];
 }
 
 export interface SaleFormOptions {

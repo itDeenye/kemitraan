@@ -196,13 +196,29 @@
                                 v-if="item.product?.image_url"
                                 :src="item.product.image_url"
                                 cover
-                            ></v-img>
-                            <v-icon
+                            >
+                                <template #error>
+                                    <img
+                                        src="/images/default-product.svg"
+                                        alt="Default Product"
+                                        style="
+                                            width: 100%;
+                                            height: 100%;
+                                            object-fit: cover;
+                                        "
+                                    />
+                                </template>
+                            </v-img>
+                            <img
                                 v-else
-                                icon="mdi-image-outline"
-                                color="#ccc"
-                                size="24"
-                            ></v-icon>
+                                src="/images/default-product.svg"
+                                alt="Default Product"
+                                style="
+                                    width: 100%;
+                                    height: 100%;
+                                    object-fit: cover;
+                                "
+                            />
                         </div>
                         <div
                             class="flex-1 flex flex-col justify-center min-w-0 pr-2"

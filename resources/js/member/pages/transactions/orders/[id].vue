@@ -126,9 +126,7 @@
                             }}</strong>
                             <p
                                 class="text-[12px] text-[var(--muted)] m-0 leading-relaxed"
-                                v-html="
-                                    formatLocation(order.seller?.origin)
-                                "
+                                v-html="formatLocation(order.seller?.origin)"
                             ></p>
                             <div
                                 v-if="
@@ -293,13 +291,29 @@
                                 v-if="item.product?.image"
                                 :src="item.product.image"
                                 cover
-                            ></v-img>
-                            <v-icon
+                            >
+                                <template #error>
+                                    <img
+                                        src="/images/default-product.svg"
+                                        alt="Default Product"
+                                        style="
+                                            width: 100%;
+                                            height: 100%;
+                                            object-fit: cover;
+                                        "
+                                    />
+                                </template>
+                            </v-img>
+                            <img
                                 v-else
-                                icon="mdi-image-outline"
-                                color="#ccc"
-                                size="24"
-                            ></v-icon>
+                                src="/images/default-product.svg"
+                                alt="Default Product"
+                                style="
+                                    width: 100%;
+                                    height: 100%;
+                                    object-fit: cover;
+                                "
+                            />
                         </div>
                         <div
                             class="flex-1 flex flex-col justify-center min-w-0 pr-2"

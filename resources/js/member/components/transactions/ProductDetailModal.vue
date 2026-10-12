@@ -84,15 +84,27 @@
                                 !product.image.includes('default')
                             "
                             :src="product.image"
-                            cover
+                            aspect-ratio="1"
                             style="width: 100%; height: 100%"
-                        ></v-img>
-                        <v-icon
+                        >
+                            <template #error>
+                                <img
+                                    src="/images/default-product.svg"
+                                    alt="Default Product"
+                                    style="
+                                        width: 100%;
+                                        height: 100%;
+                                        object-fit: contain;
+                                    "
+                                />
+                            </template>
+                        </v-img>
+                        <img
                             v-else
-                            icon="mdi-image-outline"
-                            color="#ccc"
-                            size="64"
-                        ></v-icon>
+                            src="/images/default-product.svg"
+                            alt="Default Product"
+                            style="width: 100%; height: 100%; object-fit: contain"
+                        />
                     </div>
 
                     <h4
@@ -120,12 +132,33 @@
                         style="
                             font-size: 13px;
                             color: #666;
-                            margin-bottom: 12px;
+                            margin-bottom: 8px;
                             font-family: monospace;
                         "
                     >
-                        BPOM: {{ product.bpom_number }}
+                        BPOM: {{ product.bpom_number || "-" }}
                     </p>
+                    <div
+                        v-if="
+                            product.member_prices &&
+                            product.member_prices.length
+                        "
+                        style="
+                            font-size: 12px;
+                            color: #666;
+                            margin-bottom: 12px;
+                            line-height: 1.4;
+                        "
+                    >
+                        <div
+                            v-for="mp in product.member_prices"
+                            :key="mp.id ?? mp.member_level_id"
+                        >
+                            Harga {{ mp.level || mp.member_level_name }}: Rp{{
+                                formatPrice(mp.price)
+                            }}
+                        </div>
+                    </div>
 
                     <div
                         style="
@@ -146,25 +179,46 @@
                         <span
                             :class="{
                                 'available-label':
-                                    product.stock?.status?.code === 'available',
+                                    product.stock?.status?.code === 'available' ||
+                                    (!product.stock?.status &&
+                                        product.stock?.available > 0),
                                 'low-stock-label':
                                     product.stock?.status?.code === 'low_stock',
                                 'po-label':
                                     product.stock?.status?.code === 'preorder',
+                                'out-of-stock-label':
+                                    product.stock?.status?.code ===
+                                        'out_of_stock' ||
+                                    (!product.stock?.status &&
+                                        product.stock?.available <= 0) ||
+                                    (product.stock?.available <= 0 &&
+                                        product.stock?.status?.code !==
+                                            'preorder'),
                             }"
-                            style="
-                                font-size: 12px;
-                                padding: 2px 8px;
-                                border-radius: 12px;
-                                border: 1px solid currentColor;
-                            "
                         >
                             {{
                                 product.stock?.status?.label ||
                                 (product.stock?.available > 0
                                     ? "Tersedia"
-                                    : "PO")
+                                    : "Habis")
                             }}
+                        </span>
+                        <span
+                            v-if="product.is_package !== undefined"
+                            :style="{
+                                padding: '2px 8px',
+                                borderRadius: '4px',
+                                fontSize: '11px',
+                                fontWeight: '600',
+                                backgroundColor: product.is_package
+                                    ? '#e8f5e9'
+                                    : '#e3f2fd',
+                                color: product.is_package
+                                    ? '#2e7d32'
+                                    : '#1565c0',
+                            }"
+                        >
+                            {{ product.is_package ? "Paket" : "Ecer" }}
                         </span>
                     </div>
 
@@ -285,6 +339,26 @@
                         </table>
                     </div>
                 </div>
+            </div>
+
+            <!-- Footer -->
+            <div
+                style="
+                    padding: 12px 20px;
+                    border-top: 1px solid #eaeaea;
+                    display: flex;
+                    justify-content: flex-end;
+                    background: #fff;
+                "
+            >
+                <v-btn
+                    variant="tonal"
+                    color="var(--wine)"
+                    @click="close"
+                    style="font-weight: 600; text-transform: none; border-radius: 8px"
+                >
+                    Tutup
+                </v-btn>
             </div>
         </div>
     </v-dialog>

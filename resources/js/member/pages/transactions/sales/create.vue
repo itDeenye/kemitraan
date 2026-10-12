@@ -73,7 +73,14 @@
                 >
                     <div
                         class="product-art"
-                        style="border: 1px solid #eaeaea; background: #fff"
+                        style="
+                            border: 1px solid #eaeaea;
+                            background: #fff;
+                            width: 100%;
+                            aspect-ratio: 1 / 1;
+                            height: auto;
+                            min-height: unset;
+                        "
                     >
                         <v-img
                             v-if="
@@ -81,14 +88,31 @@
                                 !product.image.includes('default')
                             "
                             :src="product.image"
-                            cover
-                        ></v-img>
-                        <v-icon
+                            aspect-ratio="1"
+                            style="width: 100%; height: 100%"
+                        >
+                            <template #error>
+                                <img
+                                    src="/images/default-product.svg"
+                                    alt="Default Product"
+                                    style="
+                                        width: 100%;
+                                        height: 100%;
+                                        object-fit: contain;
+                                    "
+                                />
+                            </template>
+                        </v-img>
+                        <img
                             v-else
-                            icon="mdi-image-outline"
-                            color="#ccc"
-                            size="32"
-                        ></v-icon>
+                            src="/images/default-product.svg"
+                            alt="Default Product"
+                            style="
+                                width: 100%;
+                                height: 100%;
+                                object-fit: contain;
+                            "
+                        />
                     </div>
                     <h4>{{ product.name }}</h4>
                     <p>{{ product.code }}</p>
@@ -102,6 +126,27 @@
                     >
                         BPOM: {{ product.bpom_number }}
                     </p>
+                    <div
+                        v-if="
+                            product.member_prices &&
+                            product.member_prices.length
+                        "
+                        style="
+                            margin-top: 4px;
+                            font-size: 11px;
+                            color: var(--muted);
+                            line-height: 1.4;
+                        "
+                    >
+                        <div
+                            v-for="mp in product.member_prices"
+                            :key="mp.id ?? mp.member_level_id"
+                        >
+                            Harga {{ mp.level || mp.member_level_name }}: Rp{{
+                                formatPrice(mp.price)
+                            }}
+                        </div>
+                    </div>
                     <div class="catalog-stock">
                         <span
                             >Stok {{ product.available_stock || 0 }}
@@ -118,7 +163,7 @@
                     </div>
                     <div class="catalog-footer">
                         <span class="catalog-price"
-                            >Rp{{ formatPrice(product.price) }}</span
+                            >Rp{{ formatPrice(product.customer_price) }}</span
                         >
                         <div class="quantity-control">
                             <button
@@ -244,13 +289,30 @@
                                 !item.product.image.includes('default')
                             "
                             :src="item.product.image"
-                        ></v-img>
-                        <v-icon
+                            style="width: 100%; height: 100%"
+                        >
+                            <template #error>
+                                <img
+                                    src="/images/default-product.svg"
+                                    alt="Default Product"
+                                    style="
+                                        width: 100%;
+                                        height: 100%;
+                                        object-fit: contain;
+                                    "
+                                />
+                            </template>
+                        </v-img>
+                        <img
                             v-else
-                            icon="mdi-image-outline"
-                            color="#ccc"
-                            size="24"
-                        ></v-icon>
+                            src="/images/default-product.svg"
+                            alt="Default Product"
+                            style="
+                                width: 100%;
+                                height: 100%;
+                                object-fit: contain;
+                            "
+                        />
                     </div>
                     <div class="checkout-copy" style="flex: 1">
                         <div
@@ -272,6 +334,26 @@
                             "
                         >
                             BPOM: {{ item.product.bpom_number }}
+                        </div>
+                        <div
+                            v-if="
+                                item.product?.member_prices &&
+                                item.product.member_prices.length
+                            "
+                            style="
+                                font-size: 11px;
+                                color: var(--muted);
+                                margin-top: 2px;
+                                line-height: 1.4;
+                            "
+                        >
+                            <div
+                                v-for="mp in item.product.member_prices"
+                                :key="mp.id ?? mp.member_level_id"
+                            >
+                                Harga {{ mp.level || mp.member_level_name }}:
+                                Rp{{ formatPrice(mp.price) }}
+                            </div>
                         </div>
                         <div
                             style="
@@ -393,7 +475,8 @@
                                                             !!v ||
                                                             'Tanggal kedaluwarsa wajib diisi',
                                                         (v) =>
-                                                            v >= minExpiryDate ||
+                                                            v >=
+                                                                minExpiryDate ||
                                                             'Tanggal kedaluwarsa harus setelah hari ini',
                                                     ]"
                                                 />
@@ -1373,7 +1456,10 @@ const submitOrder = async () => {
     try {
         const res = await saleService.createOrder(payload as SaleOrderPayload);
         if (res.success) {
-            snackbar.showMessage("Pesanan POS berhasil diselesaikan.", "success");
+            snackbar.showMessage(
+                "Pesanan POS berhasil diselesaikan.",
+                "success",
+            );
             router.replace(
                 `/member/transactions/sales/${encodeRouteId(res.data.id)}`,
             );

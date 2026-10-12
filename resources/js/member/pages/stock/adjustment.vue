@@ -26,7 +26,7 @@
         </div>
 
         <div class="section-heading items-end justify-end">
-            <span>Total {{ pagination.total_data || 0 }} data</span>
+            <span>Total {{ pagination.total_data || 0 }} Data</span>
         </div>
 
         <div v-if="isLoading" class="card adjustment-state">

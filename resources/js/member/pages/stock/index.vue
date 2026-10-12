@@ -60,7 +60,7 @@
         </div>
 
         <div class="section-heading items-end justify-end">
-            <span>Total {{ pagination.total_data || 0 }} produk</span>
+            <span>Total {{ pagination.total_data || 0 }} Produk</span>
         </div>
 
         <div
@@ -236,7 +236,8 @@ async function fetchReturnActionCount() {
     try {
         const summary = await returnService.getActionSummary();
         returnActionCount.value =
-            Number(summary.eligible || 0) + Number(summary.action_required || 0);
+            Number(summary.eligible || 0) +
+            Number(summary.action_required || 0);
     } catch (error) {
         console.error("Failed to load return action count:", error);
     }

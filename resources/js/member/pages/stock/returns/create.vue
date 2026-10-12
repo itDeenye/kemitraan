@@ -145,12 +145,28 @@
                                 v-if="item.product_image"
                                 :src="item.product_image"
                                 cover
-                            />
-                            <v-icon
+                            >
+                                <template #error>
+                                    <img
+                                        src="/images/default-product.svg"
+                                        alt="Default Product"
+                                        style="
+                                            width: 100%;
+                                            height: 100%;
+                                            object-fit: cover;
+                                        "
+                                    />
+                                </template>
+                            </v-img>
+                            <img
                                 v-else
-                                icon="mdi-image-outline"
-                                color="#ccc"
-                                size="24"
+                                src="/images/default-product.svg"
+                                alt="Default Product"
+                                style="
+                                    width: 100%;
+                                    height: 100%;
+                                    object-fit: cover;
+                                "
                             />
                         </div>
 

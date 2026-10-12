@@ -66,11 +66,20 @@
                     </div>
                     <div class="flex justify-between items-center text-[13px]">
                         <span class="text-[var(--muted)]">Asal Barang</span>
-                        <strong class="text-[var(--text)] text-right max-w-[60%]">{{ receipt.seller?.name || "-" }}</strong>
+                        <strong
+                            class="text-[var(--text)] text-right max-w-[60%]"
+                            >{{ receipt.seller?.name || "-" }}</strong
+                        >
                     </div>
                     <div class="flex justify-between items-center text-[13px]">
-                        <span class="text-[var(--muted)]">Metode Pengiriman</span>
-                        <BaseBadge type="shipping_method" :value="receipt.shipping_method" inline />
+                        <span class="text-[var(--muted)]"
+                            >Metode Pengiriman</span
+                        >
+                        <BaseBadge
+                            type="shipping_method"
+                            :value="receipt.shipping_method"
+                            inline
+                        />
                     </div>
                     <div class="flex justify-between items-center text-[13px]">
                         <span class="text-[var(--muted)]">Status</span>
@@ -155,11 +164,20 @@
                     </div>
                     <div class="flex justify-between items-center text-[13px]">
                         <span class="text-[var(--muted)]">Asal Barang</span>
-                        <strong class="text-[var(--text)] text-right max-w-[60%]">{{ receipt.seller?.name || "-" }}</strong>
+                        <strong
+                            class="text-[var(--text)] text-right max-w-[60%]"
+                            >{{ receipt.seller?.name || "-" }}</strong
+                        >
                     </div>
                     <div class="flex justify-between items-center text-[13px]">
-                        <span class="text-[var(--muted)]">Metode Pengiriman</span>
-                        <BaseBadge type="shipping_method" :value="receipt.shipping_method" inline />
+                        <span class="text-[var(--muted)]"
+                            >Metode Pengiriman</span
+                        >
+                        <BaseBadge
+                            type="shipping_method"
+                            :value="receipt.shipping_method"
+                            inline
+                        />
                     </div>
                     <div class="flex justify-between items-center text-[13px]">
                         <span class="text-[var(--muted)]"
@@ -287,13 +305,29 @@
                                     v-if="item.image || item.product?.image"
                                     :src="item.image || item.product?.image"
                                     cover
-                                ></v-img>
-                                <v-icon
+                                >
+                                    <template #error>
+                                        <img
+                                            src="/images/default-product.svg"
+                                            alt="Default Product"
+                                            style="
+                                                width: 100%;
+                                                height: 100%;
+                                                object-fit: cover;
+                                            "
+                                        />
+                                    </template>
+                                </v-img>
+                                <img
                                     v-else
-                                    icon="mdi-image-outline"
-                                    color="#ccc"
-                                    size="24"
-                                ></v-icon>
+                                    src="/images/default-product.svg"
+                                    alt="Default Product"
+                                    style="
+                                        width: 100%;
+                                        height: 100%;
+                                        object-fit: cover;
+                                    "
+                                />
                             </div>
                             <div class="flex-1 flex flex-col justify-center">
                                 <strong

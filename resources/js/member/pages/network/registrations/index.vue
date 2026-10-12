@@ -97,7 +97,8 @@
                                     class="mb-2"
                                 />
                                 <div class="soft-label mt-[-4px] mb-2">
-                                    Kosongkan agar Reseller langsung di bawah Distributor, atau pilih Agen Utama tujuan.
+                                    Kosongkan agar Reseller langsung di bawah
+                                    Distributor, atau pilih Agen Utama tujuan.
                                 </div>
                             </v-col>
                         </v-row>
@@ -184,19 +185,6 @@
                     </div>
                     <div class="card" style="padding: 16px">
                         <v-row dense>
-                            <v-col cols="12">
-                                <v-textarea
-                                    v-model="form.address"
-                                    label="Alamat Lengkap *"
-                                    placeholder="Masukkan nama jalan, nomor, rt/rw..."
-                                    rows="2"
-                                    variant="outlined"
-                                    density="compact"
-                                    :rules="[required('Alamat Lengkap')]"
-                                    :error-messages="errors.address"
-                                    class="mb-2"
-                                />
-                            </v-col>
                             <v-col cols="12" md="6">
                                 <v-autocomplete
                                     v-model="form.province_id"
@@ -264,6 +252,19 @@
                                     :disabled="!form.district_id"
                                     :rules="[required('Kelurahan/Desa')]"
                                     :error-messages="errors.subdistrict_id"
+                                    class="mb-2"
+                                />
+                            </v-col>
+                            <v-col cols="12">
+                                <v-textarea
+                                    v-model="form.address"
+                                    label="Alamat Detail *"
+                                    placeholder="Masukkan nama jalan, nomor, rt/rw..."
+                                    rows="2"
+                                    variant="outlined"
+                                    density="compact"
+                                    :rules="[required('Alamat Detail')]"
+                                    :error-messages="errors.address"
                                     class="mb-2"
                                 />
                             </v-col>
