@@ -306,6 +306,7 @@ class MemberSalesService
             "{$productTable}.product_code as code",
             "{$productTable}.product_name as name",
             "{$productTable}.product_image as image",
+            "{$productTable}.product_customer_price as customer_price",
             "{$productTable}.product_weight as weight",
             "{$productTable}.product_unit as unit",
         ])
@@ -329,18 +330,16 @@ class MemberSalesService
             ->defaultSort('name')
             ->get($params);
 
-        if (in_array($member->level?->member_level_code, ['DST', 'AGT'], true)) {
-            $this->attachDownlineLevelPrices(
-                $catalog['results'],
-                (int) $member->level?->member_level_sort_order,
-            );
-        }
+        $this->attachVisibleLevelPrices(
+            $catalog['results'],
+            (int) $member->level?->member_level_sort_order,
+        );
 
         return $catalog;
     }
 
     /** @param Collection<int, object> $products */
-    private function attachDownlineLevelPrices(Collection $products, int $currentSortOrder): void
+    private function attachVisibleLevelPrices(Collection $products, int $currentSortOrder): void
     {
         $prices = ProductPrice::query()
             ->with('level')
@@ -352,15 +351,19 @@ class MemberSalesService
             $product->member_prices = $prices
                 ->get($product->id, collect())
                 ->filter(fn (ProductPrice $price): bool => (bool) $price->level?->member_level_is_active
-                    && (int) $price->level?->member_level_sort_order > $currentSortOrder)
+                    && (int) $price->level?->member_level_sort_order >= $currentSortOrder)
                 ->sortBy(fn (ProductPrice $price): int => (int) $price->level?->member_level_sort_order)
                 ->map(fn (ProductPrice $price): array => [
-                    'member_level_id' => (int) $price->product_price_member_level_id,
-                    'member_level_code' => (string) $price->level?->member_level_code,
-                    'member_level_name' => (string) $price->level?->member_level_name,
+                    'id' => (int) $price->product_price_member_level_id,
+                    'level' => (string) $price->level?->member_level_name,
                     'price' => (int) $price->product_price_value,
                 ])
                 ->values()
+                ->push([
+                    'id' => null,
+                    'level' => 'Customer',
+                    'price' => (int) $product->customer_price,
+                ])
                 ->all();
         }
     }

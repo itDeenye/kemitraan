@@ -70,7 +70,19 @@ class MemberCatalogTest extends TestCase
             ->assertJsonPath('data.results.0.category.name', 'Skincare')
             ->assertJsonPath('data.pagination.total_data', 1)
             ->assertJsonMissingPath('data.results.0.product_agent_price')
-            ->assertJsonMissingPath('data.results.0.member_prices');
+            ->assertJsonCount(3, 'data.results.0.member_prices')
+            ->assertJsonPath('data.results.0.member_prices.0', ['id' => 2, 'level' => 'Agen Utama', 'price' => 150000])
+            ->assertJsonPath('data.results.0.member_prices.1', ['id' => 3, 'level' => 'Reseller', 'price' => 170000])
+            ->assertJsonPath('data.results.0.member_prices.2', ['id' => null, 'level' => 'Customer', 'price' => 200000]);
+
+        $this->getJson("/api/v1/member/purchases/catalog/products/{$available->getKey()}")
+            ->assertOk()
+            ->assertJsonPath('data.price', 150000)
+            ->assertJsonPath('data.customer_price', 200000)
+            ->assertJsonCount(3, 'data.member_prices')
+            ->assertJsonPath('data.member_prices.0', ['id' => 2, 'level' => 'Agen Utama', 'price' => 150000])
+            ->assertJsonPath('data.member_prices.1', ['id' => 3, 'level' => 'Reseller', 'price' => 170000])
+            ->assertJsonPath('data.member_prices.2', ['id' => null, 'level' => 'Customer', 'price' => 200000]);
 
         $this->getJson('/api/v1/member/purchases/catalog/products?pagination=false')
             ->assertOk()
@@ -78,7 +90,7 @@ class MemberCatalogTest extends TestCase
             ->assertJsonMissingPath('data.pagination');
     }
 
-    public function test_distributor_catalog_exposes_all_member_level_prices(): void
+    public function test_distributor_catalog_exposes_own_downline_and_customer_prices(): void
     {
         $this->actingAs($this->createMemberAccount('distributor'), 'member_api');
 
@@ -94,20 +106,23 @@ class MemberCatalogTest extends TestCase
 
         $this->getJson('/api/v1/member/purchases/catalog/products?search=ALL-LEVEL-PRICE')
             ->assertOk()
-            ->assertJsonCount(3, 'data.results.0.member_prices')
-            ->assertJsonPath('data.results.0.member_prices.0.member_level_code', 'DST')
-            ->assertJsonPath('data.results.0.member_prices.0.price', 10000)
-            ->assertJsonPath('data.results.0.member_prices.1.member_level_code', 'AGT')
-            ->assertJsonPath('data.results.0.member_prices.1.price', 20000)
-            ->assertJsonPath('data.results.0.member_prices.2.member_level_code', 'RSL')
-            ->assertJsonPath('data.results.0.member_prices.2.price', 30000);
+            ->assertJsonPath('data.results.0.price', 10000)
+            ->assertJsonPath('data.results.0.customer_price', 200000)
+            ->assertJsonCount(4, 'data.results.0.member_prices')
+            ->assertJsonPath('data.results.0.member_prices.0', ['id' => 1, 'level' => 'Distributor', 'price' => 10000])
+            ->assertJsonPath('data.results.0.member_prices.1', ['id' => 2, 'level' => 'Agen Utama', 'price' => 20000])
+            ->assertJsonPath('data.results.0.member_prices.2', ['id' => 3, 'level' => 'Reseller', 'price' => 30000])
+            ->assertJsonPath('data.results.0.member_prices.3', ['id' => null, 'level' => 'Customer', 'price' => 200000]);
 
         $this->getJson("/api/v1/member/purchases/catalog/products/{$product->getKey()}")
             ->assertOk()
-            ->assertJsonCount(3, 'data.member_prices')
-            ->assertJsonPath('data.member_prices.0.price', 10000)
-            ->assertJsonPath('data.member_prices.1.price', 20000)
-            ->assertJsonPath('data.member_prices.2.price', 30000);
+            ->assertJsonPath('data.price', 10000)
+            ->assertJsonPath('data.customer_price', 200000)
+            ->assertJsonCount(4, 'data.member_prices')
+            ->assertJsonPath('data.member_prices.0', ['id' => 1, 'level' => 'Distributor', 'price' => 10000])
+            ->assertJsonPath('data.member_prices.1', ['id' => 2, 'level' => 'Agen Utama', 'price' => 20000])
+            ->assertJsonPath('data.member_prices.2', ['id' => 3, 'level' => 'Reseller', 'price' => 30000])
+            ->assertJsonPath('data.member_prices.3', ['id' => null, 'level' => 'Customer', 'price' => 200000]);
     }
 
     public function test_catalog_can_be_filtered_and_validates_query_parameters(): void
@@ -129,6 +144,11 @@ class MemberCatalogTest extends TestCase
             ->assertOk()
             ->assertJsonCount(1, 'data.results')
             ->assertJsonPath('data.results.0.code', 'SERUM-01')
+            ->assertJsonPath('data.results.0.price', 170000)
+            ->assertJsonPath('data.results.0.customer_price', 200000)
+            ->assertJsonCount(2, 'data.results.0.member_prices')
+            ->assertJsonPath('data.results.0.member_prices.0', ['id' => 3, 'level' => 'Reseller', 'price' => 170000])
+            ->assertJsonPath('data.results.0.member_prices.1', ['id' => null, 'level' => 'Customer', 'price' => 200000])
             ->assertJsonPath('data.pagination.current', 1);
 
         $this->getJson('/api/v1/member/purchases/catalog/products?name[eq]=Brightening%20Serum')

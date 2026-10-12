@@ -229,7 +229,7 @@ class MemberSalesAndShippingWorkflowTest extends TestCase
 
     }
 
-    public function test_distributor_pos_catalog_uses_own_price_and_exposes_downline_prices(): void
+    public function test_distributor_pos_catalog_exposes_own_downline_and_customer_prices(): void
     {
         [$account, $product] = $this->salesData();
         $this->actingAs($account, 'member_api');
@@ -245,14 +245,14 @@ class MemberSalesAndShippingWorkflowTest extends TestCase
         $this->getJson('/api/v1/member/sales/catalog/products')
             ->assertOk()
             ->assertJsonPath('data.results.0.price', 10000)
-            ->assertJsonCount(2, 'data.results.0.member_prices')
-            ->assertJsonPath('data.results.0.member_prices.0.member_level_code', 'AGT')
-            ->assertJsonPath('data.results.0.member_prices.0.price', 20000)
-            ->assertJsonPath('data.results.0.member_prices.1.member_level_code', 'RSL')
-            ->assertJsonPath('data.results.0.member_prices.1.price', 30000);
+            ->assertJsonCount(4, 'data.results.0.member_prices')
+            ->assertJsonPath('data.results.0.member_prices.0', ['id' => 1, 'level' => 'Distributor', 'price' => 10000])
+            ->assertJsonPath('data.results.0.member_prices.1', ['id' => 2, 'level' => 'Agen Utama', 'price' => 20000])
+            ->assertJsonPath('data.results.0.member_prices.2', ['id' => 3, 'level' => 'Reseller', 'price' => 30000])
+            ->assertJsonPath('data.results.0.member_prices.3', ['id' => null, 'level' => 'Customer', 'price' => 100000]);
     }
 
-    public function test_agent_pos_catalog_uses_own_price_and_exposes_reseller_price(): void
+    public function test_agent_pos_catalog_exposes_own_reseller_and_customer_prices(): void
     {
         [$account, $product] = $this->salesData();
         Member::query()->whereKey(1)->update([
@@ -274,12 +274,13 @@ class MemberSalesAndShippingWorkflowTest extends TestCase
         $this->getJson('/api/v1/member/sales/catalog/products')
             ->assertOk()
             ->assertJsonPath('data.results.0.price', 20000)
-            ->assertJsonCount(1, 'data.results.0.member_prices')
-            ->assertJsonPath('data.results.0.member_prices.0.member_level_code', 'RSL')
-            ->assertJsonPath('data.results.0.member_prices.0.price', 30000);
+            ->assertJsonCount(3, 'data.results.0.member_prices')
+            ->assertJsonPath('data.results.0.member_prices.0', ['id' => 2, 'level' => 'Agen Utama', 'price' => 20000])
+            ->assertJsonPath('data.results.0.member_prices.1', ['id' => 3, 'level' => 'Reseller', 'price' => 30000])
+            ->assertJsonPath('data.results.0.member_prices.2', ['id' => null, 'level' => 'Customer', 'price' => 100000]);
     }
 
-    public function test_reseller_pos_catalog_only_uses_own_price(): void
+    public function test_reseller_pos_catalog_exposes_own_and_customer_prices(): void
     {
         [$account, $product] = $this->salesData();
         Member::query()->whereKey(1)->update([
@@ -301,7 +302,9 @@ class MemberSalesAndShippingWorkflowTest extends TestCase
         $this->getJson('/api/v1/member/sales/catalog/products')
             ->assertOk()
             ->assertJsonPath('data.results.0.price', 30000)
-            ->assertJsonMissingPath('data.results.0.member_prices');
+            ->assertJsonCount(2, 'data.results.0.member_prices')
+            ->assertJsonPath('data.results.0.member_prices.0', ['id' => 3, 'level' => 'Reseller', 'price' => 30000])
+            ->assertJsonPath('data.results.0.member_prices.1', ['id' => null, 'level' => 'Customer', 'price' => 100000]);
     }
 
     public function test_cash_pickup_pos_completes_with_batch_and_expiry_in_single_checkout(): void

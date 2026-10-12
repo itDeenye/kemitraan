@@ -57,9 +57,10 @@ class MemberCatalogService
             ->defaultSort('-id')
             ->get($params);
 
-        if ($this->memberLevelCode($account) === 'DST') {
-            $this->attachAllLevelPrices($catalog['results']);
-        }
+        $this->attachVisibleLevelPrices(
+            $catalog['results'],
+            $this->memberLevelSortOrder($account),
+        );
 
         return $catalog;
     }
@@ -85,12 +86,14 @@ class MemberCatalogService
             ->firstWhere('product_price_member_level_id', $levelId)
             ?->product_price_value;
         $catalogProduct->setAttribute('catalog_price', $price ?? $catalogProduct->product_customer_price);
-        if ($this->memberLevelCode($account) === 'DST') {
-            $catalogProduct->setAttribute(
-                'member_prices',
-                $this->formatLevelPrices($catalogProduct->levelPrices),
-            );
-        }
+        $catalogProduct->setAttribute(
+            'member_prices',
+            $this->formatLevelPrices(
+                $catalogProduct->levelPrices,
+                $this->memberLevelSortOrder($account),
+                (int) $catalogProduct->product_customer_price,
+            ),
+        );
         $stock = $this->sellerStockQuery($account, [
             'warehouse_id' => $warehouseId,
             'product_id' => $catalogProduct->getKey(),
@@ -108,15 +111,15 @@ class MemberCatalogService
         return (int) ($account->member?->member_member_level_id ?? 0);
     }
 
-    private function memberLevelCode(MemberAccount $account): string
+    private function memberLevelSortOrder(MemberAccount $account): int
     {
         $account->loadMissing('member.level');
 
-        return (string) ($account->member?->level?->member_level_code ?? '');
+        return (int) ($account->member?->level?->member_level_sort_order ?? 0);
     }
 
     /** @param Collection<int, object> $products */
-    private function attachAllLevelPrices(Collection $products): void
+    private function attachVisibleLevelPrices(Collection $products, int $currentSortOrder): void
     {
         $prices = ProductPrice::query()
             ->with('level')
@@ -127,26 +130,32 @@ class MemberCatalogService
         foreach ($products as $product) {
             $product->member_prices = $this->formatLevelPrices(
                 $prices->get($product->product_id, collect()),
+                $currentSortOrder,
+                (int) $product->product_customer_price,
             );
         }
     }
 
     /**
      * @param  Collection<int, ProductPrice>  $prices
-     * @return list<array{member_level_id: int, member_level_code: string, member_level_name: string, price: int}>
+     * @return list<array{id: int|null, level: string, price: int}>
      */
-    private function formatLevelPrices(Collection $prices): array
-    {
+    private function formatLevelPrices(
+        Collection $prices,
+        int $currentSortOrder,
+        int $customerPrice,
+    ): array {
         return $prices
-            ->filter(fn (ProductPrice $price): bool => (bool) $price->level?->member_level_is_active)
+            ->filter(fn (ProductPrice $price): bool => (bool) $price->level?->member_level_is_active
+                && (int) $price->level?->member_level_sort_order >= $currentSortOrder)
             ->sortBy(fn (ProductPrice $price): int => (int) $price->level?->member_level_sort_order)
             ->map(fn (ProductPrice $price): array => [
-                'member_level_id' => (int) $price->product_price_member_level_id,
-                'member_level_code' => (string) $price->level?->member_level_code,
-                'member_level_name' => (string) $price->level?->member_level_name,
+                'id' => (int) $price->product_price_member_level_id,
+                'level' => (string) $price->level?->member_level_name,
                 'price' => (int) $price->product_price_value,
             ])
             ->values()
+            ->push(['id' => null, 'level' => 'Customer', 'price' => $customerPrice])
             ->all();
     }
 

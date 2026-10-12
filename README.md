@@ -52,7 +52,7 @@ Password sementara untuk member yang dibuat melalui approval registrasi atau pen
 
 - `local`, `development`, dan `testing`: memakai `DNY_DEVELOPMENT_APPROVAL_PASSWORD`;
 - `staging` dan `production`: memakai tanggal lahir member dalam format `DDMMYYYY`.
-
+21112001
 ### 3. Atur database
 
 Untuk setup lokal paling sederhana, gunakan SQLite:
