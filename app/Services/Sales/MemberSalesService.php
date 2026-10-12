@@ -306,10 +306,13 @@ class MemberSalesService
             "{$productTable}.product_code as code",
             "{$productTable}.product_name as name",
             "{$productTable}.product_image as image",
-            "{$productTable}.product_customer_price as price",
             "{$productTable}.product_weight as weight",
             "{$productTable}.product_unit as unit",
         ])
+            ->selectRaw(
+                "COALESCE((SELECT product_price_value FROM product_price WHERE product_price_product_id = {$productTable}.product_id AND product_price_member_level_id = ? LIMIT 1), {$productTable}.product_customer_price) as price",
+                [(int) $member->member_member_level_id],
+            )
             ->selectRaw(
                 "{$stockTable}.member_stock_balance as available_stock"
             )
@@ -326,15 +329,18 @@ class MemberSalesService
             ->defaultSort('name')
             ->get($params);
 
-        if ($member->level?->member_level_code === 'DST') {
-            $this->attachAllLevelPrices($catalog['results']);
+        if (in_array($member->level?->member_level_code, ['DST', 'AGT'], true)) {
+            $this->attachDownlineLevelPrices(
+                $catalog['results'],
+                (int) $member->level?->member_level_sort_order,
+            );
         }
 
         return $catalog;
     }
 
     /** @param Collection<int, object> $products */
-    private function attachAllLevelPrices(Collection $products): void
+    private function attachDownlineLevelPrices(Collection $products, int $currentSortOrder): void
     {
         $prices = ProductPrice::query()
             ->with('level')
@@ -345,7 +351,8 @@ class MemberSalesService
         foreach ($products as $product) {
             $product->member_prices = $prices
                 ->get($product->id, collect())
-                ->filter(fn (ProductPrice $price): bool => (bool) $price->level?->member_level_is_active)
+                ->filter(fn (ProductPrice $price): bool => (bool) $price->level?->member_level_is_active
+                    && (int) $price->level?->member_level_sort_order > $currentSortOrder)
                 ->sortBy(fn (ProductPrice $price): int => (int) $price->level?->member_level_sort_order)
                 ->map(fn (ProductPrice $price): array => [
                     'member_level_id' => (int) $price->product_price_member_level_id,
