@@ -305,6 +305,7 @@ class MemberSalesService
             "{$categoryTable}.product_category_name as category_name",
             "{$productTable}.product_code as code",
             "{$productTable}.product_name as name",
+            "{$productTable}.product_bpom_number as bpom_number",
             "{$productTable}.product_image as image",
             "{$productTable}.product_customer_price as customer_price",
             "{$productTable}.product_weight as weight",
@@ -361,11 +362,6 @@ class MemberSalesService
                     'price' => (int) $price->product_price_value,
                 ])
                 ->values()
-                ->push([
-                    'id' => 4,
-                    'level' => 'Customer',
-                    'price' => (int) $product->customer_price,
-                ])
                 ->all();
         }
     }
