@@ -138,7 +138,7 @@ class MemberCatalogService
 
     /**
      * @param  Collection<int, ProductPrice>  $prices
-     * @return list<array{id: int|null, level: string, price: int}>
+     * @return list<array{id: int, level: string, price: int}>
      */
     private function formatLevelPrices(
         Collection $prices,
@@ -151,11 +151,13 @@ class MemberCatalogService
             ->sortBy(fn (ProductPrice $price): int => (int) $price->level?->member_level_sort_order)
             ->map(fn (ProductPrice $price): array => [
                 'id' => (int) $price->product_price_member_level_id,
-                'level' => (string) $price->level?->member_level_name,
+                'level' => $price->level?->member_level_code === 'AGT'
+                    ? 'Agen Utama'
+                    : (string) $price->level?->member_level_name,
                 'price' => (int) $price->product_price_value,
             ])
             ->values()
-            ->push(['id' => null, 'level' => 'Customer', 'price' => $customerPrice])
+            ->push(['id' => 4, 'level' => 'Customer', 'price' => $customerPrice])
             ->all();
     }
 

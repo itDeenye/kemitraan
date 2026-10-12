@@ -73,7 +73,7 @@ class MemberCatalogTest extends TestCase
             ->assertJsonCount(3, 'data.results.0.member_prices')
             ->assertJsonPath('data.results.0.member_prices.0', ['id' => 2, 'level' => 'Agen Utama', 'price' => 150000])
             ->assertJsonPath('data.results.0.member_prices.1', ['id' => 3, 'level' => 'Reseller', 'price' => 170000])
-            ->assertJsonPath('data.results.0.member_prices.2', ['id' => null, 'level' => 'Customer', 'price' => 200000]);
+            ->assertJsonPath('data.results.0.member_prices.2', ['id' => 4, 'level' => 'Customer', 'price' => 200000]);
 
         $this->getJson("/api/v1/member/purchases/catalog/products/{$available->getKey()}")
             ->assertOk()
@@ -82,7 +82,7 @@ class MemberCatalogTest extends TestCase
             ->assertJsonCount(3, 'data.member_prices')
             ->assertJsonPath('data.member_prices.0', ['id' => 2, 'level' => 'Agen Utama', 'price' => 150000])
             ->assertJsonPath('data.member_prices.1', ['id' => 3, 'level' => 'Reseller', 'price' => 170000])
-            ->assertJsonPath('data.member_prices.2', ['id' => null, 'level' => 'Customer', 'price' => 200000]);
+            ->assertJsonPath('data.member_prices.2', ['id' => 4, 'level' => 'Customer', 'price' => 200000]);
 
         $this->getJson('/api/v1/member/purchases/catalog/products?pagination=false')
             ->assertOk()
@@ -93,6 +93,9 @@ class MemberCatalogTest extends TestCase
     public function test_distributor_catalog_exposes_own_downline_and_customer_prices(): void
     {
         $this->actingAs($this->createMemberAccount('distributor'), 'member_api');
+        DB::table('member_level')->where('member_level_code', 'AGT')->update([
+            'member_level_name' => 'Agent',
+        ]);
 
         $category = $this->createCategory('Distributor Catalog');
         $product = $this->createProduct($category, [
@@ -112,7 +115,7 @@ class MemberCatalogTest extends TestCase
             ->assertJsonPath('data.results.0.member_prices.0', ['id' => 1, 'level' => 'Distributor', 'price' => 10000])
             ->assertJsonPath('data.results.0.member_prices.1', ['id' => 2, 'level' => 'Agen Utama', 'price' => 20000])
             ->assertJsonPath('data.results.0.member_prices.2', ['id' => 3, 'level' => 'Reseller', 'price' => 30000])
-            ->assertJsonPath('data.results.0.member_prices.3', ['id' => null, 'level' => 'Customer', 'price' => 200000]);
+            ->assertJsonPath('data.results.0.member_prices.3', ['id' => 4, 'level' => 'Customer', 'price' => 200000]);
 
         $this->getJson("/api/v1/member/purchases/catalog/products/{$product->getKey()}")
             ->assertOk()
@@ -122,7 +125,7 @@ class MemberCatalogTest extends TestCase
             ->assertJsonPath('data.member_prices.0', ['id' => 1, 'level' => 'Distributor', 'price' => 10000])
             ->assertJsonPath('data.member_prices.1', ['id' => 2, 'level' => 'Agen Utama', 'price' => 20000])
             ->assertJsonPath('data.member_prices.2', ['id' => 3, 'level' => 'Reseller', 'price' => 30000])
-            ->assertJsonPath('data.member_prices.3', ['id' => null, 'level' => 'Customer', 'price' => 200000]);
+            ->assertJsonPath('data.member_prices.3', ['id' => 4, 'level' => 'Customer', 'price' => 200000]);
     }
 
     public function test_catalog_can_be_filtered_and_validates_query_parameters(): void
@@ -148,7 +151,7 @@ class MemberCatalogTest extends TestCase
             ->assertJsonPath('data.results.0.customer_price', 200000)
             ->assertJsonCount(2, 'data.results.0.member_prices')
             ->assertJsonPath('data.results.0.member_prices.0', ['id' => 3, 'level' => 'Reseller', 'price' => 170000])
-            ->assertJsonPath('data.results.0.member_prices.1', ['id' => null, 'level' => 'Customer', 'price' => 200000])
+            ->assertJsonPath('data.results.0.member_prices.1', ['id' => 4, 'level' => 'Customer', 'price' => 200000])
             ->assertJsonPath('data.pagination.current', 1);
 
         $this->getJson('/api/v1/member/purchases/catalog/products?name[eq]=Brightening%20Serum')

@@ -355,12 +355,14 @@ class MemberSalesService
                 ->sortBy(fn (ProductPrice $price): int => (int) $price->level?->member_level_sort_order)
                 ->map(fn (ProductPrice $price): array => [
                     'id' => (int) $price->product_price_member_level_id,
-                    'level' => (string) $price->level?->member_level_name,
+                    'level' => $price->level?->member_level_code === 'AGT'
+                        ? 'Agen Utama'
+                        : (string) $price->level?->member_level_name,
                     'price' => (int) $price->product_price_value,
                 ])
                 ->values()
                 ->push([
-                    'id' => null,
+                    'id' => 4,
                     'level' => 'Customer',
                     'price' => (int) $product->customer_price,
                 ])
