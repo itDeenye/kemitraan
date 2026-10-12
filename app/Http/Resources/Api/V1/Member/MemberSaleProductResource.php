@@ -11,7 +11,7 @@ class MemberSaleProductResource extends ApiResource
     /** @return array<string, mixed> */
     public function toArray(Request $request): array
     {
-        return [
+        $data = [
             'id' => (int) $this->resource->id,
             'code' => $this->resource->code,
             'name' => $this->resource->name,
@@ -25,5 +25,11 @@ class MemberSaleProductResource extends ApiResource
                 'name' => $this->resource->category_name,
             ],
         ];
+
+        if (isset($this->resource->member_prices)) {
+            $data['member_prices'] = collect($this->resource->member_prices)->values()->all();
+        }
+
+        return $data;
     }
 }

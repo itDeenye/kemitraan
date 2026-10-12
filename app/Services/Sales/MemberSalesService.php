@@ -11,6 +11,7 @@ use App\Models\MemberBankAccount;
 use App\Models\MemberStock;
 use App\Models\Product;
 use App\Models\ProductCategory;
+use App\Models\ProductPrice;
 use App\Models\RefBank;
 use App\Models\RefCity;
 use App\Models\RefDistrict;
@@ -298,7 +299,7 @@ class MemberSalesService
         $productTable = (new Product)->getTable();
         $categoryTable = (new ProductCategory)->getTable();
 
-        return DataTable::select([
+        $catalog = DataTable::select([
             "{$productTable}.product_id as id",
             "{$productTable}.product_product_category_id as category_id",
             "{$categoryTable}.product_category_name as category_name",
@@ -324,6 +325,37 @@ class MemberSalesService
             ->search(['code', 'name', 'category_name'])
             ->defaultSort('name')
             ->get($params);
+
+        if ($member->level?->member_level_code === 'DST') {
+            $this->attachAllLevelPrices($catalog['results']);
+        }
+
+        return $catalog;
+    }
+
+    /** @param Collection<int, object> $products */
+    private function attachAllLevelPrices(Collection $products): void
+    {
+        $prices = ProductPrice::query()
+            ->with('level')
+            ->whereIn('product_price_product_id', $products->pluck('id')->all())
+            ->get()
+            ->groupBy('product_price_product_id');
+
+        foreach ($products as $product) {
+            $product->member_prices = $prices
+                ->get($product->id, collect())
+                ->filter(fn (ProductPrice $price): bool => (bool) $price->level?->member_level_is_active)
+                ->sortBy(fn (ProductPrice $price): int => (int) $price->level?->member_level_sort_order)
+                ->map(fn (ProductPrice $price): array => [
+                    'member_level_id' => (int) $price->product_price_member_level_id,
+                    'member_level_code' => (string) $price->level?->member_level_code,
+                    'member_level_name' => (string) $price->level?->member_level_name,
+                    'price' => (int) $price->product_price_value,
+                ])
+                ->values()
+                ->all();
+        }
     }
 
     /** @return array<string, mixed> */

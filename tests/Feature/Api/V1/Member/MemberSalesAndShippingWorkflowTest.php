@@ -12,6 +12,7 @@ use App\Models\MemberGroup;
 use App\Models\MemberStock;
 use App\Models\Product;
 use App\Models\ProductCategory;
+use App\Models\ProductPrice;
 use App\Models\Trx;
 use App\Models\Warehouse;
 use App\Models\WarehouseStock;
@@ -226,6 +227,31 @@ class MemberSalesAndShippingWorkflowTest extends TestCase
             ->assertJsonPath('data.results.0.name', 'Serum DNY')
             ->assertJsonPath('data.results.0.available_stock', 5);
 
+    }
+
+    public function test_distributor_pos_catalog_exposes_all_member_level_prices_as_reference(): void
+    {
+        [$account, $product] = $this->salesData();
+        $this->actingAs($account, 'member_api');
+
+        foreach ([1 => 10000, 2 => 20000, 3 => 30000] as $levelId => $price) {
+            ProductPrice::query()->create([
+                'product_price_product_id' => $product->getKey(),
+                'product_price_member_level_id' => $levelId,
+                'product_price_value' => $price,
+            ]);
+        }
+
+        $this->getJson('/api/v1/member/sales/catalog/products')
+            ->assertOk()
+            ->assertJsonPath('data.results.0.price', 100000)
+            ->assertJsonCount(3, 'data.results.0.member_prices')
+            ->assertJsonPath('data.results.0.member_prices.0.member_level_code', 'DST')
+            ->assertJsonPath('data.results.0.member_prices.0.price', 10000)
+            ->assertJsonPath('data.results.0.member_prices.1.member_level_code', 'AGT')
+            ->assertJsonPath('data.results.0.member_prices.1.price', 20000)
+            ->assertJsonPath('data.results.0.member_prices.2.member_level_code', 'RSL')
+            ->assertJsonPath('data.results.0.member_prices.2.price', 30000);
     }
 
     public function test_cash_pickup_pos_completes_with_batch_and_expiry_in_single_checkout(): void
