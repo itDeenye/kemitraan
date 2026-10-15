@@ -65,36 +65,33 @@
 
                     <!-- Overlay Data Member -->
                     <div class="card-overlay-content">
-                        <!-- Tingkat Kemitraan -->
-                        <div class="member-level-text">
-                            {{ cardConfig.levelTitle }}
+                        <div
+                            class="member-details"
+                            :class="{ 'without-photo': !hasMemberImage }"
+                        >
+                            <!-- Tingkat Kemitraan -->
+                            <div class="member-level-text">
+                                {{ cardConfig.levelTitle }}
+                            </div>
+
+                            <!-- Nama Member -->
+                            <div class="member-name-text">
+                                {{ member?.name || "Nama Mitra" }}
+                            </div>
+
+                            <!-- Kode Member -->
+                            <div class="member-code-text">
+                                {{ member?.code || "0000 0000 0000" }}
+                            </div>
                         </div>
 
-                        <!-- Nama Member -->
-                        <div class="member-name-text">
-                            {{ member?.name || "Nama Mitra" }}
-                        </div>
-
-                        <!-- Kode Member -->
-                        <div class="member-code-text">
-                            {{ member?.code || "0000 0000 0000" }}
-                        </div>
-
-                        <!-- Foto Profil Circle -->
-                        <div class="member-photo-frame">
+                        <!-- Foto profil hanya ditampilkan jika tersedia -->
+                        <div v-if="hasMemberImage" class="member-photo-frame">
                             <img
-                                v-if="member?.image"
-                                :src="member.image"
-                                :alt="member?.name"
+                                :src="member?.image || ''"
+                                :alt="member?.name || 'Foto profil mitra'"
                                 class="member-avatar-img"
                             />
-                            <div v-else class="member-avatar-placeholder">
-                                <v-icon
-                                    icon="mdi-account"
-                                    size="36"
-                                    color="#888"
-                                />
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -129,6 +126,7 @@ const props = defineProps<{
 const snackbar = useSnackbarStore();
 const currentSide = ref<"front" | "back">("front");
 const isDownloading = ref(false);
+const hasMemberImage = computed(() => Boolean(props.member?.image?.trim()));
 
 const toggleSide = () => {
     currentSide.value = currentSide.value === "front" ? "back" : "front";
@@ -186,6 +184,35 @@ const loadImage = (src: string): Promise<HTMLImageElement> => {
     });
 };
 
+const wrapCanvasText = (
+    ctx: CanvasRenderingContext2D,
+    text: string,
+    maxWidth: number,
+): string[] => {
+    return text
+        .trim()
+        .split(/\s+/)
+        .reduce<string[]>((lines, word) => {
+            const currentLine = lines.at(-1);
+
+            if (!currentLine) {
+                lines.push(word);
+
+                return lines;
+            }
+
+            const nextLine = `${currentLine} ${word}`;
+
+            if (ctx.measureText(nextLine).width <= maxWidth) {
+                lines[lines.length - 1] = nextLine;
+            } else {
+                lines.push(word);
+            }
+
+            return lines;
+        }, []);
+};
+
 /**
  * Render sisi depan ke Canvas resolusi asli (1004 x 638)
  */
@@ -206,37 +233,55 @@ const renderFrontCanvas = async (): Promise<HTMLCanvasElement> => {
 
     // 2. Gambar teks Level (Serif bold Burgundy)
     ctx.font =
-        "bold 46px 'Playfair Display', 'Times New Roman', Georgia, serif";
+        "bold 68px 'Playfair Display', 'Times New Roman', Georgia, serif";
     ctx.fillStyle = "#8a242b";
     ctx.textBaseline = "middle";
-    ctx.fillText(cardConfig.value.levelTitle, 93, 382);
+    ctx.fillText(cardConfig.value.levelTitle, 93, 394);
 
     // 3. Gambar teks Nama Member
-    ctx.font =
-        "bold 32px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
     ctx.fillStyle = "#222222";
     const memberName = props.member?.name || "Nama Mitra";
-    ctx.fillText(memberName, 93, 452);
+    let memberNameFontSize = 40;
+    let memberNameLines: string[] = [];
+    const memberNameMaxWidth = hasMemberImage.value ? 560 : 810;
+
+    do {
+        ctx.font = `bold ${memberNameFontSize}px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`;
+        memberNameLines = wrapCanvasText(ctx, memberName, memberNameMaxWidth);
+        memberNameFontSize -= 1;
+    } while (memberNameLines.length > 2 && memberNameFontSize >= 30);
+
+    const renderedMemberNameFontSize = memberNameFontSize + 1;
+    const memberNameLineHeight = renderedMemberNameFontSize * 1.08;
+    const memberNameStartY = 473;
+
+    memberNameLines.forEach((line, index) => {
+        ctx.fillText(line, 93, memberNameStartY + index * memberNameLineHeight);
+    });
 
     // 4. Gambar teks Kode Member
     ctx.font =
-        "bold 32px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+        "bold 40px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
     ctx.fillStyle = "#222222";
     const memberCode = props.member?.code || "0000 0000 0000";
-    ctx.fillText(memberCode, 93, 516);
+    const memberCodeY =
+        memberNameStartY +
+        (memberNameLines.length - 1) * memberNameLineHeight +
+        57;
+    ctx.fillText(memberCode, 93, memberCodeY);
 
-    // 5. Gambar foto profil di dalam lingkaran (cx: 832.5, cy: 439.5, radius: 125)
-    const cx = 832.5;
-    const cy = 439.5;
-    const r = 125;
+    // 5. Gambar foto profil hanya jika URL tersedia.
+    if (hasMemberImage.value && props.member?.image) {
+        const cx = 832.5;
+        const cy = 439.5;
+        const r = 125;
 
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.closePath();
-    ctx.clip();
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.closePath();
+        ctx.clip();
 
-    if (props.member?.image) {
         try {
             const avatarImg = await loadImage(props.member.image);
             // Gambar dengan aspect ratio cover
@@ -256,28 +301,11 @@ const renderFrontCanvas = async (): Promise<HTMLCanvasElement> => {
 
             ctx.drawImage(avatarImg, drawX, drawY, drawW, drawH);
         } catch (e) {
-            // Fallback avatar background jika CORS atau gagal muat
-            ctx.fillStyle = "#e0e0e0";
-            ctx.fill();
-            ctx.font = "bold 72px sans-serif";
-            ctx.fillStyle = "#888888";
-            ctx.textAlign = "center";
-            ctx.fillText(
-                memberName.charAt(0).toUpperCase() || "M",
-                cx,
-                cy + 24,
-            );
+            console.error("Gagal memuat foto profil pada Digital Card:", e);
+        } finally {
+            ctx.restore();
         }
-    } else {
-        // Fallback default avatar
-        ctx.fillStyle = "#f0f0f0";
-        ctx.fill();
-        ctx.font = "bold 72px sans-serif";
-        ctx.fillStyle = "#8a242b";
-        ctx.textAlign = "center";
-        ctx.fillText(memberName.charAt(0).toUpperCase() || "M", cx, cy + 24);
     }
-    ctx.restore();
 
     return canvas;
 };
@@ -447,7 +475,9 @@ const downloadPdf = async () => {
 <style scoped>
 .digital-card-container {
     margin-bottom: 24px;
+    margin-inline: auto;
     width: 100%;
+    max-width: 560px;
 }
 
 .card-action-bar {
@@ -512,6 +542,7 @@ const downloadPdf = async () => {
 .card-scene {
     perspective: 1000px;
     width: 100%;
+    container-type: inline-size;
     cursor: pointer;
     user-select: none;
 }
@@ -555,7 +586,7 @@ const downloadPdf = async () => {
 .card-bg-img {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: fill;
     display: block;
     pointer-events: none;
 }
@@ -567,48 +598,50 @@ const downloadPdf = async () => {
     pointer-events: none;
 }
 
-.member-level-text {
+.member-details {
     position: absolute;
     left: 9.3%;
-    top: 59.8%;
-    transform: translateY(-50%);
+    top: 52.4%;
+    width: 58%;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1.4cqw;
+}
+
+.member-details.without-photo {
+    width: 80.7%;
+}
+
+.member-level-text {
     font-family: "Playfair Display", "Times New Roman", Georgia, serif;
-    font-size: clamp(14px, 4.5vw, 25px);
+    font-size: 6.8cqw;
     font-weight: 700;
     color: #8a242b;
-    line-height: 1.1;
-    letter-spacing: -0.2px;
+    line-height: 1;
+    letter-spacing: -0.02em;
 }
 
 .member-name-text {
-    position: absolute;
-    left: 9.3%;
-    top: 70.8%;
-    transform: translateY(-50%);
     font-family:
         -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    font-size: clamp(11px, 3.2vw, 18px);
+    font-size: 4cqw;
     font-weight: 700;
     color: #1e1e1e;
-    line-height: 1.1;
-    max-width: 58%;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    line-height: 1.08;
+    width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .member-code-text {
-    position: absolute;
-    left: 9.3%;
-    top: 80.8%;
-    transform: translateY(-50%);
     font-family:
         -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    font-size: clamp(11px, 3.2vw, 18px);
+    font-size: 4cqw;
     font-weight: 700;
     color: #1e1e1e;
-    line-height: 1.1;
-    letter-spacing: 0.5px;
+    line-height: 1.08;
+    letter-spacing: 0.02em;
 }
 
 /* Photo Circle Frame */
@@ -634,15 +667,6 @@ const downloadPdf = async () => {
     height: 100%;
     object-fit: cover;
     display: block;
-}
-
-.member-avatar-placeholder {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: #f4f4f4;
 }
 
 .card-hint {

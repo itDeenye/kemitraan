@@ -20,6 +20,14 @@ class CategoryService {
         await api.put(`/admin/product/categories/${id}`, payload);
     }
 
+    async moveCategoryUp(id: number): Promise<void> {
+        await api.patch(`/admin/product/categories/${id}/move-up`);
+    }
+
+    async moveCategoryDown(id: number): Promise<void> {
+        await api.patch(`/admin/product/categories/${id}/move-down`);
+    }
+
     async deleteCategory(id: number): Promise<void> {
         await api.delete(`/admin/product/categories/${id}`);
     }

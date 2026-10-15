@@ -232,6 +232,7 @@ class MemberSalesAndShippingWorkflowTest extends TestCase
     public function test_distributor_pos_catalog_exposes_member_prices_and_customer_price_separately(): void
     {
         [$account, $product] = $this->salesData();
+        $product->update(['product_monthly_points' => 0, 'product_annual_points' => 8]);
         $this->actingAs($account, 'member_api');
         DB::table('member_level')->where('member_level_code', 'AGT')->update([
             'member_level_name' => 'Agent',
@@ -249,11 +250,51 @@ class MemberSalesAndShippingWorkflowTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.results.0.price', 10000)
             ->assertJsonPath('data.results.0.customer_price', 100000)
+            ->assertJsonPath('data.results.0.monthly_points', 0)
+            ->assertJsonPath('data.results.0.annual_points', 8)
             ->assertJsonPath('data.results.0.bpom_number', 'NA18250100003')
             ->assertJsonCount(3, 'data.results.0.member_prices')
             ->assertJsonPath('data.results.0.member_prices.0', ['id' => 1, 'level' => 'Distributor', 'price' => 10000])
             ->assertJsonPath('data.results.0.member_prices.1', ['id' => 2, 'level' => 'Agen Utama', 'price' => 20000])
             ->assertJsonPath('data.results.0.member_prices.2', ['id' => 3, 'level' => 'Reseller', 'price' => 30000]);
+    }
+
+    public function test_pos_catalog_products_follow_category_order(): void
+    {
+        [$account, $laterProduct] = $this->salesData();
+        $this->actingAs($account, 'member_api');
+        $laterProduct->category->update(['product_category_sort_order' => 2]);
+        $firstCategory = ProductCategory::query()->create([
+            'product_category_name' => 'Kategori Pertama',
+            'product_category_description' => '',
+            'product_category_is_active' => 1,
+            'product_category_sort_order' => 1,
+        ]);
+        $firstProduct = Product::query()->create([
+            'product_product_category_id' => $firstCategory->getKey(),
+            'product_code' => 'FIRST-POS',
+            'product_name' => 'Produk POS Pertama',
+            'product_bpom_number' => 'NA18250100004',
+            'product_image' => '',
+            'product_customer_price' => 120000,
+            'product_weight' => 100,
+            'product_unit' => 'pcs',
+            'product_is_publish' => 1,
+            'product_is_active' => 1,
+            'product_is_deleted' => 0,
+        ]);
+        MemberStock::query()->create([
+            'member_stock_member_id' => 1,
+            'member_stock_product_id' => $firstProduct->getKey(),
+            'member_stock_balance' => 1,
+            'member_stock_transfer_in' => 0,
+            'member_stock_transfer_out' => 0,
+        ]);
+
+        $this->getJson('/api/v1/member/sales/catalog/products?pagination=false')
+            ->assertOk()
+            ->assertJsonPath('data.results.0.id', $firstProduct->getKey())
+            ->assertJsonPath('data.results.1.id', $laterProduct->getKey());
     }
 
     public function test_agent_pos_catalog_exposes_own_reseller_and_customer_prices(): void

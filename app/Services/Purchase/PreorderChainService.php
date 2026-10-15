@@ -592,10 +592,17 @@ class PreorderChainService
             $productTotal = collect($details)->sum(
                 fn (array $detail): int => $detail['trx_detail_nett_price'] * $detail['trx_detail_qty'],
             );
-            $shippingMethod = $seller['type'] === 'warehouse'
-                && $source->trx_shipping_method !== 'pickup'
+            $root = $this->ordersToRoot($source)->last();
+            $terminalSeller = $root ? $this->terminalReservationSeller($root) : null;
+            $isUplineTransit = $root?->trx_preorder_fulfillment_mode === 'upline_transit';
+            $isTerminalSeller = $terminalSeller !== null
+                && $terminalSeller['type'] === $seller['type']
+                && (int) $terminalSeller['id'] === (int) $seller['id'];
+            $shippingMethod = $isUplineTransit && $isTerminalSeller
+                ? ($seller['type'] === 'warehouse' ? 'courier_express' : 'courier_manual')
+                : ($seller['type'] === 'warehouse' && $source->trx_shipping_method !== 'pickup'
                     ? 'courier_express'
-                    : $source->trx_shipping_method;
+                    : $source->trx_shipping_method);
             $shippingCost = (int) $source->trx_shipping_cost;
             $billAmount = $productTotal + $shippingCost;
             $bank = $this->paymentDestination($seller);
@@ -640,6 +647,7 @@ class PreorderChainService
 
             $next->details()->createMany($details);
             $next->load('details');
+            $next->recalculatePointTotals();
             // Terminal source stock is reserved when the root PO is created.
             if ($next->trx_seller_type !== 'warehouse') {
                 $this->stockAllocationService->reserve($next);
@@ -817,6 +825,13 @@ class PreorderChainService
             return;
         }
 
+        // Pada PO ambil di tempat berantai, pengiriman fisik hanya berakhir di
+        // upline langsung. Root baru siap diserahkan setelah upline mengonfirmasi
+        // barang tiba; callback/ship terminal tidak boleh menyelesaikan root.
+        if ($root->trx_preorder_fulfillment_mode === 'upline_transit') {
+            return;
+        }
+
         if ($finalOrder->trx_shipping_method === 'courier_express') {
             $finalShipping = $finalOrder->loadMissing('shippingExpress.details')->shippingExpress;
             if (! $finalShipping) {
@@ -939,6 +954,122 @@ class PreorderChainService
                 'trx_status' => $finalOrder->trx_status,
                 'trx_status_datetime' => now(),
             ]);
+    }
+
+    public function confirmUplineArrival(Trx $rootOrder): Trx
+    {
+        $root = Trx::query()->lockForUpdate()->findOrFail($rootOrder->getKey());
+        if (! $root->trx_is_preorder
+            || $root->trx_preorder_fulfillment_mode !== 'upline_transit'
+            || (int) $root->trx_parent_trx_id !== 0
+            || $root->trx_shipping_method !== 'pickup') {
+            throw new ProcessException('Pesanan ini tidak menggunakan transit pengambilan di upline.');
+        }
+
+        if (in_array($root->trx_status, ['ready_to_pickup', 'received', 'completed'], true)) {
+            return $root;
+        }
+
+        $chain = $this->loadCompleteChain($root)->preorderChain;
+        /** @var Trx|null $terminal */
+        $terminal = $chain->last();
+        if (! $terminal || $terminal->getKey() === $root->getKey()) {
+            throw new ProcessException('Pesanan sumber stok belum tersedia.');
+        }
+        if (! $this->canConfirmUplineArrival($terminal)) {
+            throw new ProcessException('Pengiriman dari sumber stok belum dapat dikonfirmasi tiba.');
+        }
+
+        $pickup = $root->loadMissing('shippingPickup.latestStatus')->shippingPickup;
+        if (! $pickup) {
+            throw new ProcessException('Data pengambilan pada pesanan awal tidak ditemukan.');
+        }
+
+        if ($terminal->trx_shipping_method === 'courier_express') {
+            $shipping = $terminal->loadMissing('shippingExpress.details')->shippingExpress;
+            if (! $shipping) {
+                throw new ProcessException('Data pengiriman express dari sumber stok tidak ditemukan.');
+            }
+            $pickup->update([
+                'shipping_pickup_schedule_datetime' => $shipping->shipping_courier_express_schedule_datetime,
+                'shipping_pickup_delivery_note_number' => $shipping->shipping_courier_express_delivery_note_number,
+            ]);
+            $this->copyShippingDetails(
+                'courier_express',
+                $shipping->getKey(),
+                $pickup->getKey(),
+                'pickup',
+            );
+        } elseif ($terminal->trx_shipping_method === 'courier_manual') {
+            $shipping = $terminal->loadMissing('shippingManual.details')->shippingManual;
+            if (! $shipping) {
+                throw new ProcessException('Data pengiriman manual dari sumber stok tidak ditemukan.');
+            }
+            $pickup->update([
+                'shipping_pickup_delivery_note_number' => $shipping->shipping_courier_manual_delivery_note_number,
+            ]);
+            $this->copyShippingDetails(
+                'courier_manual',
+                $shipping->getKey(),
+                $pickup->getKey(),
+                'pickup',
+            );
+        } else {
+            throw new ProcessException('Metode pengiriman sumber stok tidak mendukung transit upline.');
+        }
+
+        ShippingPickupStatus::query()->create([
+            'shipping_pickup_status_shipping_pickup_id' => $pickup->getKey(),
+            'shipping_pickup_status_ref_type' => 'trx',
+            'shipping_pickup_status_ref_id' => $root->getKey(),
+            'shipping_pickup_status_value' => 'ready_to_pickup',
+            'shipping_pickup_status_datetime' => now(),
+        ]);
+        $root->update(['trx_status' => 'ready_to_pickup', 'trx_status_datetime' => now()]);
+
+        return Trx::query()->findOrFail($root->getKey());
+    }
+
+    public function rootOrder(Trx $order): Trx
+    {
+        return $this->ordersToRoot($order)->last() ?? $order;
+    }
+
+    public function canConfirmUplineArrival(Trx $terminal): bool
+    {
+        if ($terminal->trx_shipping_method === 'courier_manual') {
+            return in_array($terminal->trx_status, ['shipped', 'received', 'completed'], true);
+        }
+
+        return $terminal->trx_shipping_method === 'courier_express'
+            && in_array($terminal->trx_status, ['received', 'completed'], true)
+            && in_array(
+                $terminal->shippingExpress?->latestStatus?->shipping_courier_express_status_value,
+                ['finished_packages', 'completed'],
+                true,
+            );
+    }
+
+    public function uplineArrivalConditionSql(string $alias): string
+    {
+        return "(({$alias}.trx_shipping_method = 'courier_manual'
+                AND {$alias}.trx_status IN ('shipped', 'received', 'completed'))
+            OR ({$alias}.trx_shipping_method = 'courier_express'
+                AND {$alias}.trx_status IN ('received', 'completed')
+                AND (SELECT arrival_status.shipping_courier_express_status_value
+                    FROM shipping_courier_express arrival_shipping
+                    INNER JOIN shipping_courier_express_status arrival_status
+                        ON arrival_status.shipping_courier_express_status_shipping_courier_express_id
+                            = arrival_shipping.shipping_courier_express_id
+                    WHERE arrival_shipping.shipping_courier_express_ref_type = 'trx'
+                        AND arrival_shipping.shipping_courier_express_ref_id = {$alias}.trx_id
+                    ORDER BY arrival_status.shipping_courier_express_status_id DESC LIMIT 1)
+                    IN ('finished_packages', 'completed')))";
+    }
+
+    public function isUplineTransitOrder(Trx $order): bool
+    {
+        return $this->rootOrder($order)->trx_preorder_fulfillment_mode === 'upline_transit';
     }
 
     public function markChainCompleted(Trx $rootOrder): void
@@ -1099,6 +1230,8 @@ class PreorderChainService
                 'trx_detail_product_bpom_number' => $sourceDetail->trx_detail_product_bpom_number
                     ?: $product?->product_bpom_number,
                 'trx_detail_product_price' => $price,
+                'trx_detail_product_monthly_points' => $sourceDetail->trx_detail_product_monthly_points,
+                'trx_detail_product_annual_points' => $sourceDetail->trx_detail_product_annual_points,
                 'trx_detail_product_weight' => $sourceDetail->trx_detail_product_weight,
                 'trx_detail_product_length' => $sourceDetail->trx_detail_product_length,
                 'trx_detail_product_height' => $sourceDetail->trx_detail_product_height,
@@ -1211,6 +1344,20 @@ class PreorderChainService
         Member|Warehouse $seller,
         string $shippingMethod,
     ): void {
+        $root = $this->ordersToRoot($source)->last();
+        if ($root?->trx_preorder_fulfillment_mode === 'upline_transit') {
+            $terminalSeller = $this->terminalReservationSeller($root);
+            if ($terminalSeller === null
+                || $terminalSeller['type'] !== $next->trx_seller_type
+                || (int) $terminalSeller['id'] !== (int) $next->trx_seller_id) {
+                return;
+            }
+
+            $this->createUplineTransitShipping($root, $next, $seller);
+
+            return;
+        }
+
         if ($shippingMethod === 'courier_express') {
             $this->copyAsExpressShipping($source, $next, $seller);
 
@@ -1264,6 +1411,152 @@ class PreorderChainService
             'shipping_pickup_status_value' => 'pending',
             'shipping_pickup_status_datetime' => now(),
         ]);
+    }
+
+    private function createUplineTransitShipping(
+        Trx $root,
+        Trx $terminal,
+        Member|Warehouse $seller,
+    ): void {
+        $origin = $this->location($seller);
+        $destination = $this->uplinePickupLocation($root);
+        $package = $this->transactionPackage($terminal);
+
+        if ($terminal->trx_seller_type === 'warehouse') {
+            ShippingCourierExpress::query()->create([
+                'shipping_courier_express_ref_type' => 'trx',
+                'shipping_courier_express_ref_id' => $terminal->getKey(),
+                'shipping_courier_express_type' => '',
+                'shipping_courier_express_expedition_name' => '',
+                'shipping_courier_express_expedition_service' => '',
+                'shipping_courier_express_etd' => '',
+                'shipping_courier_express_order_id' => '',
+                'shipping_courier_express_pickup_method' => 'PICKUP',
+                'shipping_courier_express_pickup_number' => '',
+                'shipping_courier_express_schedule_datetime' => null,
+                'shipping_courier_express_awb' => null,
+                'shipping_courier_express_cost' => 0,
+                'shipping_courier_express_insurance_is_force' => 0,
+                'shipping_courier_express_insurance' => 0,
+                'shipping_courier_express_package_weight' => $package['weight'],
+                'shipping_courier_express_package_length' => $package['length'],
+                'shipping_courier_express_package_width' => $package['width'],
+                'shipping_courier_express_package_height' => $package['height'],
+                ...$this->regionalShippingFields('shipping_courier_express', $origin, $destination),
+            ]);
+
+            return;
+        }
+
+        ShippingCourierManual::query()->create([
+            'shipping_courier_manual_ref_type' => 'trx',
+            'shipping_courier_manual_ref_id' => $terminal->getKey(),
+            'shipping_courier_manual_name' => '',
+            'shipping_courier_manual_service' => '',
+            'shipping_courier_manual_type' => '',
+            'shipping_courier_manual_awb' => null,
+            'shipping_courier_manual_price' => 0,
+            'shipping_courier_manual_insurance' => 0,
+            'shipping_courier_manual_package_weight' => $package['weight'],
+            'shipping_courier_manual_package_dimension' => "{$package['length']}x{$package['width']}x{$package['height']}",
+            ...$this->regionalShippingFields('shipping_courier_manual', $origin, $destination),
+        ]);
+    }
+
+    /** @return array{weight: int, length: int, width: int, height: int} */
+    private function transactionPackage(Trx $trx): array
+    {
+        $trx->loadMissing('details');
+
+        return [
+            'weight' => (int) $trx->details->sum(
+                fn (TrxDetail $detail): int => (int) $detail->trx_detail_product_weight
+                    * (int) $detail->trx_detail_qty,
+            ),
+            'length' => (int) $trx->details->max('trx_detail_product_length'),
+            'width' => (int) $trx->details->max('trx_detail_product_width'),
+            'height' => (int) $trx->details->sum(
+                fn (TrxDetail $detail): int => (int) $detail->trx_detail_product_height
+                    * (int) $detail->trx_detail_qty,
+            ),
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function uplinePickupLocation(Trx $root): array
+    {
+        if (! in_array($root->trx_seller_type, ['distributor', 'agent', 'reseller'], true)) {
+            throw new ProcessException('Upline lokasi pengambilan PO tidak ditemukan.');
+        }
+
+        $member = Member::query()->whereKey($root->trx_seller_id)->firstOrFail();
+        $address = MemberAddress::query()
+            ->where('member_address_member_id', $member->getKey())
+            ->orderByDesc('member_address_is_default')
+            ->orderBy('member_address_id')
+            ->first();
+        if (! $address) {
+            throw new ProcessException('Alamat upline lokasi pengambilan PO tidak ditemukan.');
+        }
+
+        return $this->memberAddressLocation($member, $address);
+    }
+
+    /** @return array<string, mixed> */
+    private function memberAddressLocation(Member $member, MemberAddress $address): array
+    {
+        $subdistrict = RefSubdistrict::query()
+            ->where('subdistrict_id', $address->member_address_subdistrict_id)
+            ->first();
+
+        return [
+            'name' => (string) ($address->member_address_recipient ?: $member->member_name),
+            'phone' => (string) ($address->member_address_phone ?: $member->member_mobilephone),
+            'address' => (string) $address->member_address_full,
+            'subdistrict_id' => (int) $address->member_address_subdistrict_id,
+            'subdistrict_name' => (string) ($subdistrict?->subdistrict_name ?? ''),
+            'district_name' => (string) (RefDistrict::query()
+                ->where('district_id', $address->member_address_district_id)
+                ->value('district_name') ?? ''),
+            'city_name' => (string) (RefCity::query()
+                ->where('city_id', $address->member_address_city_id)
+                ->value('city_name') ?? ''),
+            'province_name' => (string) (RefProvince::query()
+                ->where('province_id', $address->member_address_province_id)
+                ->value('province_name') ?? ''),
+            'zipcode' => $subdistrict?->subdistrict_zip_code === null
+                ? null
+                : Str::substr((string) $subdistrict->subdistrict_zip_code, 0, 5),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $origin
+     * @param  array<string, mixed>  $destination
+     * @return array<string, mixed>
+     */
+    private function regionalShippingFields(string $prefix, array $origin, array $destination): array
+    {
+        return [
+            "{$prefix}_origin_name" => Str::substr((string) $origin['name'], 0, 50),
+            "{$prefix}_origin_phone" => Str::substr((string) $origin['phone'], 0, 16),
+            "{$prefix}_origin_address" => $origin['address'],
+            "{$prefix}_origin_subdistrict_id" => (int) $origin['subdistrict_id'],
+            "{$prefix}_origin_subdistrict_name" => Str::substr((string) $origin['subdistrict_name'], 0, 50),
+            "{$prefix}_origin_district_name" => Str::substr((string) $origin['district_name'], 0, 50),
+            "{$prefix}_origin_city_name" => Str::substr((string) $origin['city_name'], 0, 50),
+            "{$prefix}_origin_province_name" => Str::substr((string) $origin['province_name'], 0, 50),
+            "{$prefix}_origin_zipcode" => $origin['zipcode'],
+            "{$prefix}_destination_name" => Str::substr((string) $destination['name'], 0, 50),
+            "{$prefix}_destination_phone" => Str::substr((string) $destination['phone'], 0, 16),
+            "{$prefix}_destination_address" => $destination['address'],
+            "{$prefix}_destination_subdistrict_id" => (int) $destination['subdistrict_id'],
+            "{$prefix}_destination_subdistrict_name" => Str::substr((string) $destination['subdistrict_name'], 0, 50),
+            "{$prefix}_destination_district_name" => Str::substr((string) $destination['district_name'], 0, 50),
+            "{$prefix}_destination_city_name" => Str::substr((string) $destination['city_name'], 0, 50),
+            "{$prefix}_destination_province_name" => Str::substr((string) $destination['province_name'], 0, 50),
+            "{$prefix}_destination_zipcode" => $destination['zipcode'],
+        ];
     }
 
     private function copyAsExpressShipping(Trx $source, Trx $next, Member|Warehouse $seller): void
@@ -1536,6 +1829,17 @@ class PreorderChainService
     private function location(Member|Warehouse $seller): array
     {
         $isWarehouse = $seller instanceof Warehouse;
+        if (! $isWarehouse) {
+            $address = MemberAddress::query()
+                ->where('member_address_member_id', $seller->getKey())
+                ->orderByDesc('member_address_is_default')
+                ->orderBy('member_address_id')
+                ->first();
+            if ($address) {
+                return $this->memberAddressLocation($seller, $address);
+            }
+        }
+
         $subdistrictId = (int) ($isWarehouse
             ? $seller->warehouse_subdistrict_id
             : $seller->member_subdistrict_id);

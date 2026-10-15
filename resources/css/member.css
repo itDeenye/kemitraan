@@ -1195,8 +1195,24 @@ button.quick-item {
 }
 .row-side {
     text-align: right;
-    font-size: 12px;
+    font-size: 15px;
     font-weight: 800;
+}
+
+.navigation-chevron {
+    display: inline-flex;
+    flex: 0 0 auto;
+    color: #6f6265;
+    vertical-align: middle;
+    transition:
+        color 0.2s ease,
+        transform 0.2s ease;
+}
+
+.flow-link:hover .navigation-chevron,
+.flow-link:focus-visible .navigation-chevron {
+    color: var(--wine);
+    transform: translateX(2px);
 }
 
 .tree-group {
@@ -1225,13 +1241,12 @@ button.quick-item {
 }
 
 .tree-chevron {
-    color: var(--wine);
-    font-size: 16px;
-    font-weight: 800;
+    color: #6f6265;
     transition: transform 0.2s ease;
 }
 
 .tree-toggle[aria-expanded="true"] .tree-chevron {
+    color: var(--wine);
     transform: rotate(90deg);
 }
 
@@ -3119,7 +3134,7 @@ textarea.form-control {
     height: 1px;
     background: transparent;
     border-bottom: 1px dashed #e0e0e0;
-    margin: 24px 0;
+    margin: 16px 0;
 }
 .invoice-total {
     display: flex;

@@ -11,10 +11,14 @@ use App\Models\Member;
 use App\Models\RefBank;
 use App\Models\ReturnModel;
 use App\Models\RewardStockist;
+use App\Models\ShippingCourierExpress;
+use App\Models\ShippingCourierInstant;
+use App\Models\ShippingCourierManual;
 use App\Models\ShippingPickup;
 use App\Models\ShippingPickupStatus;
 use App\Models\SiteAdministrator;
 use App\Models\Trx;
+use App\Models\TrxDetail;
 use App\Models\TrxPaymentTransfer;
 use App\Models\TrxSpreadPayment;
 use App\Models\Warehouse;
@@ -22,6 +26,7 @@ use App\Services\Inventory\StockAllocationService;
 use App\Services\Notification\PartnershipEmailService;
 use App\Services\Purchase\PreorderPaymentSequenceGuard;
 use App\Services\Reward\MemberPointService;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 
 class AdminTransactionService
@@ -38,13 +43,18 @@ class AdminTransactionService
     public function orders(array $params): array
     {
         $trxTable = (new Trx)->getTable();
+        $detailTable = (new TrxDetail)->getTable();
         $memberTable = (new Member)->getTable();
         $customerTable = (new Customer)->getTable();
         $warehouseTable = (new Warehouse)->getTable();
-        $pickupTable = (new ShippingPickup)->getTable();
         $pickupStatusTable = (new ShippingPickupStatus)->getTable();
         $paymentTable = (new TrxPaymentTransfer)->getTable();
         $bankTable = (new RefBank)->getTable();
+        $shippingSnapshots = $this->transactionShippingSnapshots();
+        $paymentSnapshot = DB::table($paymentTable)
+            ->whereIn('payment_transfer_id', DB::table($paymentTable)
+                ->selectRaw('MIN(payment_transfer_id)')
+                ->groupBy('payment_transfer_trx_id'));
         $canProcessStockScreening = "(
             {$trxTable}.trx_status = 'waiting_stock_screening'
             AND (
@@ -63,7 +73,7 @@ class AdminTransactionService
             ->select('shipping_pickup_status_shipping_pickup_id')
             ->selectRaw('MAX(shipping_pickup_status_id) AS latest_status_id')
             ->groupBy('shipping_pickup_status_shipping_pickup_id');
-        $pickupSummary = DB::table("{$pickupTable} as list_pickup")
+        $pickupSummary = DB::query()->fromSub($shippingSnapshots['pickup'], 'list_pickup')
             ->leftJoinSub(
                 $latestPickupStatus,
                 'latest_pickup_status',
@@ -106,6 +116,8 @@ class AdminTransactionService
             'buyer_member.member_name as buyer_member_name',
             "{$customerTable}.customer_name as buyer_customer_name",
             "{$trxTable}.trx_total_price as product_total",
+            DB::raw("COALESCE({$trxTable}.trx_total_monthly_points, (SELECT SUM(trx_detail_qty * trx_detail_product_monthly_points) FROM {$detailTable} WHERE trx_detail_trx_id = {$trxTable}.trx_id), 0) as total_monthly_points"),
+            DB::raw("COALESCE({$trxTable}.trx_total_annual_points, (SELECT SUM(trx_detail_qty * trx_detail_product_annual_points) FROM {$detailTable} WHERE trx_detail_trx_id = {$trxTable}.trx_id), 0) as total_annual_points"),
             "{$trxTable}.trx_discount as discount_percent",
             "{$trxTable}.trx_discount_value as discount_value",
             "{$trxTable}.trx_voucher_id as voucher_id",
@@ -208,16 +220,16 @@ class AdminTransactionService
             ->leftJoin($warehouseTable, "{$warehouseTable}.warehouse_id = {$trxTable}.trx_seller_id")
             ->leftJoin("{$memberTable} as buyer_member", "buyer_member.member_id = {$trxTable}.trx_buyer_id")
             ->leftJoin($customerTable, "{$customerTable}.customer_id = {$trxTable}.trx_buyer_id")
-            ->leftJoin('shipping_courier_express as list_express', 'list_express.shipping_courier_express_ref_id = '.$trxTable.'.trx_id')
-            ->leftJoin('shipping_courier_express as preorder_parent_express', 'preorder_parent_express.shipping_courier_express_ref_id = preorder_parent.trx_id')
-            ->leftJoin('shipping_courier_express as preorder_root_express', 'preorder_root_express.shipping_courier_express_ref_id = preorder_root.trx_id')
-            ->leftJoin('shipping_courier_instant as list_instant', 'list_instant.shipping_courier_instant_ref_id = '.$trxTable.'.trx_id')
-            ->leftJoin('shipping_courier_manual as list_manual', 'list_manual.shipping_courier_manual_ref_id = '.$trxTable.'.trx_id')
+            ->leftJoinSub($shippingSnapshots['express'], 'list_express', 'list_express.shipping_courier_express_ref_id = '.$trxTable.'.trx_id')
+            ->leftJoinSub($shippingSnapshots['express'], 'preorder_parent_express', 'preorder_parent_express.shipping_courier_express_ref_id = preorder_parent.trx_id')
+            ->leftJoinSub($shippingSnapshots['express'], 'preorder_root_express', 'preorder_root_express.shipping_courier_express_ref_id = preorder_root.trx_id')
+            ->leftJoinSub($shippingSnapshots['instant'], 'list_instant', 'list_instant.shipping_courier_instant_ref_id = '.$trxTable.'.trx_id')
+            ->leftJoinSub($shippingSnapshots['manual'], 'list_manual', 'list_manual.shipping_courier_manual_ref_id = '.$trxTable.'.trx_id')
             ->leftJoinSub($pickupSummary, 'pickup_summary', "pickup_summary.transaction_id = {$trxTable}.trx_id")
-            ->leftJoin($pickupTable.' as list_pickup', 'list_pickup.shipping_pickup_ref_id = '.$trxTable.'.trx_id')
-            ->leftJoin($paymentTable, "{$paymentTable}.payment_transfer_trx_id = {$trxTable}.trx_id")
-            ->leftJoin("{$paymentTable} as preorder_parent_payment", 'preorder_parent_payment.payment_transfer_trx_id = preorder_parent.trx_id')
-            ->leftJoin("{$paymentTable} as preorder_root_payment", 'preorder_root_payment.payment_transfer_trx_id = preorder_root.trx_id')
+            ->leftJoinSub($shippingSnapshots['pickup'], 'list_pickup', 'list_pickup.shipping_pickup_ref_id = '.$trxTable.'.trx_id')
+            ->leftJoinSub($paymentSnapshot, $paymentTable, "{$paymentTable}.payment_transfer_trx_id = {$trxTable}.trx_id")
+            ->leftJoinSub($paymentSnapshot, 'preorder_parent_payment', 'preorder_parent_payment.payment_transfer_trx_id = preorder_parent.trx_id')
+            ->leftJoinSub($paymentSnapshot, 'preorder_root_payment', 'preorder_root_payment.payment_transfer_trx_id = preorder_root.trx_id')
             ->leftJoin($bankTable, "{$bankTable}.bank_id = {$paymentTable}.payment_transfer_bank_id")
             ->search([
                 'code', 'seller_member_code', 'seller_member_name', 'seller_warehouse_name',
@@ -319,12 +331,19 @@ class AdminTransactionService
     /** @param array<string, mixed> $params */
     public function payments(array $params): array
     {
+        $detailTable = (new TrxDetail)->getTable();
         $paymentTable = (new TrxPaymentTransfer)->getTable();
         $trxTable = (new Trx)->getTable();
         $memberTable = (new Member)->getTable();
         $customerTable = (new Customer)->getTable();
         $bankTable = (new RefBank)->getTable();
         $spreadPaymentTable = (new TrxSpreadPayment)->getTable();
+
+        $shippingSnapshots = $this->transactionShippingSnapshots();
+        $spreadPayment = DB::table($spreadPaymentTable)
+            ->whereIn('trx_spread_payment_id', DB::table($spreadPaymentTable)
+                ->selectRaw('MIN(trx_spread_payment_id)')
+                ->groupBy('trx_spread_payment_trx_id'));
 
         $query = DataTable::select([
             "{$paymentTable}.payment_transfer_id as id",
@@ -348,6 +367,8 @@ class AdminTransactionService
             "{$trxTable}.trx_payment_method as transaction_payment_method",
             "{$trxTable}.trx_shipping_method as transaction_shipping_method",
             "{$trxTable}.trx_datetime as transaction_ordered_at",
+            DB::raw("COALESCE({$trxTable}.trx_total_monthly_points, (SELECT SUM(trx_detail_qty * trx_detail_product_monthly_points) FROM {$detailTable} WHERE trx_detail_trx_id = {$trxTable}.trx_id), 0) as total_monthly_points"),
+            DB::raw("COALESCE({$trxTable}.trx_total_annual_points, (SELECT SUM(trx_detail_qty * trx_detail_product_annual_points) FROM {$detailTable} WHERE trx_detail_trx_id = {$trxTable}.trx_id), 0) as total_annual_points"),
             "{$trxTable}.trx_total_price as product_total",
             "{$trxTable}.trx_discount_value as discount_value",
             "{$trxTable}.trx_grand_total_price as after_discount",
@@ -387,11 +408,11 @@ class AdminTransactionService
             ->leftJoin($customerTable, "{$customerTable}.customer_id = {$trxTable}.trx_buyer_id")
             ->leftJoin("{$memberTable} as seller_member", "seller_member.member_id = {$trxTable}.trx_seller_id")
             ->leftJoin((new Warehouse)->getTable().' as warehouse', "warehouse.warehouse_id = {$trxTable}.trx_seller_id")
-            ->leftJoin('shipping_courier_express as list_express', "list_express.shipping_courier_express_ref_id = {$trxTable}.trx_id")
-            ->leftJoin('shipping_courier_instant as list_instant', "list_instant.shipping_courier_instant_ref_id = {$trxTable}.trx_id")
-            ->leftJoin('shipping_courier_manual as list_manual', "list_manual.shipping_courier_manual_ref_id = {$trxTable}.trx_id")
+            ->leftJoinSub($shippingSnapshots['express'], 'list_express', "list_express.shipping_courier_express_ref_id = {$trxTable}.trx_id")
+            ->leftJoinSub($shippingSnapshots['instant'], 'list_instant', "list_instant.shipping_courier_instant_ref_id = {$trxTable}.trx_id")
+            ->leftJoinSub($shippingSnapshots['manual'], 'list_manual', "list_manual.shipping_courier_manual_ref_id = {$trxTable}.trx_id")
             ->leftJoin($bankTable, "{$bankTable}.bank_id = {$paymentTable}.payment_transfer_bank_id")
-            ->leftJoin($spreadPaymentTable, "{$spreadPaymentTable}.trx_spread_payment_trx_id = {$trxTable}.trx_id")
+            ->leftJoinSub($spreadPayment, $spreadPaymentTable, "{$spreadPaymentTable}.trx_spread_payment_trx_id = {$trxTable}.trx_id")
             ->leftJoin("{$bankTable} as spread_bank", "spread_bank.bank_id = {$spreadPaymentTable}.trx_spread_payment_bank_id")
             ->search(['transaction_code', 'trx_code', 'buyer_member_code', 'buyer_member_name', 'buyer_customer_name', 'account_name', 'account_number'])
             ->defaultSort('-id')
@@ -610,6 +631,26 @@ class AdminTransactionService
         $this->partnershipEmailService->sendPaymentReviewed($reviewedPayment);
 
         return $reviewedPayment;
+    }
+
+    /** @return array<string, Builder> */
+    private function transactionShippingSnapshots(): array
+    {
+        $snapshots = [];
+        foreach ([
+            'express' => (new ShippingCourierExpress)->getTable(),
+            'instant' => (new ShippingCourierInstant)->getTable(),
+            'manual' => (new ShippingCourierManual)->getTable(),
+            'pickup' => (new ShippingPickup)->getTable(),
+        ] as $type => $table) {
+            $snapshots[$type] = DB::table($table)
+                ->whereIn("{$table}_id", DB::table($table)
+                    ->selectRaw("MAX({$table}_id)")
+                    ->where("{$table}_ref_type", 'trx')
+                    ->groupBy("{$table}_ref_id"));
+        }
+
+        return $snapshots;
     }
 
     /** @param array<string, mixed> $params */

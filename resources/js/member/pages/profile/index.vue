@@ -51,7 +51,13 @@
                         <strong>Alamat</strong>
                         <span>Kelola alamat pengiriman</span>
                     </div>
-                    <div class="row-side chevron">›</div>
+                    <div class="row-side">
+                        <v-icon
+                            class="navigation-chevron"
+                            icon="mdi-chevron-right"
+                            size="24"
+                        />
+                    </div>
                 </div>
             </div>
             <div class="flow-link" @click="router.push('/member/profile/bank')">
@@ -63,7 +69,13 @@
                         <strong>Rekening</strong>
                         <span>Kelola rekening pencairan</span>
                     </div>
-                    <div class="row-side chevron">›</div>
+                    <div class="row-side">
+                        <v-icon
+                            class="navigation-chevron"
+                            icon="mdi-chevron-right"
+                            size="24"
+                        />
+                    </div>
                 </div>
             </div>
         </div>
@@ -82,7 +94,13 @@
                         <strong>Kemitraan</strong>
                         <span>Kode, level, dan status mitra</span>
                     </div>
-                    <div class="row-side chevron">›</div>
+                    <div class="row-side">
+                        <v-icon
+                            class="navigation-chevron"
+                            icon="mdi-chevron-right"
+                            size="24"
+                        />
+                    </div>
                 </div>
             </div>
             <div
@@ -98,7 +116,13 @@
                         <strong>Jaringan Mitra</strong>
                         <span>Downline dan pendaftaran mitra</span>
                     </div>
-                    <div class="row-side chevron">›</div>
+                    <div class="row-side">
+                        <v-icon
+                            class="navigation-chevron"
+                            icon="mdi-chevron-right"
+                            size="24"
+                        />
+                    </div>
                 </div>
             </div>
         </div>
@@ -117,7 +141,13 @@
                         <strong>Keamanan Akun</strong>
                         <span>Ubah kata sandi</span>
                     </div>
-                    <div class="row-side chevron">›</div>
+                    <div class="row-side">
+                        <v-icon
+                            class="navigation-chevron"
+                            icon="mdi-chevron-right"
+                            size="24"
+                        />
+                    </div>
                 </div>
             </div>
             <div class="flow-link" @click="handleLogout">
@@ -129,7 +159,13 @@
                         <strong class="logout-text">Keluar</strong>
                         <span>Keluar dari aplikasi DNY</span>
                     </div>
-                    <div class="row-side chevron">›</div>
+                    <div class="row-side">
+                        <v-icon
+                            class="navigation-chevron"
+                            icon="mdi-chevron-right"
+                            size="24"
+                        />
+                    </div>
                 </div>
             </div>
         </div>

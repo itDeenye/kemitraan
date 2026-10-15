@@ -47,205 +47,56 @@
                 :preorder="order.preorder"
             />
 
-            <div class="card" style="margin-top: 16px; margin-bottom: 16px">
-                <div
-                    class="border-b border-[var(--line)]"
-                    style="padding: 16px 20px"
-                >
-                    <h3
-                        class="flex items-center gap-2 m-0"
-                        style="font-size: 14px"
-                    >
-                        <v-icon icon="mdi-account-outline" size="18" />
-                        Data Pembeli
-                    </h3>
-                </div>
-                <div style="padding: 16px 20px">
-                    <div class="flex flex-col">
-                        <strong
-                            class="text-[13px] block leading-relaxed m-0 text-[var(--text)]"
-                        >
-                            {{ order.customer?.name || "-" }}
-                            {{
-                                order.customer?.whatsapp
-                                    ? `(${order.customer.whatsapp})`
-                                    : ""
-                            }}
-                        </strong>
-                    </div>
-                </div>
-            </div>
+            <OrderPartyInfo
+                title="Data Pembeli"
+                icon="mdi-account-outline"
+                :party="order.buyer || order.customer"
+                :phone="order.customer?.whatsapp || order.customer?.phone"
+            />
 
-            <div class="card" style="margin-bottom: 16px">
-                <div
-                    class="border-b border-[var(--line)]"
-                    style="padding: 16px 20px"
+            <OrderSellerInfo :seller="order.seller" />
+
+            <OrderShippingInfo
+                :method="order.shipping?.method || order.shipping_method"
+                :shipping="order.shipping"
+                :origin="order.seller?.origin"
+                :destination="order.buyer?.destination"
+                :pickup-location="pickupLocation"
+                :transit="isUplineTransit"
+            >
+                <v-btn
+                    v-if="order.actions?.can_confirm_arrival"
+                    color="primary"
+                    variant="flat"
+                    size="small"
+                    :loading="confirmingArrival"
+                    @click="confirmArrival"
                 >
-                    <h3
-                        class="flex items-center gap-2 m-0"
-                        style="font-size: 14px"
+                    Barang Sudah Tiba
+                </v-btn>
+                <template #delivery-note-action>
+                    <v-btn
+                        size="x-small"
+                        variant="text"
+                        color="primary"
+                        class="!min-w-0 !px-1"
+                        @click="copyToClipboard(order.shipping.delivery_note_number, 'Nomor surat jalan')"
                     >
-                        <v-icon icon="mdi-map-marker-outline" size="18" />
-                        {{
-                            order.shipping?.method === "pickup"
-                                ? "Informasi Pengambilan"
-                                : "Informasi Pengiriman"
-                        }}
-                    </h3>
-                </div>
-                <div style="padding: 16px 20px">
-                    <div class="flex flex-col gap-3">
-                        <div v-if="order.shipping?.method === 'pickup'">
-                            <span
-                                class="text-[11px] font-semibold text-[var(--muted)] uppercase tracking-wider block mb-1"
-                                >LOKASI PENGAMBILAN</span
-                            >
-                            <strong class="text-[13px] block">{{
-                                order.shipping?.location ||
-                                order.seller?.origin?.name ||
-                                order.seller?.name ||
-                                "-"
-                            }}</strong>
-                            <p
-                                class="text-[12px] text-[var(--muted)] m-0 leading-relaxed"
-                                v-html="formatLocation(order.seller?.origin)"
-                            ></p>
-                        </div>
-                        <template v-else>
-                            <div>
-                                <span
-                                    class="text-[11px] font-semibold text-[var(--muted)] uppercase tracking-wider block mb-1"
-                                    >DARI</span
-                                >
-                                <strong class="text-[13px] block">{{
-                                    order.seller?.origin?.name ||
-                                    order.seller?.name ||
-                                    "-"
-                                }}</strong>
-                                <p
-                                    class="text-[12px] text-[var(--muted)] m-0 leading-relaxed"
-                                    v-html="
-                                        formatLocation(order.seller?.origin)
-                                    "
-                                ></p>
-                            </div>
-                            <div>
-                                <span
-                                    class="text-[11px] font-semibold text-[var(--muted)] uppercase tracking-wider block mb-1"
-                                    >TUJUAN</span
-                                >
-                                <strong class="text-[13px] block"
-                                    >{{
-                                        order.buyer?.destination?.name ||
-                                        order.buyer?.name ||
-                                        "-"
-                                    }}
-                                    {{
-                                        order.buyer?.destination?.phone
-                                            ? "(" +
-                                              order.buyer.destination.phone +
-                                              ")"
-                                            : ""
-                                    }}</strong
-                                >
-                                <p
-                                    class="text-[12px] text-[var(--muted)] m-0 leading-relaxed"
-                                    v-html="
-                                        formatLocation(order.buyer?.destination)
-                                    "
-                                ></p>
-                            </div>
-                        </template>
-                    </div>
-                </div>
-                <div
-                    class="border-t border-dashed border-[var(--line)] bg-[#fafafa] rounded-b-xl"
-                    style="padding: 12px 20px"
-                >
-                    <div
-                        class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 sm:gap-3"
+                        <v-icon icon="mdi-content-copy" size="small" />
+                    </v-btn>
+                </template>
+                <template #tracking-number-action>
+                    <v-btn
+                        size="x-small"
+                        variant="text"
+                        color="primary"
+                        class="!min-w-0 !px-1"
+                        @click="copyToClipboard(order.shipping.tracking_number, 'Nomor resi')"
                     >
-                        <span class="soft-label flex items-center gap-[6px]">
-                            <v-icon icon="mdi-truck-outline" size="16" />
-                            Pengiriman
-                        </span>
-                        <strong
-                            class="text-[13px] sm:text-right"
-                            v-if="order.shipping?.method === 'pickup'"
-                        >
-                            Pickup (Diambil Sendiri)
-                        </strong>
-                        <strong class="text-[13px] sm:text-right" v-else>
-                            <span class="uppercase"
-                                >{{
-                                    order.shipping?.courier || "Kurir"
-                                }}
-                                - </span
-                            >{{ order.shipping?.service || "" }}
-                        </strong>
-                    </div>
-                    <div
-                        class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 sm:gap-3 mt-3 sm:mt-2"
-                        v-if="order.shipping?.delivery_note_number"
-                    >
-                        <span class="soft-label">Nomor Surat Jalan</span>
-                        <div class="flex items-center gap-2">
-                            <strong
-                                class="text-[var(--primary)] text-[13px] break-all"
-                                >{{
-                                    order.shipping.delivery_note_number
-                                }}</strong
-                            >
-                            <v-btn
-                                size="x-small"
-                                variant="text"
-                                color="primary"
-                                class="!min-w-0 !px-1"
-                                @click="
-                                    copyToClipboard(
-                                        order.shipping.delivery_note_number,
-                                        'Nomor surat jalan',
-                                    )
-                                "
-                            >
-                                <v-icon
-                                    icon="mdi-content-copy"
-                                    size="small"
-                                ></v-icon>
-                            </v-btn>
-                        </div>
-                    </div>
-                    <div
-                        class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 sm:gap-3 mt-3 sm:mt-2"
-                        v-if="order.shipping?.tracking_number"
-                    >
-                        <span class="soft-label">Nomor Resi / AWB</span>
-                        <div class="flex items-center gap-2">
-                            <strong
-                                class="text-[var(--primary)] text-[13px] break-all"
-                                >{{ order.shipping.tracking_number }}</strong
-                            >
-                            <v-btn
-                                size="small"
-                                variant="text"
-                                color="primary"
-                                class="!min-w-0 !px-2"
-                                @click="
-                                    copyToClipboard(
-                                        order.shipping.tracking_number,
-                                        'Nomor resi',
-                                    )
-                                "
-                            >
-                                <v-icon
-                                    icon="mdi-content-copy"
-                                    size="small"
-                                ></v-icon>
-                            </v-btn>
-                        </div>
-                    </div>
-                </div>
-            </div>
+                        <v-icon icon="mdi-content-copy" size="small" />
+                    </v-btn>
+                </template>
+            </OrderShippingInfo>
 
             <div class="card" style="margin-bottom: 16px">
                 <div
@@ -337,6 +188,10 @@
                             <div class="text-[11px] text-[var(--muted)] mt-0.5">
                                 BPOM: {{ item.product.bpom_number || "-" }}
                             </div>
+                            <div class="text-[11px] text-[var(--muted)] mt-0.5">
+                                Poin Bulanan: {{ formatPrice(item.monthly_points ?? 0) }} ·
+                                Poin Tahunan: {{ formatPrice(item.annual_points ?? 0) }}
+                            </div>
                             <span class="text-[12px]"
                                 >{{ item.quantity }} x Rp{{
                                     formatPrice(item.net_price || item.price)
@@ -381,6 +236,14 @@
                                 formatPrice(order.summary?.product_total || 0)
                             }}</span
                         >
+                    </div>
+                    <div class="flex justify-between mb-2">
+                        <span class="soft-label">Total Poin Bulanan</span>
+                        <span class="text-[13px]">{{ formatPrice(order.summary?.total_monthly_points ?? 0) }}</span>
+                    </div>
+                    <div class="flex justify-between mb-2">
+                        <span class="soft-label">Total Poin Tahunan</span>
+                        <span class="text-[13px]">{{ formatPrice(order.summary?.total_annual_points ?? 0) }}</span>
                     </div>
                     <div
                         class="flex justify-between mb-2"
@@ -593,12 +456,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import saleService from "@/member/services/sale.service";
 import { useSnackbarStore } from "@/shared/stores/snackbar";
 import { useFormatter } from "@/shared/composables/useFormatter";
 import BaseBadge from "@/shared/components/BaseBadge.vue";
+import OrderSellerInfo from "@/member/components/transactions/OrderSellerInfo.vue";
+import OrderPartyInfo from "@/member/components/transactions/OrderPartyInfo.vue";
+import OrderShippingInfo from "@/member/components/transactions/OrderShippingInfo.vue";
 import PreorderOriginCard from "@/member/components/transactions/PreorderOriginCard.vue";
 import { decodeRouteId } from "@/shared/utils/route-id";
 
@@ -607,13 +473,22 @@ import type { SaleOrderDetail } from "@/member/types/sale";
 const route = useRoute();
 const router = useRouter();
 const snackbar = useSnackbarStore();
-const { formatPrice, formatDateTime, formatLocation } = useFormatter();
+const { formatPrice, formatDateTime } = useFormatter();
 
 const isLoading = ref(true);
 const order = ref<SaleOrderDetail | null>(null);
+const isUplineTransit = computed(
+    () => order.value?.preorder_fulfillment?.mode === "upline_transit",
+);
+const pickupLocation = computed(() =>
+    isUplineTransit.value
+        ? order.value?.buyer?.destination
+        : order.value?.seller?.origin,
+);
 const isPaymentDialogOpen = ref(false);
 const imageDialog = ref(false);
 const selectedImage = ref("");
+const confirmingArrival = ref(false);
 
 const fetchDetail = async () => {
     isLoading.value = true;
@@ -652,6 +527,23 @@ const copyToClipboard = (text: string, subject: string = "Teks") => {
 const openImage = (url: string) => {
     selectedImage.value = url;
     imageDialog.value = true;
+};
+
+const confirmArrival = async () => {
+    if (!order.value) return;
+    confirmingArrival.value = true;
+    try {
+        const response = await saleService.confirmArrival(order.value.id);
+        snackbar.showMessage(response.message, "success");
+        order.value = response.data;
+    } catch (error: any) {
+        snackbar.showMessage(
+            error.response?.data?.message || "Gagal mengonfirmasi kedatangan barang.",
+            "error",
+        );
+    } finally {
+        confirmingArrival.value = false;
+    }
 };
 
 onMounted(() => {

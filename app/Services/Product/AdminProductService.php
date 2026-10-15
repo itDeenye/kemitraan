@@ -7,6 +7,7 @@ use App\Libraries\DataTable;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\ProductPrice;
+use App\Models\TrxDetail;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -24,11 +25,12 @@ class AdminProductService
             'product_category.product_category_name as name',
             'product_category.product_category_description as description',
             'product_category.product_category_is_active as is_active',
+            'product_category.product_category_sort_order as sort_order',
         ])
             ->selectRaw('(SELECT COUNT(*) FROM product WHERE product.product_product_category_id = product_category.product_category_id AND product.product_is_deleted = 0) as product_count')
             ->from('product_category')
             ->search(['name', 'description'])
-            ->defaultSort('name')
+            ->defaultSort('sort_order,id')
             ->get($params);
     }
 
@@ -57,6 +59,16 @@ class AdminProductService
         return $this->category($category->refresh());
     }
 
+    public function moveCategoryUp(ProductCategory $category): ProductCategory
+    {
+        return $this->moveCategory($category, -1);
+    }
+
+    public function moveCategoryDown(ProductCategory $category): ProductCategory
+    {
+        return $this->moveCategory($category, 1);
+    }
+
     public function deleteCategory(ProductCategory $category): void
     {
         if ($category->products()->where('product_is_deleted', 0)->exists()) {
@@ -66,12 +78,49 @@ class AdminProductService
         $category->delete();
     }
 
+    private function moveCategory(ProductCategory $category, int $offset): ProductCategory
+    {
+        return DB::transaction(function () use ($category, $offset): ProductCategory {
+            $categories = ProductCategory::query()
+                ->orderBy('product_category_sort_order')
+                ->orderBy('product_category_id')
+                ->lockForUpdate()
+                ->get();
+
+            foreach ($categories as $index => $orderedCategory) {
+                $orderedCategory->update([
+                    'product_category_sort_order' => $index + 1,
+                ]);
+            }
+
+            $currentIndex = $categories->search(
+                fn (ProductCategory $orderedCategory): bool => $orderedCategory->is($category)
+            );
+            $targetIndex = $currentIndex === false ? false : $currentIndex + $offset;
+
+            if ($targetIndex === false || ! $categories->has($targetIndex)) {
+                return $this->category($category->refresh());
+            }
+
+            $current = $categories->get($currentIndex);
+            $target = $categories->get($targetIndex);
+            $currentOrder = (int) $current->product_category_sort_order;
+            $targetOrder = (int) $target->product_category_sort_order;
+
+            $current->update(['product_category_sort_order' => $targetOrder]);
+            $target->update(['product_category_sort_order' => $currentOrder]);
+
+            return $this->category($category->refresh());
+        });
+    }
+
     /**
      * @param  array<string, mixed>  $params
      * @return array{results: Collection<int, object>, pagination?: array<string, mixed>}
      */
     public function products(array $params): array
     {
+        $detailTable = (new TrxDetail)->getTable();
         $result = DataTable::select([
             'product.product_id as id',
             'product.product_code as code',
@@ -81,6 +130,8 @@ class AdminProductService
             'product.product_image as image',
             'product.product_image_filename as image_filename',
             'product.product_customer_price as customer_price',
+            'product.product_monthly_points as monthly_points',
+            'product.product_annual_points as annual_points',
             'product.product_weight as weight',
             'product.product_length as length',
             'product.product_width as width',
@@ -92,6 +143,7 @@ class AdminProductService
             'product_category.product_category_id as category_id',
             'product_category.product_category_name as category_name',
         ])
+            ->selectRaw("NOT EXISTS (SELECT 1 FROM {$detailTable} WHERE {$detailTable}.trx_detail_product_id = product.product_id) AS can_delete")
             ->from('product')
             ->join(
                 'left',
@@ -112,6 +164,7 @@ class AdminProductService
     {
         return Product::query()
             ->with(['category', 'levelPrices.level'])
+            ->withExists('trxDetails')
             ->where('product_is_deleted', 0)
             ->findOrFail($product->getKey());
     }
@@ -225,12 +278,20 @@ class AdminProductService
 
     public function deleteProduct(Product $product): void
     {
-        $this->product($product);
-        $product->update([
-            'product_is_deleted' => 1,
-            'product_is_active' => 0,
-            'product_is_publish' => 0,
-        ]);
+        DB::transaction(function () use ($product): void {
+            $lockedProduct = Product::query()
+                ->where('product_is_deleted', 0)
+                ->lockForUpdate()
+                ->findOrFail($product->getKey());
+            if ($lockedProduct->trxDetails()->exists()) {
+                throw new ProcessException('Produk sudah digunakan dalam transaksi dan tidak dapat dihapus.');
+            }
+            $lockedProduct->update([
+                'product_is_deleted' => 1,
+                'product_is_active' => 0,
+                'product_is_publish' => 0,
+            ]);
+        });
     }
 
     /** @param array<string, mixed> $data */
@@ -266,6 +327,8 @@ class AdminProductService
         }
 
         $optionalFields = [
+            'monthly_points' => 'product_monthly_points',
+            'annual_points' => 'product_annual_points',
             'weight' => 'product_weight',
             'length' => 'product_length',
             'width' => 'product_width',

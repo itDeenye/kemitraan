@@ -29,10 +29,13 @@ export interface Product {
     image_filename: string | null;
     prices: ProductPrices;
     weight_grams: number;
+    monthly_points: number;
+    annual_points: number;
     dimensions_cm: ProductDimensions;
     unit: string;
     is_publish: boolean;
     is_active: boolean;
+    can_delete: boolean;
     category: ProductCategory | null;
 }
 
@@ -44,6 +47,8 @@ export interface ProductPayload {
     image_url?: string | null;
     description: string;
     customer_price: number;
+    monthly_points: number;
+    annual_points: number;
     distributor_price?: number;
     agent_price?: number;
     reseller_price?: number;

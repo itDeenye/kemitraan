@@ -335,6 +335,18 @@
                                         {{ product.unit }}
                                     </td>
                                 </tr>
+                                <tr>
+                                    <td style="padding: 6px 0; color: #666">Poin Bulanan</td>
+                                    <td style="padding: 6px 0; font-weight: 500; color: #333">
+                                        {{ formatPrice(product.monthly_points ?? 1) }}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 6px 0; color: #666">Poin Tahunan</td>
+                                    <td style="padding: 6px 0; font-weight: 500; color: #333">
+                                        {{ formatPrice(product.annual_points ?? 1) }}
+                                    </td>
+                                </tr>
                             </tbody>
                         </table>
                     </div>

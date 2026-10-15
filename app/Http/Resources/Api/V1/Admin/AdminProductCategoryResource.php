@@ -21,6 +21,7 @@ class AdminProductCategoryResource extends ApiResource
             'description' => $this->value('description', 'product_category_description'),
             'product_count' => (int) $this->value('product_count', 'products_count'),
             'is_active' => (bool) $this->value('is_active', 'product_category_is_active'),
+            'sort_order' => (int) $this->value('sort_order', 'product_category_sort_order'),
         ];
     }
 

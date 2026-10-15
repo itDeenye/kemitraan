@@ -332,7 +332,7 @@ async function fetchDetail() {
 
 function goBack() {
     if (showSuccessBanner.value) {
-        router.replace("/member/network/registrations?tab=list");
+        router.replace("/member/network?tab=history");
     } else {
         router.back();
     }

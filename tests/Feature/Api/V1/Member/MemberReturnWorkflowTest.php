@@ -397,7 +397,8 @@ class MemberReturnWorkflowTest extends TestCase
             ->assertJsonPath('data.eligible', 1)
             ->assertJsonPath('data.action_required', 0)
             ->assertJsonPath('data.history', 0)
-            ->assertJsonPath('data.total_actions', 1);
+            ->assertJsonPath('data.total_actions', 1)
+            ->assertJsonPath('data.return_max_days', 3);
 
         $returnId = (int) $this->postJson(
             '/api/v1/member/inventory/returns',
@@ -1141,6 +1142,9 @@ class MemberReturnWorkflowTest extends TestCase
         ]);
         $this->actingAs($account, 'member_api');
 
+        $this->getJson('/api/v1/member/inventory/returns/summary')
+            ->assertOk()
+            ->assertJsonPath('data.return_max_days', 1);
         $this->getJson('/api/v1/member/inventory/returns/eligible-receipts')
             ->assertOk()
             ->assertJsonCount(0, 'data.results');

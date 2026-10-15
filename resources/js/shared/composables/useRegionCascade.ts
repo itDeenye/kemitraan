@@ -24,49 +24,74 @@ export function useRegionCascade() {
     const loadingCities = ref(false);
     const loadingDistricts = ref(false);
     const loadingSubdistricts = ref(false);
+    const requestVersions = [0, 0, 0, 0];
+    const loadingStates = [loadingProvinces, loadingCities, loadingDistricts, loadingSubdistricts];
+    let cascadeVersion = 0;
+
+    const invalidateFrom = (level: number) => {
+        cascadeVersion++;
+        for (let index = level; index < requestVersions.length; index++) {
+            requestVersions[index]++;
+            loadingStates[index].value = false;
+        }
+    };
+    const cancelPendingRequests = () => invalidateFrom(1);
+    const reset = () => {
+        invalidateFrom(0);
+        cities.value = [];
+        districts.value = [];
+        subdistricts.value = [];
+    };
 
     const fetchProvinces = async () => {
+        const version = ++requestVersions[0];
         loadingProvinces.value = true;
         try {
-            provinces.value = await referenceService.getProvinces();
+            const result = await referenceService.getProvinces();
+            if (version === requestVersions[0]) provinces.value = result;
         } catch (e) {
             console.error("Gagal mengambil provinsi", e);
         } finally {
-            loadingProvinces.value = false;
+            if (version === requestVersions[0]) loadingProvinces.value = false;
         }
     };
 
     const fetchCities = async (provinceId: string | number) => {
+        const version = ++requestVersions[1];
         loadingCities.value = true;
         try {
-            cities.value = await referenceService.getCities(provinceId);
+            const result = await referenceService.getCities(provinceId);
+            if (version === requestVersions[1]) cities.value = result;
         } catch (e) {
             console.error("Gagal mengambil kota", e);
         } finally {
-            loadingCities.value = false;
+            if (version === requestVersions[1]) loadingCities.value = false;
         }
     };
 
     const fetchDistricts = async (cityId: string | number) => {
+        const version = ++requestVersions[2];
         loadingDistricts.value = true;
         try {
-            districts.value = await referenceService.getDistricts(cityId);
+            const result = await referenceService.getDistricts(cityId);
+            if (version === requestVersions[2]) districts.value = result;
         } catch (e) {
             console.error("Gagal mengambil kecamatan", e);
         } finally {
-            loadingDistricts.value = false;
+            if (version === requestVersions[2]) loadingDistricts.value = false;
         }
     };
 
     const fetchSubdistricts = async (districtId: string | number) => {
+        const version = ++requestVersions[3];
         loadingSubdistricts.value = true;
         try {
-            subdistricts.value =
-                await referenceService.getSubdistricts(districtId);
+            const result = await referenceService.getSubdistricts(districtId);
+            if (version === requestVersions[3]) subdistricts.value = result;
         } catch (e) {
             console.error("Gagal mengambil kelurahan", e);
         } finally {
-            loadingSubdistricts.value = false;
+            if (version === requestVersions[3]) loadingSubdistricts.value = false;
         }
     };
 
@@ -75,6 +100,7 @@ export function useRegionCascade() {
      * Caller harus me-null-kan field form sendiri jika menggunakan reactive form.
      */
     const onProvinceChange = async (val: any) => {
+        invalidateFrom(1);
         cities.value = [];
         districts.value = [];
         subdistricts.value = [];
@@ -84,6 +110,7 @@ export function useRegionCascade() {
     };
 
     const onCityChange = async (val: any) => {
+        invalidateFrom(2);
         districts.value = [];
         subdistricts.value = [];
         if (val) {
@@ -92,6 +119,7 @@ export function useRegionCascade() {
     };
 
     const onDistrictChange = async (val: any) => {
+        invalidateFrom(3);
         subdistricts.value = [];
         if (val) {
             await fetchSubdistricts(val);
@@ -103,12 +131,16 @@ export function useRegionCascade() {
      * Menerima object region dan secara berurutan memuat dependensi dropdown.
      */
     const initFromExisting = async (region: RegionData) => {
+        invalidateFrom(1);
+        const version = cascadeVersion;
         if (region.province_id) {
             await fetchCities(region.province_id);
         }
+        if (version !== cascadeVersion) return;
         if (region.city_id) {
             await fetchDistricts(region.city_id);
         }
+        if (version !== cascadeVersion) return;
         if (region.district_id) {
             await fetchSubdistricts(region.district_id);
         }
@@ -138,5 +170,7 @@ export function useRegionCascade() {
 
         // Init helper
         initFromExisting,
+        cancelPendingRequests,
+        reset,
     };
 }

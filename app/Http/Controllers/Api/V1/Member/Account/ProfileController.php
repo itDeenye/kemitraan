@@ -87,6 +87,13 @@ class ProfileController extends Controller
             'member.level',
             'member.parent',
             'member.stockist',
+            'member.approvedRegistration',
+            'member.addresses' => fn ($query) => $query
+                ->with(['province', 'city', 'district', 'subdistrict', 'country'])
+                ->orderByDesc('member_address_is_default')->orderBy('member_address_id'),
+            'member.bankAccounts' => fn ($query) => $query
+                ->with('bank')->orderByDesc('member_bank_account_is_default')
+                ->orderByDesc('member_bank_account_is_active')->orderBy('member_bank_account_id'),
             'member.defaultAddress.province',
             'member.defaultAddress.city',
             'member.defaultAddress.district',

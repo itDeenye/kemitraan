@@ -247,8 +247,7 @@
 
         <div v-if="!isDistributorOrAgent" class="mb-8">
             <div class="section-heading">
-                <h3>Pelanggan terbaru</h3>
-                <a class="section-link" href="#" @click.prevent>Lihat semua</a>
+                <h3>Pelanggan Terbaru</h3>
             </div>
             <div
                 v-if="isLoading"

@@ -2,8 +2,11 @@
 
 namespace App\Http\Resources\Api\V1\Admin;
 
+use App\Http\Resources\Api\V1\Member\MemberAddressResource;
+use App\Http\Resources\Api\V1\Member\MemberBankAccountResource;
 use App\Http\Resources\ApiResource;
 use App\Models\Member;
+use App\Support\MediaUrl;
 use Illuminate\Http\Request;
 
 class AdminDistributorResource extends ApiResource
@@ -24,6 +27,11 @@ class AdminDistributorResource extends ApiResource
             'name' => $this->value('name', 'member_name'),
             'email' => $this->value('email', 'member_email'),
             'mobile_phone' => $this->value('mobile_phone', 'member_mobilephone'),
+            'image' => MediaUrl::publicUrl($this->value('image', 'member_image')),
+            'nib' => $this->value('nib', 'member_nib'),
+            'npwp' => $this->value('npwp', 'member_npwp'),
+            'addresses' => $this->when($member !== null, fn () => MemberAddressResource::collection($member->addresses)),
+            'bank_accounts' => $this->when($member !== null, fn () => MemberBankAccountResource::collection($member->bankAccounts)),
             'status' => [
                 'code' => $status,
                 'label' => match ($status) {
@@ -36,8 +44,8 @@ class AdminDistributorResource extends ApiResource
                 ? $member->member_join_datetime?->toAtomString()
                 : $this->resource->joined_at,
             'region' => $member
-                ? ($member->city?->city_name ? $member->city->city_name . ', ' . $member->province?->province_name : null)
-                : ($this->resource->city_name ?? null ? $this->resource->city_name . ', ' . $this->resource->province_name : null),
+                ? ($member->city?->city_name ? $member->city->city_name.', '.$member->province?->province_name : null)
+                : ($this->resource->city_name ?? null ? $this->resource->city_name.', '.$this->resource->province_name : null),
             'address' => $this->when($member !== null, fn (): array => [
                 'address' => $member->member_address,
                 'subdistrict_id' => $member->member_subdistrict_id,
@@ -59,11 +67,11 @@ class AdminDistributorResource extends ApiResource
                 'facebook' => $member->member_facebook,
                 'tiktok' => $member->member_tiktok,
             ]),
-            'identity' => $this->when($member !== null, fn (): array => [
-                'type' => $member->member_identity_type,
-                'no' => $member->member_identity_no,
-                'image' => $member->member_identity_image,
-            ]),
+            'identity' => [
+                'type' => $this->value('identity_type', 'member_identity_type'),
+                'no' => $this->value('identity_no', 'member_identity_no'),
+                'image' => MediaUrl::temporaryPrivateUrl($this->value('identity_image', 'member_identity_image'), 'admin'),
+            ],
             'birth_date' => $this->when($member !== null, fn (): ?string => $member->member_birth_date?->toDateString()),
             'gender' => $this->when($member !== null, fn (): ?string => $member->member_gender),
         ];

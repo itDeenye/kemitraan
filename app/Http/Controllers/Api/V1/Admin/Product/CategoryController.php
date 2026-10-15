@@ -45,6 +45,20 @@ class CategoryController extends Controller
         ))->additional(['success' => true, 'message' => 'Kategori produk berhasil diperbarui.']);
     }
 
+    public function moveUp(ProductCategory $category): AdminProductCategoryResource
+    {
+        return (new AdminProductCategoryResource(
+            $this->productService->moveCategoryUp($category)
+        ))->additional(['success' => true, 'message' => 'Kategori produk berhasil dinaikkan.']);
+    }
+
+    public function moveDown(ProductCategory $category): AdminProductCategoryResource
+    {
+        return (new AdminProductCategoryResource(
+            $this->productService->moveCategoryDown($category)
+        ))->additional(['success' => true, 'message' => 'Kategori produk berhasil diturunkan.']);
+    }
+
     public function destroy(ProductCategory $category): JsonResponse
     {
         $this->productService->deleteCategory($category);

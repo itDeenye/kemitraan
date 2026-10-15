@@ -101,6 +101,7 @@ class AdminPaymentResource extends ApiResource
             };
 
             return [
+                ...$trx->pointTotals(),
                 'product_total' => (int) $trx->trx_total_price,
                 'discount_value' => (int) $trx->trx_discount_value,
                 'after_discount' => (int) $trx->trx_grand_total_price,
@@ -118,6 +119,8 @@ class AdminPaymentResource extends ApiResource
         }
 
         return [
+            'total_monthly_points' => (int) ($this->resource->total_monthly_points ?? 0),
+            'total_annual_points' => (int) ($this->resource->total_annual_points ?? 0),
             'product_total' => (int) ($this->resource->product_total ?? 0),
             'discount_value' => (int) ($this->resource->discount_value ?? 0),
             'after_discount' => (int) ($this->resource->after_discount ?? 0),

@@ -56,10 +56,14 @@ class MemberProfileResource extends ApiResource
             'identity' => [
                 'type' => $member->member_identity_type,
                 'number' => $member->member_identity_no,
-                'image' => $member->member_identity_image,
+                'image' => MediaUrl::temporaryPrivateUrl($member->member_identity_image, 'member'),
             ],
             'nib' => $member->member_nib,
+            'npwp' => $member->member_npwp,
             'image' => MediaUrl::publicUrl($member->member_image),
+            'payment_proof_image_url' => MediaUrl::temporaryPrivateUrl(
+                $member->approvedRegistration?->member_registration_payment_proof_image, 'member',
+            ),
             'social_media' => [
                 'instagram' => $member->member_instagram,
                 'facebook' => $member->member_facebook,
@@ -78,6 +82,8 @@ class MemberProfileResource extends ApiResource
             ] : null,
             'default_address' => $this->addressData($member->defaultAddress),
             'default_bank_account' => $this->bankAccountData($member->defaultBankAccount),
+            'addresses' => MemberAddressResource::collection($member->addresses),
+            'bank_accounts' => MemberBankAccountResource::collection($member->bankAccounts),
         ];
     }
 

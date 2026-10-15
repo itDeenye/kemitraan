@@ -807,7 +807,7 @@ const loadCourierOptions = async () => {
         const result = await transactionReturnService.getCourierOptions(
             returnData.value.id,
             "return_replacement",
-            { couriers: ["jne", "jnt"], items },
+            { couriers: [], items },
         );
         courierOptions.value = result.results || [];
     } catch (error: any) {

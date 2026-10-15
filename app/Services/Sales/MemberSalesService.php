@@ -33,6 +33,7 @@ use App\Services\Inventory\StockAllocationService;
 use App\Services\Notification\PartnershipEmailService;
 use App\Services\Purchase\PreorderChainService;
 use App\Services\Purchase\PreorderPaymentSequenceGuard;
+use App\Services\Report\AdminMemberBatchStockReportService;
 use App\Services\Reward\MemberPointService;
 use App\Services\Shipping\MemberShippingService;
 use App\Services\Shipping\PickupVerificationService;
@@ -58,6 +59,7 @@ class MemberSalesService
         private readonly PreorderPaymentSequenceGuard $preorderPaymentSequenceGuard,
         private readonly MemberPointService $memberPointService,
         private readonly PartnershipEmailService $partnershipEmailService,
+        private readonly AdminMemberBatchStockReportService $batchStockReportService,
     ) {}
 
     /** @param array<string, mixed> $params */
@@ -76,6 +78,7 @@ class MemberSalesService
         $manualTable = (new ShippingCourierManual)->getTable();
         $pickupTable = (new ShippingPickup)->getTable();
         $pickupStatusTable = (new ShippingPickupStatus)->getTable();
+        $terminalReadyForArrivalSql = $this->terminalReadyForArrivalSql($trxTable);
         $defaultAddresses = DB::table('member_address')
             ->leftJoin('ref_subdistrict', 'ref_subdistrict.subdistrict_id', '=', 'member_address.member_address_subdistrict_id')
             ->leftJoin('ref_district', 'ref_district.district_id', '=', 'member_address.member_address_district_id')
@@ -94,6 +97,8 @@ class MemberSalesService
             ->select("{$detailTable}.trx_detail_trx_id")
             ->selectRaw('COUNT(*) AS product_count')
             ->selectRaw("SUM({$detailTable}.trx_detail_qty) AS total_quantity")
+            ->selectRaw("SUM({$detailTable}.trx_detail_qty * {$detailTable}.trx_detail_product_monthly_points) AS total_monthly_points")
+            ->selectRaw("SUM({$detailTable}.trx_detail_qty * {$detailTable}.trx_detail_product_annual_points) AS total_annual_points")
             ->groupBy("{$detailTable}.trx_detail_trx_id");
         $firstDetail = DB::table($detailTable)
             ->select("{$detailTable}.trx_detail_trx_id")
@@ -136,6 +141,8 @@ class MemberSalesService
             "{$trxTable}.trx_type as order_type",
             "{$trxTable}.trx_parent_trx_id as parent_transaction_id",
             "{$trxTable}.trx_is_preorder as is_preorder",
+            "{$trxTable}.trx_preorder_fulfillment_mode as preorder_fulfillment_mode",
+            DB::raw("CASE WHEN {$terminalReadyForArrivalSql} THEN 1 ELSE 0 END AS terminal_ready_for_arrival"),
             "{$customerTable}.customer_name as customer_name",
             "{$customerTable}.customer_whatsapp as customer_whatsapp",
             "{$customerTable}.customer_phone as customer_phone",
@@ -194,6 +201,8 @@ class MemberSalesService
             "{$trxTable}.trx_datetime as ordered_at",
             'detail_summary.product_count as product_count',
             'detail_summary.total_quantity as total_quantity',
+            DB::raw("COALESCE({$trxTable}.trx_total_monthly_points, detail_summary.total_monthly_points, 0) as total_monthly_points"),
+            DB::raw("COALESCE({$trxTable}.trx_total_annual_points, detail_summary.total_annual_points, 0) as total_annual_points"),
             'preview_detail.trx_detail_product_id as preview_product_id',
             'preview_detail.trx_detail_product_code as preview_product_code',
             'preview_detail.trx_detail_product_name as preview_product_name',
@@ -253,8 +262,21 @@ class MemberSalesService
             ->defaultSort('-id');
 
         if (($params['filter']['action'] ?? null) === 'ship') {
-            $table->where("{$trxTable}.trx_status", 'processing')
-                ->whereNull('child_summary.child_count');
+            $table->where(function ($action) use ($terminalReadyForArrivalSql, $trxTable): void {
+                $action->where(function ($shipping) use ($trxTable): void {
+                    $shipping->where("{$trxTable}.trx_status", 'processing')
+                        ->whereNull('child_summary.child_count');
+                })->orWhere(function ($arrival) use ($terminalReadyForArrivalSql, $trxTable): void {
+                    $arrival->where("{$trxTable}.trx_status", 'processing')
+                        ->where("{$trxTable}.trx_preorder_fulfillment_mode", 'upline_transit')
+                        ->where("{$trxTable}.trx_shipping_method", 'pickup')
+                        ->whereRaw($terminalReadyForArrivalSql);
+                })->orWhere(function ($handover) use ($trxTable): void {
+                    $handover->where("{$trxTable}.trx_status", 'ready_to_pickup')
+                        ->where("{$trxTable}.trx_preorder_fulfillment_mode", 'upline_transit')
+                        ->where("{$trxTable}.trx_shipping_method", 'pickup');
+                });
+            });
         }
 
         return $table->get($params);
@@ -265,6 +287,7 @@ class MemberSalesService
     {
         $member = $this->member($account);
         $trxTable = (new Trx)->getTable();
+        $terminalReadyForArrivalSql = $this->terminalReadyForArrivalSql($trxTable);
         $summary = Trx::query()
             ->where('trx_seller_id', $member->getKey())
             ->where('trx_seller_type', $this->memberType($member))
@@ -279,7 +302,7 @@ class MemberSalesService
             })
             ->toBase()
             ->selectRaw('COUNT(*) as total')
-            ->selectRaw("COUNT(CASE WHEN trx_status = 'waiting_payment_approval' OR (trx_status = 'processing' AND NOT EXISTS (SELECT 1 FROM {$trxTable} AS child_trx WHERE child_trx.trx_parent_trx_id = {$trxTable}.trx_id)) THEN 1 END) as action_required")
+            ->selectRaw("COUNT(CASE WHEN trx_status = 'waiting_payment_approval' OR (trx_status = 'processing' AND NOT EXISTS (SELECT 1 FROM {$trxTable} AS child_trx WHERE child_trx.trx_parent_trx_id = {$trxTable}.trx_id)) OR (trx_status = 'processing' AND trx_preorder_fulfillment_mode = 'upline_transit' AND trx_shipping_method = 'pickup' AND {$terminalReadyForArrivalSql}) OR (trx_status = 'ready_to_pickup' AND trx_preorder_fulfillment_mode = 'upline_transit' AND trx_shipping_method = 'pickup') THEN 1 END) as action_required")
             ->selectRaw("COUNT(CASE WHEN trx_status = 'waiting_payment' THEN 1 END) as waiting_payment")
             ->selectRaw("COUNT(CASE WHEN trx_status = 'waiting_payment_approval' THEN 1 END) as waiting_payment_approval")
             ->selectRaw("COUNT(CASE WHEN trx_status = 'processing' THEN 1 END) as processing")
@@ -303,11 +326,14 @@ class MemberSalesService
             "{$productTable}.product_id as id",
             "{$productTable}.product_product_category_id as category_id",
             "{$categoryTable}.product_category_name as category_name",
+            "{$categoryTable}.product_category_sort_order as category_sort_order",
             "{$productTable}.product_code as code",
             "{$productTable}.product_name as name",
             "{$productTable}.product_bpom_number as bpom_number",
             "{$productTable}.product_image as image",
             "{$productTable}.product_customer_price as customer_price",
+            "{$productTable}.product_monthly_points as monthly_points",
+            "{$productTable}.product_annual_points as annual_points",
             "{$productTable}.product_weight as weight",
             "{$productTable}.product_unit as unit",
         ])
@@ -328,7 +354,7 @@ class MemberSalesService
             ->where("{$categoryTable}.product_category_is_active", 1)
             ->where("{$stockTable}.member_stock_balance", '>', 0)
             ->search(['code', 'name', 'category_name'])
-            ->defaultSort('name')
+            ->defaultSort('category_sort_order,category_id,name')
             ->get($params);
 
         $this->attachVisibleLevelPrices(
@@ -378,6 +404,7 @@ class MemberSalesService
                 'code' => $member->member_code,
                 'name' => $member->member_name,
                 'level' => $member->level?->member_level_name,
+                'phone' => $member->member_mobilephone,
                 'address' => $member->member_address,
                 'origin' => [
                     ...$origin,
@@ -514,6 +541,8 @@ class MemberSalesService
                     'trx_detail_product_name' => $product->product_name,
                     'trx_detail_product_bpom_number' => $product->product_bpom_number,
                     'trx_detail_product_price' => $price,
+                    'trx_detail_product_monthly_points' => $product->product_monthly_points,
+                    'trx_detail_product_annual_points' => $product->product_annual_points,
                     'trx_detail_product_weight' => $product->product_weight,
                     'trx_detail_product_length' => $product->product_length,
                     'trx_detail_product_height' => $product->product_height,
@@ -646,6 +675,7 @@ class MemberSalesService
 
             $trx->details()->createMany($details);
             $trx->load('details');
+            $trx->recalculatePointTotals();
             $this->stockAllocationService->reserve($trx);
 
             if ($paymentMethod === 'transfer') {
@@ -820,6 +850,9 @@ class MemberSalesService
 
         $order = $this->orderQuery($member)->whereKey($trx->getKey())->firstOrFail();
         $this->ensureOrderCanBeShipped($order);
+        if ($this->isUplineTransitHandover($order)) {
+            return $this->handoverUplineTransitPickup($account, $member, $order, $data);
+        }
         if ($order->trx_shipping_method === 'courier_express') {
             $lock = Cache::lock("member-sales-express-shipping:{$order->getKey()}", 30);
             if (! $lock->get()) {
@@ -872,6 +905,11 @@ class MemberSalesService
         $shippedOrder = DB::transaction(function () use ($account, $member, $trx, $data): Trx {
             $lockedTrx = $this->orderQuery($member)->whereKey($trx->getKey())->lockForUpdate()->firstOrFail();
             $this->ensureOrderCanBeShipped($lockedTrx);
+            if (! isset($data['items'])
+                && $lockedTrx->trx_type === 'stock'
+                && in_array($lockedTrx->trx_buyer_type, ['distributor', 'agent', 'reseller'], true)) {
+                $data['items'] = $this->automaticShipmentItems($lockedTrx);
+            }
 
             if ($lockedTrx->trx_shipping_method === 'pickup' && $lockedTrx->trx_buyer_type === 'customer') {
                 $this->completeCustomerPickup($lockedTrx, $data['items']);
@@ -921,8 +959,17 @@ class MemberSalesService
                 if (! $lockedTrx->shippingManual) {
                     throw new ProcessException('Data pengiriman manual tidak ditemukan.');
                 }
+                $courier = $data['courier'] ?? [];
                 $lockedTrx->shippingManual->update([
+                    'shipping_courier_manual_name' => $courier['name']
+                        ?? $lockedTrx->shippingManual->shipping_courier_manual_name,
+                    'shipping_courier_manual_service' => $courier['service']
+                        ?? $lockedTrx->shippingManual->shipping_courier_manual_service,
+                    'shipping_courier_manual_type' => $courier['service_type']
+                        ?? $lockedTrx->shippingManual->shipping_courier_manual_type,
                     'shipping_courier_manual_awb' => $data['tracking_number'],
+                    'shipping_courier_manual_price' => (int) ($courier['cost']
+                        ?? $lockedTrx->shippingManual->shipping_courier_manual_price),
                     'shipping_courier_manual_delivery_note_number' => $data['delivery_note_number'] ?? null,
                 ]);
                 $this->syncShipmentDetails($lockedTrx->shippingManual, $lockedTrx, $data['items']);
@@ -934,6 +981,10 @@ class MemberSalesService
                     $this->pickupVerificationService->markCompleted($lockedTrx, now());
                 }
             }
+            if ($this->preorderChainService->isUplineTransitOrder($lockedTrx)
+                && (int) $lockedTrx->trx_parent_trx_id !== 0) {
+                $status = 'shipped';
+            }
             $lockedTrx->update(['trx_status' => $status, 'trx_status_datetime' => now()]);
             $this->preorderChainService->synchronizeFinalShipment($lockedTrx->refresh());
 
@@ -942,6 +993,59 @@ class MemberSalesService
         $this->partnershipEmailService->sendOrderShipped($shippedOrder);
 
         return $shippedOrder;
+    }
+
+    public function confirmUplineArrival(MemberAccount $account, Trx $trx): Trx
+    {
+        $member = $this->member($account);
+
+        return DB::transaction(function () use ($member, $trx): Trx {
+            $root = $this->orderQuery($member)
+                ->whereKey($trx->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+            $confirmed = $this->preorderChainService->confirmUplineArrival($root);
+
+            $order = $this->orderQuery($member)->findOrFail($confirmed->getKey());
+
+            return $this->preorderChainService->loadVisibleSalesChain($order);
+        });
+    }
+
+    /** @return array<string, mixed> */
+    public function shipmentCouriers(MemberAccount $account, Trx $trx): array
+    {
+        $order = $this->orderQuery($this->member($account))->findOrFail($trx->getKey());
+        $this->ensureOrderCanBeShipped($order);
+        if ($order->trx_shipping_method !== 'courier_manual') {
+            throw new ProcessException('Pilihan kurir manual tidak tersedia untuk pesanan ini.');
+        }
+
+        return $this->shippingService->transactionExpressRates($order);
+    }
+
+    /** @param array<string, mixed> $data */
+    private function handoverUplineTransitPickup(
+        MemberAccount $account,
+        Member $member,
+        Trx $trx,
+        array $data,
+    ): Trx {
+        return DB::transaction(function () use ($account, $member, $trx, $data): Trx {
+            $lockedTrx = $this->orderQuery($member)
+                ->whereKey($trx->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+            $this->ensureOrderCanBeShipped($lockedTrx);
+            $this->pickupVerificationService->validateAndMarkPickedUp(
+                $lockedTrx,
+                $data['pickup_pin'] ?? null,
+                now(),
+            );
+            $lockedTrx->update(['trx_status' => 'received', 'trx_status_datetime' => now()]);
+
+            return $this->order($account, $lockedTrx->refresh());
+        });
     }
 
     /** @param array<string, mixed> $data */
@@ -1103,6 +1207,62 @@ class MemberSalesService
     private function consumeStockForShipment(Trx $trx): void
     {
         $this->stockAllocationService->consume($trx);
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function automaticShipmentItems(Trx $trx): array
+    {
+        $quantities = $trx->details->groupBy('trx_detail_product_id')
+            ->map(fn (Collection $details): int => (int) $details->sum('trx_detail_qty'));
+        $productIds = $quantities->keys()->map(fn (mixed $id): int => (int) $id)->all();
+        $stocks = MemberStock::query()
+            ->where('member_stock_member_id', $trx->trx_seller_id)
+            ->whereIn('member_stock_product_id', $productIds)
+            ->orderBy('member_stock_product_id')
+            ->lockForUpdate()->get()->keyBy('member_stock_product_id');
+        $balances = $this->batchStockReportService->batchBalances(
+            (int) $trx->trx_seller_id,
+            $productIds,
+        )->groupBy('product_id');
+        $items = [];
+        foreach ($quantities as $productId => $quantity) {
+            $remaining = $quantity;
+            $knownBatches = collect($balances->get($productId, []))
+                ->filter(fn (object $batch): bool => filled($batch->batch_number));
+            foreach ($knownBatches as $batch) {
+                if ($batch->expiry_date !== null && $batch->expiry_date <= now()->toDateString()) {
+                    continue;
+                }
+                $allocated = min($remaining, (int) $batch->balance);
+                if ($allocated <= 0) {
+                    continue;
+                }
+                $items[] = [
+                    'product_id' => (int) $productId,
+                    'quantity' => $allocated,
+                    'batch_number' => $batch->batch_number,
+                    'expiry_date' => $batch->expiry_date,
+                ];
+                $remaining -= $allocated;
+            }
+            if ($remaining > 0) {
+                $stock = $stocks->get($productId);
+                $unassigned = max(0, (int) ($stock?->member_stock_balance ?? 0)
+                    + (int) ($stock?->member_stock_transfer_out ?? 0)
+                    - (int) $knownBatches->sum('balance'));
+                if ($unassigned < $remaining) {
+                    throw new ProcessException('Stok batch yang belum kedaluwarsa tidak mencukupi untuk pengiriman.');
+                }
+                $items[] = [
+                    'product_id' => (int) $productId,
+                    'quantity' => $remaining,
+                    'batch_number' => '',
+                    'expiry_date' => null,
+                ];
+            }
+        }
+
+        return $items;
     }
 
     /** @param list<array<string, mixed>> $items */
@@ -1459,6 +1619,10 @@ class MemberSalesService
 
     private function ensureOrderCanBeShipped(Trx $order): void
     {
+        if ($this->isUplineTransitHandover($order)) {
+            return;
+        }
+
         if ($order->trx_status !== 'processing') {
             throw new ProcessException('Pesanan harus berstatus diproses sebelum dikirim.');
         }
@@ -1468,6 +1632,31 @@ class MemberSalesService
                 'Pesanan PO ini sedang dipenuhi melalui pesanan pembelian Anda dan tidak perlu dikirim dari stok Anda.'
             );
         }
+    }
+
+    private function isUplineTransitHandover(Trx $order): bool
+    {
+        return (int) $order->trx_parent_trx_id === 0
+            && $order->trx_preorder_fulfillment_mode === 'upline_transit'
+            && $order->trx_shipping_method === 'pickup'
+            && $order->trx_status === 'ready_to_pickup';
+    }
+
+    private function terminalReadyForArrivalSql(string $trxTable): string
+    {
+        $directArrival = $this->preorderChainService->uplineArrivalConditionSql('arrival_child');
+        $chainArrival = $this->preorderChainService->uplineArrivalConditionSql('arrival_child_2');
+
+        return "(EXISTS (SELECT 1 FROM {$trxTable} AS arrival_child
+                WHERE arrival_child.trx_parent_trx_id = {$trxTable}.trx_id AND {$directArrival}
+                    AND NOT EXISTS (SELECT 1 FROM {$trxTable} AS arrival_grandchild
+                        WHERE arrival_grandchild.trx_parent_trx_id = arrival_child.trx_id))
+            OR EXISTS (SELECT 1 FROM {$trxTable} AS arrival_child_1
+                INNER JOIN {$trxTable} AS arrival_child_2
+                    ON arrival_child_2.trx_parent_trx_id = arrival_child_1.trx_id
+                WHERE arrival_child_1.trx_parent_trx_id = {$trxTable}.trx_id AND {$chainArrival}
+                    AND NOT EXISTS (SELECT 1 FROM {$trxTable} AS arrival_descendant
+                        WHERE arrival_descendant.trx_parent_trx_id = arrival_child_2.trx_id)))";
     }
 
     private function memberType(Member $member): string

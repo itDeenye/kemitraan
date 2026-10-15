@@ -100,7 +100,7 @@ class MemberReturnService
         return $dataTable->get($params);
     }
 
-    /** @return array{eligible: int, action_required: int, history: int, total_actions: int} */
+    /** @return array{eligible: int, action_required: int, history: int, total_actions: int, return_max_days: int} */
     public function actionSummary(MemberAccount $account): array
     {
         $member = $this->member($account);
@@ -128,6 +128,7 @@ class MemberReturnService
             'action_required' => $actionRequiredCount,
             'history' => $historyCount,
             'total_actions' => $eligibleCount + $actionRequiredCount,
+            'return_max_days' => $this->returnMaxDays(),
         ];
     }
 

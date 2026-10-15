@@ -188,6 +188,8 @@ return [
         'limit' => 'jumlah data per halaman',
         'per_page' => 'jumlah data per halaman',
         'customer_price' => 'harga pelanggan',
+        'monthly_points' => 'poin bulanan',
+        'annual_points' => 'poin tahunan',
         'distributor_price' => 'harga distributor',
         'agent_price' => 'harga agen',
         'reseller_price' => 'harga reseller',

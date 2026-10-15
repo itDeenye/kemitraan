@@ -2,6 +2,7 @@
 
 namespace App\Services\Notification;
 
+use App\Mail\DistributorRegistrationReviewMail;
 use App\Mail\MemberCredentialsMail;
 use App\Mail\MemberRegistrationApprovedMail;
 use App\Mail\MemberRegistrationRejectedMail;
@@ -65,6 +66,17 @@ class PartnershipEmailService
             memberLevel: $registration->level?->member_level_name ?? 'Mitra',
             rejectionReason: $registration->member_registration_note ?: 'Data pendaftaran perlu diperbaiki.',
             verificationUrl: url("/member/network/registrations/{$registration->getKey()}"),
+        ));
+    }
+
+    public function sendDistributorRegistrationReview(MemberRegistration $registration, Member $distributor, Member $agent): void
+    {
+        $this->send($distributor->member_email, new DistributorRegistrationReviewMail(
+            distributorName: $distributor->member_name,
+            applicantName: $registration->member_registration_name,
+            agentName: $agent->member_name,
+            registrationId: sprintf('REG-%06d', $registration->getKey()),
+            reviewUrl: url("/member/network/registration-approvals/{$registration->getKey()}"),
         ));
     }
 

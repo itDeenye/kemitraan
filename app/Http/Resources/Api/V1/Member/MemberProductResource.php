@@ -31,6 +31,8 @@ class MemberProductResource extends ApiResource
             'image_filename' => $this->product_image_filename,
             'price' => (int) ($this->resource instanceof Product ? $this->catalog_price : $this->price),
             'customer_price' => (int) $this->product_customer_price,
+            'monthly_points' => (int) $this->product_monthly_points,
+            'annual_points' => (int) $this->product_annual_points,
             'weight_grams' => (int) $this->product_weight,
             'dimensions_cm' => [
                 'length' => (int) $this->product_length,

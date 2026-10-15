@@ -65,29 +65,44 @@
             </template>
 
             <template #item.transfer_in="{ item }">
-                <span class="text-success"
-                    >+{{ formatPrice(item.transfer_in) }}</span
+                <span
+                    class="font-weight-bold"
+                    :class="
+                        Number(item.transfer_in) > 0
+                            ? 'text-success'
+                            : 'text-medium-emphasis'
+                    "
                 >
+                    {{ formatPrice(item.transfer_in) }}
+                </span>
+                <span class="text-caption text-medium-emphasis ml-1">
+                    {{ item.product?.unit || "pcs" }}
+                </span>
             </template>
 
             <template #item.transfer_out="{ item }">
-                <span class="text-error"
-                    >-{{ formatPrice(item.transfer_out) }}</span
+                <span
+                    class="font-weight-bold"
+                    :class="
+                        Number(item.transfer_out) > 0
+                            ? 'text-error'
+                            : 'text-medium-emphasis'
+                    "
                 >
+                    {{ formatPrice(item.transfer_out) }}
+                </span>
+                <span class="text-caption text-medium-emphasis ml-1">
+                    {{ item.product?.unit || "pcs" }}
+                </span>
             </template>
 
             <template #item.balance="{ item }">
                 <span class="font-weight-bold">{{
                     formatPrice(item.balance)
                 }}</span>
-                <span class="text-caption ml-1">{{ item.product?.unit }}</span>
-            </template>
-
-            <template #item.last_updated_at="{ item }">
-                <span v-if="item.last_updated_at">{{
-                    formatDateTime(item.last_updated_at)
-                }}</span>
-                <span v-else class="text-caption text-medium-emphasis">-</span>
+                <span class="text-caption text-medium-emphasis ml-1">
+                    {{ item.product?.unit || "pcs" }}
+                </span>
             </template>
         </BaseDataTable>
 
@@ -173,14 +188,6 @@ const headers = ref<any[]>([
         key: "balance",
         align: "right",
         sortable: false,
-    },
-    {
-        title: "Update Terakhir",
-        key: "last_updated_at",
-        align: "left",
-        type: "date",
-        sortable: false,
-        filter: true,
     },
 ]);
 

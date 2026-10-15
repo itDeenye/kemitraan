@@ -666,6 +666,7 @@ const isFormValid = ref(false);
 const order = ref<any>(null);
 const schedules = ref<any[]>([]);
 const couriers = ref<any[]>([]);
+let dialogSession = 0;
 
 interface BatchRow {
     quantity: number;
@@ -726,9 +727,12 @@ const getBatchQtyTotal = (groupIndex: number): number => {
 // Removed computed getTitle, getIcon, getSubmitText as they are hardcoded
 
 const fetchSchedules = async () => {
+    if (!dialog.value || loadingSchedules.value) return;
+    const session = dialogSession;
     loadingSchedules.value = true;
     try {
         const res = await inventoryService.getExpressSchedules();
+        if (!dialog.value || session !== dialogSession) return;
         if (res.data?.success) {
             schedules.value = res.data.data.results.map((s: any) => ({
                 ...s,
@@ -746,10 +750,13 @@ const fetchSchedules = async () => {
             }
         }
     } catch (error) {
+        if (!dialog.value || session !== dialogSession) return;
         console.error("Gagal mengambil jadwal pickup express", error);
         snackbar.showMessage("Gagal memuat jadwal pickup.", "error");
     } finally {
-        loadingSchedules.value = false;
+        if (session === dialogSession) {
+            loadingSchedules.value = false;
+        }
     }
 };
 
@@ -758,7 +765,7 @@ const fetchCouriers = async (id: number) => {
     couriers.value = [];
     try {
         const res = await inventoryService.getReshipCouriers(id, {
-            couriers: ["jne", "jnt", "sicepat"],
+            couriers: [],
         });
         if (res.data?.success && res.data.data?.results) {
             couriers.value = res.data.data.results;
@@ -783,6 +790,9 @@ const onPickupMethodChange = () => {
 };
 
 const open = async (item: any) => {
+    const session = ++dialogSession;
+    schedules.value = [];
+    loadingSchedules.value = false;
     dialog.value = true;
     order.value = item;
     loadingData.value = true;
@@ -799,39 +809,57 @@ const open = async (item: any) => {
 
     try {
         const res = await inventoryService.getShipmentDetail(item.id);
+        if (!dialog.value || session !== dialogSession) return;
 
         if (res.data?.data) {
             order.value = res.data.data;
+            form.delivery_note_number =
+                order.value.shipping?.delivery_note_number || "";
             form.productGroups =
                 order.value.details?.map((d: any) => ({
                     product_id: d.product.id,
                     product_name: d.product.name,
                     product_code: d.product.code || "",
                     order_quantity: d.quantity,
-                    batches: [
-                        {
-                            quantity: d.quantity,
-                            batch_number: "",
-                            expiry_date: "",
-                        },
-                    ],
+                    batches: d.product?.batches?.length
+                        ? d.product.batches.map((batch: any) => ({
+                              quantity: Number(batch.quantity || 0),
+                              batch_number: batch.batch_number || "",
+                              expiry_date: batch.expiry_date || "",
+                          }))
+                        : [
+                              {
+                                  quantity: d.quantity,
+                                  batch_number: "",
+                                  expiry_date: "",
+                              },
+                          ],
                 })) || [];
         }
     } catch (error) {
+        if (!dialog.value || session !== dialogSession) return;
         console.error("Gagal mengambil detail pesanan:", error);
         snackbar.showMessage("Gagal memuat detail pesanan.", "error");
     } finally {
-        loadingData.value = false;
+        if (session === dialogSession) {
+            loadingData.value = false;
+        }
     }
 
     // Auto-fetch if express
-    if (order.value.shipping_method === "courier_express") {
+    if (
+        dialog.value &&
+        session === dialogSession &&
+        order.value?.shipping_method === "courier_express"
+    ) {
         fetchSchedules();
         fetchCouriers(item.id);
     }
 };
 
 const close = () => {
+    dialogSession++;
+    loadingSchedules.value = false;
     dialog.value = false;
     order.value = null;
 };

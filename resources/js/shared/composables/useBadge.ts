@@ -188,6 +188,7 @@ export function useBadge() {
                     'approved': 'success',
                     'rejected': 'error',
                     'processing': 'warning',
+                    'ready_to_pickup': 'secondary',
                     'shipped': 'info',
                     'received': 'success',
                     'completed': 'success',
@@ -203,6 +204,7 @@ export function useBadge() {
                     'approved': 'Disetujui',
                     'rejected': 'Ditolak',
                     'processing': 'Dikemas',
+                    'ready_to_pickup': 'Siap Diambil',
                     'shipped': 'Dikirim',
                     'received': 'Siap Diterima',
                     'completed': 'Selesai',
@@ -361,7 +363,7 @@ export function useBadge() {
                     'rejected': 'error',
                 };
                 const regLabels: Record<string, string> = {
-                    'requested': 'Menunggu',
+                    'requested': 'Menunggu Verifikasi',
                     'approved': 'Disetujui',
                     'rejected': 'Ditolak',
                 };
@@ -376,12 +378,16 @@ export function useBadge() {
                     'scheduled': 'info',
                     'approved': 'success',
                     'rejected': 'error',
+                    'applied': 'success',
+                    'cancelled': 'default',
                 };
                 const upgradeLabels: Record<string, string> = {
                     'requested': 'Menunggu',
                     'scheduled': 'Dijadwalkan',
                     'approved': 'Disetujui',
                     'rejected': 'Ditolak',
+                    'applied': 'Diterapkan',
+                    'cancelled': 'Dibatalkan',
                 };
                 return {
                     label: upgradeLabels[strVal] || String(value),

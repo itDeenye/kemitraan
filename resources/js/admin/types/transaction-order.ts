@@ -101,6 +101,8 @@ export interface TransactionOrder {
         } | null;
     };
     totals: {
+        total_monthly_points: number;
+        total_annual_points: number;
         product_total: number;
         discount_percent: number;
         discount_value: number;
@@ -134,7 +136,7 @@ export interface TransactionOrder {
     is_preorder?: boolean;
     parent_transaction_id?: number;
     preorder?: TransactionPreorder | null;
-    details?: any[];
+    details?: TransactionOrderItem[];
     payment?: any;
     tracking?: {
         is_available: boolean;
@@ -148,4 +150,31 @@ export interface TransactionOrder {
         service: string | null;
     } | null;
     shipping?: any;
+}
+
+export interface TransactionOrderItem {
+    id: number;
+    product: {
+        id: number;
+        code: string | null;
+        name: string | null;
+        bpom_number: string | null;
+        image: string | null;
+        monthly_points: number;
+        annual_points: number;
+        weight?: number;
+        batch_number?: string | null;
+        expiry_date?: string | null;
+        batches?: { quantity: number; batch_number: string; expiry_date: string | null }[];
+    };
+    price: number;
+    net_price: number;
+    discount_percent: number;
+    discount_value: number;
+    quantity: number;
+    preorder_quantity: number;
+    subtotal: number;
+    points: number;
+    monthly_points: number;
+    annual_points: number;
 }

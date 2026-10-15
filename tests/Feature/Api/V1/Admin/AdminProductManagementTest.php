@@ -7,10 +7,13 @@ use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\SiteAdministrator;
 use App\Models\SiteAdministratorGroup;
+use App\Models\Trx;
+use App\Models\TrxDetail;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class AdminProductManagementTest extends TestCase
@@ -21,6 +24,126 @@ class AdminProductManagementTest extends TestCase
     {
         $this->getJson('/api/v1/admin/products')->assertUnauthorized();
         $this->getJson('/api/v1/admin/product/categories')->assertUnauthorized();
+    }
+
+    #[DataProvider('transactedProductCases')]
+    public function test_transacted_products_cannot_be_deleted(string $status, string $type, bool $isPreorder): void
+    {
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $product = $this->createDeletableProduct('USED');
+        $unused = $this->createDeletableProduct('UNUSED');
+        $trx = Trx::query()->create([
+            'trx_code' => 'TRX-PRODUCT-GUARD',
+            'trx_type' => $type, 'trx_is_preorder' => $isPreorder,
+            'trx_seller_type' => $type === 'retail' ? 'agent' : 'warehouse', 'trx_seller_id' => 1,
+            'trx_buyer_type' => $type === 'retail' ? 'customer' : 'distributor', 'trx_buyer_id' => 1,
+            'trx_total_price' => 100000, 'trx_grand_total_price' => 100000,
+            'trx_grand_total_nett_price' => 100000, 'trx_bill_amount' => 100000,
+            'trx_payment_method' => 'transfer', 'trx_shipping_method' => 'pickup',
+            'trx_status' => $status, 'trx_status_datetime' => now(), 'trx_datetime' => now(),
+        ]);
+        $detail = TrxDetail::query()->create([
+            'trx_detail_trx_id' => $trx->getKey(), 'trx_detail_product_id' => $product->getKey(),
+            'trx_detail_product_code' => $product->product_code,
+            'trx_detail_product_name' => $product->product_name,
+            'trx_detail_product_price' => 100000, 'trx_detail_nett_price' => 100000, 'trx_detail_qty' => 1,
+        ]);
+
+        $this->getJson('/api/v1/admin/products/'.$product->getKey())
+            ->assertOk()->assertJsonPath('data.can_delete', false);
+        $rows = $this->getJson('/api/v1/admin/products?limit=100')->assertOk()->json('data.results');
+        $this->assertFalse(collect($rows)->firstWhere('id', $product->getKey())['can_delete']);
+        $this->assertTrue(collect($rows)->firstWhere('id', $unused->getKey())['can_delete']);
+        $this->deleteJson('/api/v1/admin/products/'.$product->getKey())
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'Produk sudah digunakan dalam transaksi dan tidak dapat dihapus.')
+            ->assertJsonPath('error_code', 'process_error');
+        $product->refresh();
+        $this->assertFalse($product->product_is_deleted);
+        $this->assertTrue($product->product_is_active);
+        $this->assertTrue($product->product_is_publish);
+        $this->assertModelExists($detail);
+        $this->assertModelExists($trx);
+    }
+
+    /** @return array<string, array{string, string, bool}> */
+    public static function transactedProductCases(): array
+    {
+        return [
+            'unpaid purchase' => ['waiting_payment', 'stock', false],
+            'preorder' => ['processing', 'stock', true],
+            'POS' => ['completed', 'retail', false],
+            'cancelled purchase' => ['cancelled', 'stock', false],
+            'rejected purchase' => ['rejected', 'stock', false],
+        ];
+    }
+
+    public function test_products_without_transactions_can_still_be_deleted(): void
+    {
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $product = $this->createDeletableProduct('NEW');
+        $this->getJson('/api/v1/admin/products/'.$product->getKey())
+            ->assertOk()->assertJsonPath('data.can_delete', true);
+        $this->deleteJson('/api/v1/admin/products/'.$product->getKey())->assertOk();
+        $this->assertTrue($product->refresh()->product_is_deleted);
+        $this->getJson('/api/v1/admin/products/'.$product->getKey())->assertNotFound();
+    }
+
+    private function createDeletableProduct(string $code): Product
+    {
+        $category = ProductCategory::query()->firstOrCreate(['product_category_name' => 'Skincare'], [
+            'product_category_description' => '', 'product_category_is_active' => 1,
+        ]);
+
+        return Product::query()->create([
+            'product_product_category_id' => $category->getKey(),
+            'product_code' => $code, 'product_name' => 'Produk '.$code,
+            'product_customer_price' => 100000, 'product_unit' => 'pcs',
+            'product_weight' => 100, 'product_length' => 10, 'product_width' => 10, 'product_height' => 10,
+            'product_is_publish' => 1, 'product_is_active' => 1, 'product_is_deleted' => 0,
+            'product_input_datetime' => now(),
+        ]);
+    }
+
+    public function test_administrator_can_move_product_categories_up_and_down(): void
+    {
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+
+        $first = ProductCategory::query()->create([
+            'product_category_name' => 'Pertama',
+            'product_category_description' => '',
+            'product_category_is_active' => 1,
+        ]);
+        $second = ProductCategory::query()->create([
+            'product_category_name' => 'Kedua',
+            'product_category_description' => '',
+            'product_category_is_active' => 1,
+        ]);
+        $third = ProductCategory::query()->create([
+            'product_category_name' => 'Ketiga',
+            'product_category_description' => '',
+            'product_category_is_active' => 1,
+        ]);
+
+        $this->patchJson("/api/v1/admin/product/categories/{$third->getKey()}/move-up")
+            ->assertOk()
+            ->assertJsonPath('data.sort_order', 2);
+
+        $this->getJson('/api/v1/admin/product/categories?pagination=false')
+            ->assertOk()
+            ->assertJsonPath('data.results.0.id', $first->getKey())
+            ->assertJsonPath('data.results.1.id', $third->getKey())
+            ->assertJsonPath('data.results.2.id', $second->getKey());
+
+        $this->patchJson("/api/v1/admin/product/categories/{$first->getKey()}/move-down")
+            ->assertOk()
+            ->assertJsonPath('data.sort_order', 2);
+
+        $this->getJson('/api/v1/admin/product/categories?pagination=false')
+            ->assertOk()
+            ->assertJsonPath('data.results.0.id', $third->getKey())
+            ->assertJsonPath('data.results.1.id', $first->getKey())
+            ->assertJsonPath('data.results.2.id', $second->getKey());
     }
 
     public function test_administrator_can_manage_categories_and_products(): void
@@ -66,6 +189,8 @@ class AdminProductManagementTest extends TestCase
             'description' => 'Serum pencerah',
             'image_url' => $imageUrl,
             'customer_price' => 200000,
+            'monthly_points' => 2,
+            'annual_points' => 5,
             'member_prices' => [
                 ['member_level_id' => 1, 'price' => 130000],
                 ['member_level_id' => 2, 'price' => 150000],
@@ -81,6 +206,8 @@ class AdminProductManagementTest extends TestCase
             'is_active' => true,
         ])->assertSuccessful()
             ->assertJsonPath('data.code', 'SERUM-01')
+            ->assertJsonPath('data.monthly_points', 2)
+            ->assertJsonPath('data.annual_points', 5)
             ->assertJsonPath('data.bpom_number', 'NA18250100001')
             ->assertJsonPath('data.image', $imageUrl)
             ->assertJsonMissingPath('data.pv')
@@ -100,6 +227,8 @@ class AdminProductManagementTest extends TestCase
             ->assertJsonCount(1, 'data.results')
             ->assertJsonMissingPath('data.results.0.pv')
             ->assertJsonPath('data.results.0.bpom_number', 'NA18250100001')
+            ->assertJsonPath('data.results.0.monthly_points', 2)
+            ->assertJsonPath('data.results.0.annual_points', 5)
             ->assertJsonPath('data.results.0.category.name', 'Skincare')
             ->assertJsonPath('data.pagination.total_data', 1);
 
@@ -144,6 +273,8 @@ class AdminProductManagementTest extends TestCase
             'description' => 'Formula baru',
             'image_url' => 'https://cdn.example.test/products/advanced-serum.webp',
             'customer_price' => 210000,
+            'monthly_points' => 0,
+            'annual_points' => 7,
             'member_prices' => [
                 ['member_level_id' => 1, 'price' => 140000],
                 ['member_level_id' => 2, 'price' => 160000],
@@ -155,6 +286,8 @@ class AdminProductManagementTest extends TestCase
             'height' => 5,
         ])->assertOk()
             ->assertJsonPath('data.name', 'Advanced Brightening Serum')
+            ->assertJsonPath('data.monthly_points', 0)
+            ->assertJsonPath('data.annual_points', 7)
             ->assertJsonPath('data.bpom_number', 'NA18250100002')
             ->assertJsonPath('data.image', 'https://cdn.example.test/products/advanced-serum.webp')
             ->assertJsonMissingPath('data.pv')
@@ -292,6 +425,19 @@ class AdminProductManagementTest extends TestCase
             'image_url' => 'bukan-url',
         ])->assertUnprocessable()
             ->assertJsonPath('errors.image_url.0', 'Tautan gambar harus berupa tautan yang valid.');
+    }
+
+    public function test_product_points_reject_negative_fractional_and_overflow_values(): void
+    {
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+
+        foreach ([-1, 1.5, 4294967296, null] as $invalidPoints) {
+            $this->postJson('/api/v1/admin/products', [
+                'monthly_points' => $invalidPoints,
+                'annual_points' => $invalidPoints,
+            ])->assertUnprocessable()
+                ->assertJsonValidationErrors(['monthly_points', 'annual_points']);
+        }
     }
 
     public function test_missing_api_model_returns_a_safe_process_error(): void

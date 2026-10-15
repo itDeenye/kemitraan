@@ -36,6 +36,13 @@ export interface MemberNetwork {
     [key: string]: any;
 }
 
+export interface MemberIdentity {
+    type: string | null;
+    number: string | null;
+    image: string | null;
+    image_filename: string | null;
+}
+
 export interface Member {
     id: number;
     code: string;
@@ -54,6 +61,11 @@ export interface Member {
     status: MemberStatus;
     joined_at: string;
     image: string | null;
+    image_filename?: string | null;
+    identity?: MemberIdentity | null;
+    payment_proof_image_url?: string | null;
+    nib?: string | null;
+    npwp?: string | null;
     username: string | null;
     parent:
         | {

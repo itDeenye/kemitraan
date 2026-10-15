@@ -6,6 +6,7 @@ use App\Http\Resources\Api\V1\Member\Concerns\BuildsMemberPreorder;
 use App\Http\Resources\Api\V1\Member\Concerns\BuildsMemberTracking;
 use App\Http\Resources\ApiResource;
 use App\Models\Trx;
+use App\Services\Purchase\PreorderChainService;
 use App\Support\MediaUrl;
 use Illuminate\Http\Request;
 
@@ -42,6 +43,10 @@ class MemberSaleOrderResource extends ApiResource
                 $trx !== null,
                 fn (): ?array => $isPreorder ? $this->memberPreorder($trx) : null,
             ),
+            'preorder_fulfillment' => $this->when(
+                $trx !== null,
+                fn (): ?array => $isPreorder ? $this->memberPreorderFulfillment($trx) : null,
+            ),
             'seller' => $this->seller($trx),
             'buyer' => $this->buyer($trx),
             // Dipertahankan sebagai alias agar frontend penjualan lama tetap kompatibel.
@@ -49,6 +54,8 @@ class MemberSaleOrderResource extends ApiResource
             'summary' => $trx ? $this->detailSummary($trx) : [
                 'product_count' => (int) $this->resource->product_count,
                 'total_quantity' => (int) $this->resource->total_quantity,
+                'total_monthly_points' => (int) $this->resource->total_monthly_points,
+                'total_annual_points' => (int) $this->resource->total_annual_points,
                 'preorder_quantity' => $isPreorder
                     ? (int) $this->resource->total_quantity
                     : 0,
@@ -78,6 +85,7 @@ class MemberSaleOrderResource extends ApiResource
                 'label' => $this->statusLabel($status),
             ],
             'actions' => $this->actions(
+                $trx,
                 $status,
                 $paymentMethod,
                 $shippingMethod,
@@ -99,6 +107,8 @@ class MemberSaleOrderResource extends ApiResource
                         'id' => (int) $detail->trx_detail_product_id,
                         'code' => $detail->trx_detail_product_code,
                         'name' => $detail->trx_detail_product_name,
+                        'monthly_points' => (int) $detail->trx_detail_product_monthly_points,
+                        'annual_points' => (int) $detail->trx_detail_product_annual_points,
                         'bpom_number' => $detail->trx_detail_product_bpom_number
                             ?: $detail->product?->product_bpom_number,
                         'image' => MediaUrl::publicUrl($detail->product?->product_image),
@@ -112,7 +122,9 @@ class MemberSaleOrderResource extends ApiResource
                         ? (int) $detail->trx_detail_qty
                         : 0,
                     'subtotal' => (int) $detail->trx_detail_nett_price * (int) $detail->trx_detail_qty,
-                    'points' => (int) $detail->trx_detail_qty,
+                    'points' => $detail->monthlyPoints(),
+                    'monthly_points' => $detail->monthlyPoints(),
+                    'annual_points' => $detail->annualPoints(),
                 ]
             )->values()),
             'payment' => $trx
@@ -122,7 +134,7 @@ class MemberSaleOrderResource extends ApiResource
                 : $this->listPayment($paymentMethod),
             'shipping' => $this->when(
                 $trx !== null,
-                fn (): ?array => $this->shipping($this->preorderFulfillmentTransaction($trx) ?? $trx),
+                fn (): ?array => $this->shipping($this->preorderShippingTransaction($trx)),
             ),
             'tracking' => $this->when($trx !== null, fn (): ?array => $this->memberTracking($trx)),
         ];
@@ -138,6 +150,16 @@ class MemberSaleOrderResource extends ApiResource
         $lastTransaction = $trx->preorderChain->last();
 
         return $lastTransaction?->is($trx) ? null : $lastTransaction;
+    }
+
+    private function preorderShippingTransaction(Trx $trx): Trx
+    {
+        if ($trx->trx_preorder_fulfillment_mode === 'upline_transit'
+            && in_array($trx->trx_status, ['ready_to_pickup', 'received', 'completed'], true)) {
+            return $trx;
+        }
+
+        return $this->preorderFulfillmentTransaction($trx) ?? $trx;
     }
 
     private function preorderOriginTransaction(Trx $trx): ?Trx
@@ -167,6 +189,7 @@ class MemberSaleOrderResource extends ApiResource
                 'id' => (int) $trx->trx_seller_id,
                 'code' => $trx->seller?->member_code,
                 'name' => $trx->seller?->member_name,
+                'phone' => $trx->seller?->member_mobilephone,
                 'origin' => $this->shippingLocation($fulfillmentTrx, 'origin')
                     ?? $this->partyLocation($fulfillmentSeller),
             ];
@@ -177,6 +200,7 @@ class MemberSaleOrderResource extends ApiResource
             'id' => (int) $this->resource->seller_id,
             'code' => $this->resource->seller_code,
             'name' => $this->resource->seller_name,
+            'phone' => $this->resource->seller_phone ?? null,
             'origin' => $this->listPartyLocation('seller'),
         ];
     }
@@ -197,6 +221,9 @@ class MemberSaleOrderResource extends ApiResource
                 'id' => (int) $trx->trx_buyer_id,
                 'code' => $isCustomer ? null : $buyer?->member_code,
                 'name' => $isCustomer ? $buyer?->customer_name : $buyer?->member_name,
+                'phone' => $isCustomer
+                    ? ($buyer?->customer_phone ?: $buyer?->customer_whatsapp)
+                    : $buyer?->member_mobilephone,
                 'destination' => $this->shippingLocation($fulfillmentTrx, 'destination')
                     ?? $this->partyLocation($recipient, $recipientIsCustomer),
             ];
@@ -211,6 +238,9 @@ class MemberSaleOrderResource extends ApiResource
             'name' => $isCustomer
                 ? $this->resource->customer_name
                 : $this->resource->buyer_member_name,
+            'phone' => $isCustomer
+                ? ($this->resource->customer_phone ?: $this->resource->customer_whatsapp)
+                : ($this->resource->buyer_member_whatsapp ?? null),
             'destination' => $this->listPartyLocation('buyer', $isCustomer),
         ];
     }
@@ -260,6 +290,7 @@ class MemberSaleOrderResource extends ApiResource
         return [
             'product_count' => $trx->details->count(),
             'total_quantity' => (int) $trx->details->sum('trx_detail_qty'),
+            ...$trx->pointTotals(),
             'preorder_quantity' => (bool) $trx->trx_is_preorder
                 ? (int) $trx->details->sum('trx_detail_qty')
                 : 0,
@@ -363,6 +394,7 @@ class MemberSaleOrderResource extends ApiResource
 
     /** @return array<string, bool> */
     private function actions(
+        ?Trx $trx,
         string $status,
         string $paymentMethod,
         string $shippingMethod,
@@ -371,9 +403,31 @@ class MemberSaleOrderResource extends ApiResource
         bool $hasChildTransaction,
         bool $isPreorder,
     ): array {
+        $isUplineTransitRoot = (int) ($trx?->trx_parent_trx_id
+                ?? $this->resource->parent_transaction_id
+                ?? 0) === 0
+            && ($trx?->trx_preorder_fulfillment_mode
+                ?? $this->resource->preorder_fulfillment_mode
+                ?? null) === 'upline_transit'
+            && $shippingMethod === 'pickup';
+        /** @var Trx|null $terminal */
+        $terminal = $isUplineTransitRoot && $trx?->relationLoaded('preorderChain') === true
+            ? $trx->preorderChain->last()
+            : null;
+        $canConfirmArrival = $isUplineTransitRoot
+            && $status === 'processing'
+            && ($trx === null
+                ? (bool) ($this->resource->terminal_ready_for_arrival ?? false)
+                : ($terminal !== null
+                    && $terminal->getKey() !== $trx->getKey()
+                    && app(PreorderChainService::class)->canConfirmUplineArrival($terminal)));
+        $canHandoverPickup = $isUplineTransitRoot && $status === 'ready_to_pickup';
         $canVerifyPayment = $paymentMethod === 'transfer'
             && $status === 'waiting_payment_approval';
-        $canShip = $status === 'processing' && ! $hasChildTransaction;
+        $canShip = ($status === 'processing' && ! $hasChildTransaction) || $canHandoverPickup;
+        $isMemberStock = $orderType === 'stock'
+            && in_array($buyerType, ['distributor', 'agent', 'reseller'], true)
+            && in_array($shippingMethod, ['pickup', 'courier_manual'], true);
         $canCancel = $isPreorder
             ? ! $hasChildTransaction && in_array($status, [
                 'waiting_stock_screening',
@@ -388,19 +442,33 @@ class MemberSaleOrderResource extends ApiResource
             'can_approve_payment' => $canVerifyPayment,
             'can_reject_payment' => $canVerifyPayment,
             'can_ship' => $canShip,
+            'can_confirm_arrival' => $canConfirmArrival,
+            'can_handover_pickup' => $canHandoverPickup,
             'can_cancel' => $canCancel,
             'can_upload_payment' => false,
             'can_receive' => false,
             'can_show_pickup_code' => false,
-            'allows_delivery_note_number' => $canShip && $buyerType !== 'customer',
+            'allows_delivery_note_number' => $canShip
+                && ! $canHandoverPickup
+                && ! $isMemberStock
+                && $buyerType !== 'customer',
             'requires_delivery_note_number' => false,
+            'requires_shipment_items' => $canShip && ! $canHandoverPickup && ! $isMemberStock,
             'requires_tracking_number' => $canShip
+                && ! $canHandoverPickup
                 && $shippingMethod === 'courier_manual',
             'requires_pickup_method' => $canShip && $shippingMethod === 'courier_express',
             'requires_pickup_schedule' => $canShip && $shippingMethod === 'courier_express',
             'requires_pickup_pin' => $canShip
                 && $shippingMethod === 'pickup'
                 && $buyerType !== 'customer',
+            'requires_manual_courier' => $canShip
+                && ! $canHandoverPickup
+                && $shippingMethod === 'courier_manual'
+                && $trx !== null
+                && (int) $trx->trx_parent_trx_id !== 0
+                && $trx->relationLoaded('preorderChain')
+                && $trx->preorderChain->first()?->trx_preorder_fulfillment_mode === 'upline_transit',
         ];
     }
 

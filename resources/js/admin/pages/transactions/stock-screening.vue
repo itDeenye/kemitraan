@@ -180,6 +180,7 @@ const headers = [
         key: "buyer.code",
         type: "text",
         align: "start",
+        visible: false,
         sortable: false,
         filter: true,
         placeholder: "Masukkan Kode Mitra",

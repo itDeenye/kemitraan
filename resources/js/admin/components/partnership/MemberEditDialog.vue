@@ -455,7 +455,7 @@
                                         </v-card-title>
                                         <v-card-text class="pa-4">
                                             <v-row>
-                                                <v-col cols="12" md="6">
+                                                <v-col cols="12" md="4">
                                                     <v-autocomplete
                                                         v-model="bank.bank_id"
                                                         :items="banks"
@@ -469,46 +469,9 @@
                                                                 !!v ||
                                                                 'Bank wajib dipilih',
                                                         ]"
-                                                    >
-                                                        <template
-                                                            #item="{
-                                                                props,
-                                                                item,
-                                                            }"
-                                                        >
-                                                            <v-list-item
-                                                                v-bind="props"
-                                                                :title="
-                                                                    item.raw
-                                                                        .name
-                                                                "
-                                                            >
-                                                                <template
-                                                                    #prepend
-                                                                    v-if="
-                                                                        item.raw
-                                                                            .logo
-                                                                    "
-                                                                >
-                                                                    <v-avatar
-                                                                        size="32"
-                                                                        rounded
-                                                                        class="mr-3"
-                                                                    >
-                                                                        <v-img
-                                                                            :src="
-                                                                                item
-                                                                                    .raw
-                                                                                    .logo
-                                                                            "
-                                                                        />
-                                                                    </v-avatar>
-                                                                </template>
-                                                            </v-list-item>
-                                                        </template>
-                                                    </v-autocomplete>
+                                                    ></v-autocomplete>
                                                 </v-col>
-                                                <v-col cols="12" md="6">
+                                                <v-col cols="12" md="4">
                                                     <v-text-field
                                                         v-model="
                                                             bank.account_number
@@ -523,7 +486,7 @@
                                                         ]"
                                                     ></v-text-field>
                                                 </v-col>
-                                                <v-col cols="12" md="6">
+                                                <v-col cols="12" md="4">
                                                     <v-text-field
                                                         v-model="
                                                             bank.account_name
@@ -536,22 +499,6 @@
                                                                 !!v ||
                                                                 'Nama pemilik wajib diisi',
                                                         ]"
-                                                    ></v-text-field>
-                                                </v-col>
-                                                <v-col cols="12" md="3">
-                                                    <v-text-field
-                                                        v-model="bank.city"
-                                                        label="Kota Cabang"
-                                                        variant="outlined"
-                                                        density="compact"
-                                                    ></v-text-field>
-                                                </v-col>
-                                                <v-col cols="12" md="3">
-                                                    <v-text-field
-                                                        v-model="bank.branch"
-                                                        label="Cabang Bank"
-                                                        variant="outlined"
-                                                        density="compact"
                                                     ></v-text-field>
                                                 </v-col>
                                             </v-row>
@@ -712,8 +659,6 @@ const loadInitialData = async (id: number) => {
                     bank_id: b.bank_id,
                     account_name: b.account_name,
                     account_number: b.account_number,
-                    city: b.city,
-                    branch: b.branch,
                     is_active: b.is_active,
                     is_default: b.is_default,
                 }),
@@ -798,8 +743,6 @@ const addBankAccount = () => {
         bank_id: null,
         account_name: "",
         account_number: "",
-        city: "",
-        branch: "",
         is_active: true,
         is_default: form.value.bank_accounts.length === 0,
     });
@@ -854,8 +797,6 @@ const submit = async () => {
                 bank_id: b.bank_id,
                 account_name: b.account_name,
                 account_number: b.account_number,
-                city: b.city,
-                branch: b.branch,
                 is_active: b.is_active,
                 is_default: b.is_default,
             })),

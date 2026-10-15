@@ -19,6 +19,8 @@ class MemberSaleProductResource extends ApiResource
             'image' => MediaUrl::publicUrl($this->resource->image),
             'price' => (int) $this->resource->price,
             'customer_price' => (int) $this->resource->customer_price,
+            'monthly_points' => (int) $this->resource->monthly_points,
+            'annual_points' => (int) $this->resource->annual_points,
             'available_stock' => (int) $this->resource->available_stock,
             'weight_grams' => (int) $this->resource->weight,
             'unit' => $this->resource->unit,

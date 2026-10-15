@@ -107,7 +107,7 @@
             <div v-if="notifications.replenishment_needed.length > 0">
                 <div class="section-heading mt-6">
                     <h3>Produk Habis</h3>
-                    <span>Segera tambah stok</span>
+                    <span>Segera Tambah Stok</span>
                 </div>
                 <div class="card list-card mt-3">
                     <div
@@ -185,8 +185,7 @@ import { encodeRouteId } from "@/shared/utils/route-id";
 
 const { formatDateTime, formatDate } = useFormatter();
 const router = useRouter();
-const { setUnreadCount, decrementUnreadCount } =
-    useMemberNotificationBadge();
+const { setUnreadCount, decrementUnreadCount } = useMemberNotificationBadge();
 
 const isLoading = ref(true);
 const notifications = ref<NotificationData>({

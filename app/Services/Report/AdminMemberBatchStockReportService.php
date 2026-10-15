@@ -4,10 +4,25 @@ namespace App\Services\Report;
 
 use App\Libraries\DataTable;
 use Illuminate\Database\Query\Builder;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 class AdminMemberBatchStockReportService
 {
+    /** @param list<int> $productIds
+     * @return Collection<int, object>
+     */
+    public function batchBalances(int $memberId, array $productIds): Collection
+    {
+        return DB::query()->fromSub($this->batchStock(), 'batch_stock')
+            ->where('member_id', $memberId)
+            ->whereIn('product_id', $productIds)
+            ->orderByRaw('expiry_date IS NULL')
+            ->orderBy('expiry_date')
+            ->orderBy('batch_number')
+            ->get();
+    }
+
     /** @param array<string, mixed> $params */
     public function list(array $params): array
     {
@@ -61,6 +76,8 @@ class AdminMemberBatchStockReportService
     {
         $knownBalances = DB::query()
             ->fromSub($this->movements(), 'movement')
+            ->whereNotNull('movement.batch_number')
+            ->where('movement.batch_number', '!=', '')
             ->select([
                 'movement.member_id',
                 'movement.product_id',
@@ -140,6 +157,10 @@ class AdminMemberBatchStockReportService
                     ->where('shipping.reference_type', '=', 'trx');
             })
             ->whereIn('trx_record.trx_seller_type', ['distributor', 'agent', 'reseller'])
+            ->where(function (Builder $query): void {
+                $query->where('trx_record.trx_preorder_fulfillment_mode', '!=', 'upline_transit')
+                    ->orWhere('trx_record.trx_parent_trx_id', '>', 0);
+            })
             ->selectRaw('trx_record.trx_seller_id as member_id')
             ->selectRaw('detail.shipping_detail_product_id as product_id')
             ->selectRaw('detail.shipping_detail_batch_number as batch_number')

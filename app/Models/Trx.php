@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\PointCalculation;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -24,6 +25,7 @@ class Trx extends Model
         'trx_supply_chain_code',
         'trx_parent_trx_id',
         'trx_is_preorder',
+        'trx_preorder_fulfillment_mode',
         'trx_seller_type',
         'trx_seller_id',
         'trx_buyer_type',
@@ -31,6 +33,8 @@ class Trx extends Model
         'trx_type',
         'trx_reference_id',
         'trx_total_price',
+        'trx_total_monthly_points',
+        'trx_total_annual_points',
         'trx_discount',
         'trx_discount_value',
         'trx_voucher_id',
@@ -87,6 +91,27 @@ class Trx extends Model
     public function details(): HasMany
     {
         return $this->hasMany(TrxDetail::class, 'trx_detail_trx_id', 'trx_id');
+    }
+
+    /** @return array{total_monthly_points: int, total_annual_points: int} */
+    public function pointTotals(): array
+    {
+        return [
+            'total_monthly_points' => $this->trx_total_monthly_points === null
+                ? PointCalculation::sum($this->details->map(fn (TrxDetail $detail): int => $detail->monthlyPoints()))
+                : PointCalculation::integer($this->trx_total_monthly_points),
+            'total_annual_points' => $this->trx_total_annual_points === null
+                ? PointCalculation::sum($this->details->map(fn (TrxDetail $detail): int => $detail->annualPoints()))
+                : PointCalculation::integer($this->trx_total_annual_points),
+        ];
+    }
+
+    public function recalculatePointTotals(): void
+    {
+        $this->update([
+            'trx_total_monthly_points' => PointCalculation::sum($this->details->map(fn (TrxDetail $detail): int => $detail->monthlyPoints())),
+            'trx_total_annual_points' => PointCalculation::sum($this->details->map(fn (TrxDetail $detail): int => $detail->annualPoints())),
+        ]);
     }
 
     public function paymentTransfer(): HasOne
@@ -164,6 +189,8 @@ class Trx extends Model
             'trx_is_preorder' => 'boolean',
             'trx_discount' => 'decimal:0',
             'trx_total_price' => 'integer',
+            'trx_total_monthly_points' => 'integer',
+            'trx_total_annual_points' => 'integer',
             'trx_discount_value' => 'integer',
             'trx_voucher_id' => 'integer',
             'trx_voucher_value' => 'integer',

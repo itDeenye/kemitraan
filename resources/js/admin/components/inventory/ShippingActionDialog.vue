@@ -28,6 +28,27 @@
                     v-model="isFormValid"
                     @submit.prevent="submit"
                 >
+                    <v-card v-if="order" variant="outlined" class="mb-4 rounded-lg">
+                        <v-card-title class="text-subtitle-2 d-flex align-center ga-2">
+                            <v-icon icon="mdi-map-marker-outline" size="18" />
+                            Informasi Pengiriman
+                        </v-card-title>
+                        <v-card-text>
+                            <div class="text-caption text-medium-emphasis mb-1">
+                                {{ order.shipping_method === "pickup" ? "Lokasi Pengambilan" : "Kirim ke" }}
+                            </div>
+                            <div class="font-weight-bold">
+                                {{ shippingDestination?.name || "-" }}
+                            </div>
+                            <div v-if="shippingDestination?.phone" class="text-body-2 mt-1">
+                                {{ shippingDestination.phone }}
+                            </div>
+                            <div class="text-body-2 mt-1">
+                                {{ formatLocation(shippingDestination) }}
+                            </div>
+                        </v-card-text>
+                    </v-card>
+
                     <v-alert
                         v-if="order?.invoice_number"
                         color="success"
@@ -114,7 +135,9 @@
                                                 class="text-caption text-medium-emphasis"
                                             >
                                                 Kode Produk:
-                                                <span class="font-weight-medium">
+                                                <span
+                                                    class="font-weight-medium"
+                                                >
                                                     {{
                                                         productGroup.product_code ||
                                                         "-"
@@ -320,6 +343,158 @@
                     <template
                         v-if="order?.shipping_method === 'courier_express'"
                     >
+                        <div
+                            v-if="order?.actions?.requires_courier_selection"
+                            class="mb-4"
+                        >
+                            <label
+                                class="text-caption font-weight-medium mb-1 d-block text-medium-emphasis"
+                            >
+                                Kurir ke Lokasi Pengambilan
+                                <span class="text-error">*</span>
+                            </label>
+
+                            <div
+                                v-if="loadingCouriers"
+                                class="d-flex justify-center align-center py-6"
+                            >
+                                <v-progress-circular
+                                    indeterminate
+                                    color="primary"
+                                    size="28"
+                                    width="3"
+                                    class="mr-2"
+                                />
+                                <span class="text-body-2 text-medium-emphasis">
+                                    Memuat pilihan kurir...
+                                </span>
+                            </div>
+
+                            <v-alert
+                                v-else-if="couriers.length === 0"
+                                type="info"
+                                variant="tonal"
+                                density="compact"
+                                text="Tidak ada pilihan kurir yang tersedia."
+                            />
+
+                            <v-radio-group
+                                v-else
+                                v-model="form.selected_courier"
+                                :rules="[rules.requiredSelect('Kurir')]"
+                                hide-details="auto"
+                                class="courier-card-group mt-0"
+                            >
+                                <div class="d-flex flex-column ga-2 w-100">
+                                    <v-card
+                                        v-for="(courier, index) in couriers"
+                                        :key="`${courier.courier_code}-${courier.service_type}-${index}`"
+                                        variant="outlined"
+                                        class="courier-option-card rounded-lg"
+                                        :class="{
+                                            'courier-option-card--selected':
+                                                form.selected_courier ===
+                                                courier,
+                                        }"
+                                        :color="
+                                            form.selected_courier === courier
+                                                ? 'primary'
+                                                : undefined
+                                        "
+                                        role="radio"
+                                        :aria-checked="
+                                            form.selected_courier === courier
+                                        "
+                                        tabindex="0"
+                                        @click="form.selected_courier = courier"
+                                        @keydown.enter.prevent="
+                                            form.selected_courier = courier
+                                        "
+                                        @keydown.space.prevent="
+                                            form.selected_courier = courier
+                                        "
+                                    >
+                                        <div
+                                            class="d-flex align-center ga-3 pa-3"
+                                        >
+                                            <v-radio
+                                                :value="courier"
+                                                color="primary"
+                                                density="compact"
+                                                hide-details
+                                                class="flex-grow-0"
+                                                @click.stop
+                                            />
+
+                                            <v-avatar
+                                                size="40"
+                                                rounded="lg"
+                                                class="bg-white border flex-shrink-0"
+                                            >
+                                                <v-img
+                                                    v-if="courier.logo_url"
+                                                    :src="courier.logo_url"
+                                                    :alt="courier.courier_name"
+                                                    contain
+                                                />
+                                                <v-icon
+                                                    v-else
+                                                    icon="mdi-truck-outline"
+                                                    color="grey"
+                                                />
+                                            </v-avatar>
+
+                                            <div
+                                                class="flex-grow-1 min-width-0"
+                                            >
+                                                <div
+                                                    class="text-body-2 font-weight-bold"
+                                                >
+                                                    {{ courier.courier_name }}
+                                                </div>
+                                                <div
+                                                    class="text-caption text-medium-emphasis"
+                                                >
+                                                    {{ courier.service_type }}
+                                                    <span v-if="courier.etd">
+                                                        · {{ courier.etd }} hari
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            <div
+                                                class="text-right flex-shrink-0"
+                                            >
+                                                <div
+                                                    class="text-body-2 font-weight-bold"
+                                                >
+                                                    Rp{{
+                                                        formatPrice(
+                                                            courier.cost,
+                                                        )
+                                                    }}
+                                                </div>
+                                                <div
+                                                    v-if="courier.insurance > 0"
+                                                    class="text-caption text-medium-emphasis"
+                                                >
+                                                    + Asuransi Rp{{
+                                                        formatPrice(
+                                                            courier.insurance,
+                                                        )
+                                                    }}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </v-card>
+                                </div>
+                            </v-radio-group>
+
+                            <div class="text-caption text-medium-emphasis mt-1">
+                                Ongkir ditanggung oleh perusahaan dan tidak
+                                dibebankan ke transaksi mitra.
+                            </div>
+                        </div>
                         <div class="mb-4">
                             <label
                                 class="text-caption font-weight-medium mb-2 d-block text-medium-emphasis"
@@ -335,31 +510,25 @@
                                 :rules="[rules.requiredSelect('Metode')]"
                                 @change="onPickupMethodChange"
                             >
-                                <v-radio
-                                    value="PICKUP"
-                                    color="primary"
-                                >
+                                <v-radio value="PICKUP" color="primary">
                                     <template #label>
                                         <div class="d-flex align-center ga-2">
                                             <v-icon
                                                 icon="mdi-truck-fast-outline"
                                                 color="primary"
                                             />
-                                            <span>Kurir Ambil</span>
+                                            <span>Diambil oleh Kurir</span>
                                         </div>
                                     </template>
                                 </v-radio>
-                                <v-radio
-                                    value="DROP-OFF"
-                                    color="primary"
-                                >
+                                <v-radio value="DROP-OFF" color="primary">
                                     <template #label>
                                         <div class="d-flex align-center ga-2">
                                             <v-icon
                                                 icon="mdi-store-marker-outline"
                                                 color="primary"
                                             />
-                                            <span>Antar ke Agen</span>
+                                            <span>Antar ke Agen Ekspedisi</span>
                                         </div>
                                     </template>
                                 </v-radio>
@@ -512,7 +681,7 @@ import inventoryService from "@/admin/services/inventory.service";
 import { useSnackbarStore } from "@/shared/stores/snackbar";
 import { useFormatter } from "@/shared/composables/useFormatter";
 
-const { formatDateTime, formatPrice } = useFormatter();
+const { formatDateTime, formatPrice, formatLocation } = useFormatter();
 
 const parseNumber = (value: string | number): number => {
     if (!value) return 0;
@@ -527,10 +696,18 @@ const dialog = ref(false);
 const loading = ref(false);
 const loadingData = ref(false);
 const loadingSchedules = ref(false);
+const loadingCouriers = ref(false);
 const formRef = ref();
 const isFormValid = ref(false);
 const order = ref<any>(null);
+const shippingDestination = computed(() =>
+    order.value?.shipping_method === "pickup"
+        ? order.value?.seller?.origin
+        : order.value?.buyer?.destination,
+);
 const schedules = ref<any[]>([]);
+const couriers = ref<any[]>([]);
+let dialogSession = 0;
 
 interface BatchRow {
     quantity: number;
@@ -562,6 +739,7 @@ const form = reactive({
     pickup_schedule: "",
     tracking_number: "",
     pickup_pin: "",
+    selected_courier: null as any,
     productGroups: [] as ProductGroup[],
 });
 
@@ -606,9 +784,12 @@ const getSubmitText = computed(() => {
 });
 
 const fetchSchedules = async () => {
+    if (!dialog.value || loadingSchedules.value) return;
+    const session = dialogSession;
     loadingSchedules.value = true;
     try {
         const res = await inventoryService.getExpressSchedules();
+        if (!dialog.value || session !== dialogSession) return;
         if (res.data?.success) {
             schedules.value = res.data.data.results.map((s: any) => ({
                 ...s,
@@ -626,10 +807,35 @@ const fetchSchedules = async () => {
             }
         }
     } catch (error) {
+        if (!dialog.value || session !== dialogSession) return;
         console.error("Gagal mengambil jadwal pickup express", error);
         snackbar.showMessage("Gagal memuat jadwal pickup.", "error");
     } finally {
-        loadingSchedules.value = false;
+        if (session === dialogSession) {
+            loadingSchedules.value = false;
+        }
+    }
+};
+
+const fetchCouriers = async () => {
+    if (!order.value) return;
+    loadingCouriers.value = true;
+    try {
+        const res = await inventoryService.getReshipCouriers(order.value.id, {
+            couriers: [],
+        });
+        couriers.value = (res.data?.data?.results || []).map(
+            (courier: any) => ({
+                ...courier,
+                display_name: `${courier.courier_name} · Rp${formatPrice(courier.cost)}`,
+            }),
+        );
+        form.selected_courier = couriers.value[0] || null;
+    } catch (error) {
+        console.error("Gagal mengambil pilihan kurir", error);
+        snackbar.showMessage("Gagal memuat pilihan kurir.", "error");
+    } finally {
+        loadingCouriers.value = false;
     }
 };
 
@@ -642,6 +848,9 @@ const onPickupMethodChange = () => {
 };
 
 const open = async (item: any) => {
+    const session = ++dialogSession;
+    schedules.value = [];
+    loadingSchedules.value = false;
     dialog.value = true;
     order.value = item;
     loadingData.value = true;
@@ -652,12 +861,15 @@ const open = async (item: any) => {
     form.pickup_schedule = "";
     form.tracking_number = "";
     form.pickup_pin = "";
+    form.selected_courier = null;
     form.productGroups = [];
+    couriers.value = [];
 
     if (formRef.value) formRef.value.resetValidation();
 
     try {
         const res = await inventoryService.getShipmentDetail(item.id);
+        if (!dialog.value || session !== dialogSession) return;
 
         if (res.data?.data) {
             order.value = res.data.data;
@@ -685,19 +897,32 @@ const open = async (item: any) => {
                 })) || [];
         }
     } catch (error) {
+        if (!dialog.value || session !== dialogSession) return;
         console.error("Gagal mengambil detail pesanan:", error);
         snackbar.showMessage("Gagal memuat detail pesanan.", "error");
     } finally {
-        loadingData.value = false;
+        if (session === dialogSession) {
+            loadingData.value = false;
+        }
     }
 
     // Auto-fetch if express
-    if (order.value.shipping_method === "courier_express") {
+    if (
+        dialog.value &&
+        session === dialogSession &&
+        order.value?.shipping_method === "courier_express"
+    ) {
+        if (order.value.actions?.requires_courier_selection) {
+            await fetchCouriers();
+        }
+        if (!dialog.value || session !== dialogSession) return;
         fetchSchedules();
     }
 };
 
 const close = () => {
+    dialogSession++;
+    loadingSchedules.value = false;
     dialog.value = false;
     order.value = null;
 };
@@ -744,6 +969,9 @@ const submit = async () => {
                 items,
             };
             if (order.value.shipping_method === "courier_express") {
+                if (order.value.actions?.requires_courier_selection) {
+                    payload.courier = form.selected_courier;
+                }
                 payload.pickup_method = form.pickup_method;
                 if (form.pickup_method === "PICKUP") {
                     payload.pickup_schedule = form.pickup_schedule;
@@ -786,3 +1014,29 @@ const submit = async () => {
 
 defineExpose({ open, close });
 </script>
+
+<style scoped>
+.courier-option-card {
+    cursor: pointer;
+    transition:
+        border-color 0.2s ease,
+        background-color 0.2s ease,
+        box-shadow 0.2s ease;
+}
+
+.courier-option-card:hover,
+.courier-option-card:focus-visible {
+    border-color: rgb(var(--v-theme-primary));
+    box-shadow: 0 2px 8px rgba(var(--v-theme-primary), 0.12);
+    outline: none;
+}
+
+.courier-option-card--selected {
+    background: rgba(var(--v-theme-primary), 0.04);
+    border-color: rgb(var(--v-theme-primary));
+}
+
+.min-width-0 {
+    min-width: 0;
+}
+</style>

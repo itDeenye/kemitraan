@@ -131,6 +131,8 @@ const detailDialogRef = ref<InstanceType<
 
 const queryParams = computed(() => ({
     "filter[buyer.type]": "distributor",
+    "filter[seller.type]": "warehouse",
+    "filter[status]": "submitted",
     "filter[transaction.status][eq]": "waiting_payment_approval",
 }));
 

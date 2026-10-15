@@ -4,6 +4,7 @@ namespace App\Http\Resources\Api\V1\Partnership;
 
 use App\Http\Resources\ApiResource;
 use App\Models\MemberRegistration;
+use App\Support\MediaUrl;
 use Illuminate\Http\Request;
 
 class MemberRegistrationResource extends ApiResource
@@ -17,6 +18,8 @@ class MemberRegistrationResource extends ApiResource
             'processed_by_id',
             'member_registration_status_administrator_id'
         );
+        $audience = $request->is('api/v1/admin/*') ? 'admin' : 'member';
+        $distributorApprovalStatus = (string) $this->value('distributor_approval_status', 'member_registration_distributor_approval_status');
 
         return [
             'id' => $this->value('id', 'member_registration_id'),
@@ -40,14 +43,33 @@ class MemberRegistrationResource extends ApiResource
                     'birth_date' => $registration->member_registration_birth_date?->toDateString(),
                 ]),
             ],
+            'image_url' => MediaUrl::publicUrl($this->value('image_url', 'member_registration_image')),
+            'payment_proof_image_url' => MediaUrl::temporaryPrivateUrl(
+                $this->value('payment_proof_image_url', 'member_registration_payment_proof_image'), $audience,
+            ),
+            'identity' => [
+                'type' => $this->value('identity_type', 'member_registration_identity_type'),
+                'number' => $this->value('identity_no', 'member_registration_identity_no'),
+                'image_url' => MediaUrl::temporaryPrivateUrl(
+                    $this->value('identity_image_url', 'member_registration_identity_image'), $audience,
+                ),
+                'nib' => $this->value('nib', 'member_registration_nib'),
+                'npwp' => $this->value('npwp', 'member_registration_npwp'),
+            ],
+            'nib' => $this->value('nib', 'member_registration_nib'),
+            'npwp' => $this->value('npwp', 'member_registration_npwp'),
             'status' => [
                 'code' => $status,
                 'label' => match ($status) {
                     'approved' => 'Disetujui',
                     'rejected' => 'Ditolak',
-                    default => 'Menunggu',
+                    default => 'Menunggu Verifikasi',
                 },
             ],
+            'next_approval' => $status === 'requested'
+                ? ($distributorApprovalStatus === 'pending' ? 'distributor' : 'admin')
+                : null,
+            'distributor_approval' => $this->distributorApproval($registration, $distributorApprovalStatus),
             'processed_by' => $processedById === 0 ? null : [
                 'id' => $processedById,
                 'name' => $registration?->statusAdministrator?->administrator_name
@@ -68,6 +90,33 @@ class MemberRegistrationResource extends ApiResource
         return $this->resource instanceof MemberRegistration
             ? $this->resource->getAttribute($modelField)
             : $this->resource->{$listField};
+    }
+
+    /** @return array<string, mixed> */
+    private function distributorApproval(?MemberRegistration $registration, string $status): array
+    {
+        $distributorId = (int) $this->value('approval_distributor_id', 'member_registration_distributor_member_id');
+
+        return [
+            'status' => [
+                'code' => $status,
+                'label' => match ($status) {
+                    'pending' => 'Menunggu persetujuan Distributor',
+                    'approved' => 'Disetujui Distributor',
+                    'rejected' => 'Ditolak Distributor',
+                    default => 'Tidak memerlukan persetujuan Distributor',
+                },
+            ],
+            'distributor' => $distributorId === 0 ? null : [
+                'id' => $distributorId,
+                'code' => $registration?->approvalDistributor?->member_code ?? $this->resource->approval_distributor_code,
+                'name' => $registration?->approvalDistributor?->member_name ?? $this->resource->approval_distributor_name,
+            ],
+            'note' => $this->value('distributor_approval_note', 'member_registration_distributor_approval_note'),
+            'processed_at' => $registration
+                ? $registration->member_registration_distributor_approval_datetime?->toAtomString()
+                : $this->resource->distributor_approval_processed_at,
+        ];
     }
 
     /** @return array<string, mixed>|null */
@@ -131,12 +180,16 @@ class MemberRegistrationResource extends ApiResource
     private function detail(MemberRegistration $registration): array
     {
         return [
-            'identity' => [
-                'type' => $registration->member_registration_identity_type,
-                'number' => $registration->member_registration_identity_no,
-                'image_url' => $registration->member_registration_identity_image,
-                'nib' => $registration->member_registration_nib,
-            ],
+            'bank_accounts' => $registration->member_registration_bank_accounts
+                ?? ((int) $registration->member_registration_bank_id === 0 ? [] : [[
+                    'bank_id' => (int) $registration->member_registration_bank_id,
+                    'account_name' => $registration->member_registration_bank_account_name,
+                    'account_number' => $registration->member_registration_bank_account_no,
+                    'city' => $registration->member_registration_bank_city,
+                    'branch' => $registration->member_registration_bank_branch,
+                    'is_active' => true,
+                    'is_default' => true,
+                ]]),
             'address' => [
                 'address' => $registration->member_registration_address,
                 'province_id' => $registration->member_registration_province_id,

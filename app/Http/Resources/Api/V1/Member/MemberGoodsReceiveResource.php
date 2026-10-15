@@ -22,7 +22,9 @@ class MemberGoodsReceiveResource extends ApiResource
             ?? ($this->resource->pickup_status ?? null);
         $shippingMethod = (string) ($shippingTrx?->trx_shipping_method ?? $this->resource->shipping_method);
         $isPreorder = (bool) ($trx?->trx_is_preorder ?? $this->resource->is_preorder ?? false);
-        $sellerType = (string) ($shippingTrx?->trx_seller_type ?? $this->resource->seller_type);
+        $transactionSellerType = (string) ($trx?->trx_seller_type
+            ?? $this->resource->transaction_seller_type
+            ?? $this->resource->seller_type);
         $shippingStatus = match ($shippingMethod) {
             'courier_express' => $shippingTrx?->shippingExpress?->latestStatus
                 ?->shipping_courier_express_status_value ?? ($this->resource->express_status ?? null),
@@ -73,7 +75,7 @@ class MemberGoodsReceiveResource extends ApiResource
                 'can_receive' => $receiveId === 0 && $canReceive,
                 'requires_delivery_note_number' => $receiveId === 0
                     && $canReceive
-                    && $sellerType === 'warehouse',
+                    && $transactionSellerType === 'warehouse',
             ],
             'summary' => $trx ? [
                 'product_count' => $trx->details->count(),
@@ -131,6 +133,7 @@ class MemberGoodsReceiveResource extends ApiResource
     private function fulfillmentTransaction(Trx $trx): Trx
     {
         if (! $trx->trx_is_preorder
+            || $trx->trx_preorder_fulfillment_mode === 'upline_transit'
             || ! $trx->relationLoaded('preorderChain')
             || $trx->preorderChain->isEmpty()) {
             return $trx;

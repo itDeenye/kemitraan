@@ -18,6 +18,7 @@ class ProductCategoryResource extends ApiResource
             'id' => $this->product_category_id,
             'name' => $this->product_category_name,
             'description' => $this->product_category_description,
+            'sort_order' => (int) $this->product_category_sort_order,
         ];
     }
 }

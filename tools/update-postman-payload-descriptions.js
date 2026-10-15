@@ -45,6 +45,8 @@ const descriptions = {
     current_password: 'Kata sandi saat ini untuk verifikasi pemilik akun.',
     customer_id: 'ID pelanggan yang melakukan pembelian.',
     customer_price: 'Harga jual produk untuk customer dalam rupiah.',
+    npwp: 'Nomor Pokok Wajib Pajak; string maksimal 30 karakter, nol depan dipertahankan.',
+    payment_proof_image_url: 'URL bukti transfer pendaftaran hasil upload collection payment_proof.',
     data: 'Objek data status pengiriman yang dikirim oleh STC.',
     date: 'Waktu kejadian callback yang dikirim oleh STC.',
     delivery_note_number: 'Nomor surat jalan transaksi.',

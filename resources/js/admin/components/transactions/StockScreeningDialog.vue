@@ -225,6 +225,10 @@
                                             >
                                                 {{ item.product?.code }}
                                             </div>
+                                            <div class="text-caption text-medium-emphasis">
+                                                Poin Bulanan: {{ formatPrice(item.monthly_points ?? 0) }} ·
+                                                Poin Tahunan: {{ formatPrice(item.annual_points ?? 0) }}
+                                            </div>
                                         </td>
                                         <td class="text-right text-body-2">
                                             {{ formatPrice(item.price) }}
@@ -242,6 +246,14 @@
                             </v-table>
                             <v-divider />
                             <div class="pa-4">
+                                <div class="d-flex justify-space-between mb-2 text-body-2">
+                                    <span class="text-medium-emphasis">Total Poin Bulanan</span>
+                                    <span class="font-weight-medium">{{ formatPrice(order.totals?.total_monthly_points ?? 0) }}</span>
+                                </div>
+                                <div class="d-flex justify-space-between mb-2 text-body-2">
+                                    <span class="text-medium-emphasis">Total Poin Tahunan</span>
+                                    <span class="font-weight-medium">{{ formatPrice(order.totals?.total_annual_points ?? 0) }}</span>
+                                </div>
                                 <div
                                     class="d-flex justify-space-between mb-2 text-body-2"
                                 >

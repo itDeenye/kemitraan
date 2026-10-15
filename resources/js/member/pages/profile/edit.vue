@@ -60,20 +60,19 @@
                     label="Jenis Identitas (Opsional)"
                     variant="outlined"
                     density="comfortable"
-                    :items="['KTP', 'SIM', 'PASPOR']"
+                    :items="identityOptions"
                     class="mb-3"
                 />
                 <v-text-field
                     v-model="formProfile.identity_no"
                     label="Nomor Identitas (Opsional)"
+                    :maxlength="identitySettings.maxLength"
+                    :hint="identitySettings.hint"
+                    persistent-hint
+                    :inputmode="formProfile.identity_type === 'PASPOR' ? 'text' : 'numeric'"
                     variant="outlined"
                     density="comfortable"
-                    :rules="[
-                        (v) =>
-                            !v ||
-                            v.length <= 20 ||
-                            'Nomor identitas maksimal 20 karakter',
-                    ]"
+                    :rules="[validateIdentityNumber]"
                     class="mb-3"
                 />
                 <v-text-field
@@ -129,12 +128,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from "vue";
+import { ref, reactive, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useSnackbarStore } from "@/shared/stores/snackbar";
 import { useAuthStore } from "@/shared/stores/auth";
 import profileService from "@/member/services/profile.service";
 import MediaUpload from "@/shared/components/MediaUpload.vue";
+import { identityNumberRule, identityNumberSettings, memberIdentityOptions } from "@/shared/utils/member-identity";
 
 const router = useRouter();
 const snackbar = useSnackbarStore();
@@ -143,6 +143,7 @@ const authStore = useAuthStore();
 const profileFormRef = ref<any>(null);
 const loadingProfile = ref(false);
 const profileImage = ref("");
+const originalIdentity = ref({ type: "KTP", number: "" });
 
 const formProfile = reactive({
     name: "",
@@ -157,6 +158,9 @@ const formProfile = reactive({
     facebook: "",
     tiktok: "",
 });
+const identityOptions = memberIdentityOptions();
+const identitySettings = computed(() => identityNumberSettings(formProfile.identity_type));
+const validateIdentityNumber = (value: unknown) => identityNumberRule(formProfile.identity_type, value, originalIdentity.value);
 
 async function loadProfile() {
     try {
@@ -171,6 +175,7 @@ async function loadProfile() {
             formProfile.birth_date = member.birth_date || "";
             formProfile.identity_type = member.identity?.type || "KTP";
             formProfile.identity_no = member.identity?.number || "";
+            originalIdentity.value = { type: formProfile.identity_type, number: formProfile.identity_no };
             formProfile.nib = member.nib || "";
             formProfile.instagram = member.social_media?.instagram || "";
             formProfile.facebook = member.social_media?.facebook || "";

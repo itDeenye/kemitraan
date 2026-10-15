@@ -45,6 +45,8 @@ class SaveProductRequest extends FormRequest
                 'url:http,https',
             ],
             'customer_price' => ['required', 'integer', 'min:0'],
+            'monthly_points' => ['sometimes', 'integer', 'min:0', 'max:4294967295'],
+            'annual_points' => ['sometimes', 'integer', 'min:0', 'max:4294967295'],
             'member_prices' => ['required', 'array', 'min:1'],
             'member_prices.*.member_level_id' => [
                 'required',

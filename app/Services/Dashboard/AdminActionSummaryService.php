@@ -40,6 +40,7 @@ class AdminActionSummaryService
     private function registrationApprovalCount(): int
     {
         return MemberRegistration::query()
+            ->readyForAdmin()
             ->where('member_registration_status', 'requested')
             ->count();
     }
@@ -55,12 +56,17 @@ class AdminActionSummaryService
     {
         $trxTable = (new Trx)->getTable();
         $paymentTable = (new TrxPaymentTransfer)->getTable();
+        $paymentSnapshot = DB::table($paymentTable)
+            ->select('payment_transfer_trx_id', 'payment_transfer_approval_status')
+            ->whereIn('payment_transfer_id', DB::table($paymentTable)
+                ->selectRaw('MIN(payment_transfer_id)')
+                ->groupBy('payment_transfer_trx_id'));
 
         return DB::table("{$trxTable} as screening_trx")
             ->leftJoin("{$trxTable} as parent_trx", 'parent_trx.trx_id', '=', 'screening_trx.trx_parent_trx_id')
             ->leftJoin("{$trxTable} as root_trx", 'root_trx.trx_id', '=', 'parent_trx.trx_parent_trx_id')
-            ->leftJoin("{$paymentTable} as parent_payment", 'parent_payment.payment_transfer_trx_id', '=', 'parent_trx.trx_id')
-            ->leftJoin("{$paymentTable} as root_payment", 'root_payment.payment_transfer_trx_id', '=', 'root_trx.trx_id')
+            ->leftJoinSub($paymentSnapshot, 'parent_payment', 'parent_payment.payment_transfer_trx_id', '=', 'parent_trx.trx_id')
+            ->leftJoinSub($paymentSnapshot, 'root_payment', 'root_payment.payment_transfer_trx_id', '=', 'root_trx.trx_id')
             ->where('screening_trx.trx_status', 'waiting_stock_screening')
             ->whereRaw('(
                 screening_trx.trx_is_preorder = 0
@@ -87,6 +93,7 @@ class AdminActionSummaryService
             ->where('payment.payment_transfer_approval_status', 'submitted')
             ->where('payment_trx.trx_status', 'waiting_payment_approval')
             ->where('payment_trx.trx_seller_type', 'warehouse')
+            ->where('payment_trx.trx_buyer_type', 'distributor')
             ->distinct()
             ->count('payment.payment_transfer_id');
     }
@@ -97,20 +104,14 @@ class AdminActionSummaryService
             ->where('trx_seller_type', 'warehouse')
             ->where('trx_buyer_type', 'distributor')
             ->whereIn('trx_status', ['processing', 'reship_required'])
+            ->whereDoesntHave('children')
             ->count();
     }
 
     private function returnActionCount(): int
     {
         return ReturnModel::query()
-            ->whereIn('return_status', [
-                'submitted',
-                'return_shipping_failed',
-                'waiting_member_shipment',
-                'return_in_transit',
-                'received_by_company',
-                'replacement_shipping_failed',
-            ])
+            ->needsAdminAction()
             ->count();
     }
 
@@ -121,7 +122,9 @@ class AdminActionSummaryService
 
         return DB::table("{$spreadTable} as spread")
             ->join("{$trxTable} as spread_trx", 'spread_trx.trx_id', '=', 'spread.trx_spread_payment_trx_id')
-            ->whereIn('spread.trx_spread_payment_status', ['pending', 'submitted'])
+            ->whereIn('spread.trx_spread_payment_status', ['submitted', 'approved'])
+            ->whereNotNull('spread.trx_spread_payment_receipt_file')
+            ->where('spread.trx_spread_payment_receipt_file', '<>', '')
             ->whereNotIn('spread_trx.trx_status', [
                 'waiting_payment',
                 'waiting_payment_approval',

@@ -5,23 +5,414 @@ namespace Tests\Feature\Api\V1\Partnership;
 use App\Mail\MemberCredentialsMail;
 use App\Mail\MemberRegistrationApprovedMail;
 use App\Mail\MemberRegistrationRejectedMail;
+use App\Models\Media;
 use App\Models\Member;
 use App\Models\MemberAccount;
 use App\Models\MemberGroup;
 use App\Models\MemberLevel;
 use App\Models\MemberNetworkSwitch;
+use App\Models\MemberRegistration;
 use App\Models\SiteAdministrator;
 use App\Models\SiteAdministratorGroup;
+use App\Services\Dashboard\AdminActionSummaryService;
 use App\Services\Partnership\MemberCodeService;
+use App\Support\MediaUrl;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class MemberRegistrationWorkflowTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_identity_type_rollback_preserves_members_using_new_types(): void
+    {
+        $this->createReferenceData();
+        $this->createMemberGroups();
+        [$member] = $this->createMemberAccount('DST', '0001/0000/0000', 'rollback.member');
+        $member->update(['member_identity_type' => 'KK', 'member_identity_no' => '0001234567890123']);
+        $migration = require database_path('migrations/2026_10_15_073858_extend_member_identity_document_types.php');
+        $failure = null;
+        try {
+            $migration->down();
+        } catch (\Throwable $exception) {
+            $failure = $exception;
+        }
+        $this->assertInstanceOf(\LogicException::class, $failure, 'Rollback must stop before changing a document type still in use.');
+        $this->assertStringContainsString('records exist', $failure->getMessage());
+        $this->assertSame('KK', $member->fresh()->member_identity_type);
+        $this->assertSame('0001234567890123', $member->fresh()->member_identity_no);
+    }
+
+    public function test_identity_type_rollback_preserves_registrations_using_new_types(): void
+    {
+        $this->createReferenceData();
+        $this->createMemberGroups();
+        [, $account] = $this->createMemberAccount('DST', '0001/0000/0000', 'rollback.sponsor');
+        $this->actingAs($account, 'member_api');
+        $id = $this->postJson('/api/v1/member/network/registrations', [
+            ...$this->registrationPayload('rollback.applicant', '081234567890', '00012345678'),
+            'identity_type' => 'BPJS_KETENAGAKERJAAN',
+        ])->assertSuccessful()->json('data.id');
+        $migration = require database_path('migrations/2026_10_15_073858_extend_member_identity_document_types.php');
+        $failure = null;
+        try {
+            $migration->down();
+        } catch (\Throwable $exception) {
+            $failure = $exception;
+        }
+        $this->assertInstanceOf(\LogicException::class, $failure, 'Rollback must stop before changing a document type still in use.');
+        $this->assertStringContainsString('records exist', $failure->getMessage());
+        $registration = MemberRegistration::query()->findOrFail($id);
+        $this->assertSame('BPJS_KETENAGAKERJAAN', $registration->member_registration_identity_type);
+        $this->assertSame('00012345678', $registration->member_registration_identity_no);
+    }
+
+    public function test_identity_types_can_be_rolled_back_and_reapplied_without_changing_old_numbers(): void
+    {
+        $this->createReferenceData();
+        $this->createMemberGroups();
+        [$member] = $this->createMemberAccount('DST', '0001/0000/0000', 'rollback.legacy');
+        $member->update(['member_identity_type' => 'SIM', 'member_identity_no' => '001234567890']);
+        $migration = require database_path('migrations/2026_10_15_073858_extend_member_identity_document_types.php');
+        $migration->down();
+        $this->assertSame('SIM', $member->fresh()->member_identity_type);
+        $this->assertSame('001234567890', $member->fresh()->member_identity_no);
+        $migration->up();
+        $member->update(['member_identity_type' => 'KK']);
+        $this->assertSame('KK', $member->fresh()->member_identity_type);
+        $this->assertSame('001234567890', $member->fresh()->member_identity_no);
+    }
+
+    #[DataProvider('validIdentities')]
+    public function test_new_registrations_accept_document_formats_and_preserve_leading_zeroes(string $type, string $number): void
+    {
+        Mail::fake();
+        $this->createReferenceData();
+        $this->createMemberGroups();
+        [, $account] = $this->createMemberAccount('DST', '0001/0000/0000', 'identity.sponsor');
+        $this->actingAs($account, 'member_api');
+        $payload = $this->registrationPayload('identity.applicant', '081234567890', $number);
+        $payload['identity_type'] = strtolower($type);
+        $id = $this->postJson('/api/v1/member/network/registrations', $payload)
+            ->assertSuccessful()->assertJsonPath('data.identity.type', $type)
+            ->assertJsonPath('data.identity.number', $number)->json('data.id');
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $this->postJson("/api/v1/admin/partnership/registrations/{$id}/approve")->assertOk();
+        $member = Member::query()->where('member_mobilephone', '+6281234567890')->firstOrFail();
+        $this->assertSame($type, $member->member_identity_type);
+        $this->assertSame($number, $member->member_identity_no);
+    }
+
+    #[DataProvider('validIdentities')]
+    public function test_admin_distributor_creation_accepts_document_formats(string $type, string $number): void
+    {
+        Mail::fake();
+        $this->createReferenceData();
+        $this->createMemberGroups();
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $payload = $this->registrationPayload('identity.distributor', '081234567890', $number, null);
+        $payload['identity_type'] = $type;
+        $id = $this->postJson('/api/v1/admin/partnership/registrations', $payload)
+            ->assertSuccessful()->assertJsonPath('data.identity.type', $type)->json('data.id');
+        $this->postJson("/api/v1/admin/partnership/registrations/{$id}/reject", ['note' => 'Pengujian identitas'])->assertOk();
+        $this->postJson('/api/v1/admin/partnership/distributors', [
+            ...$payload, 'domicile_address' => 'Jalan Domisili', 'status' => 1,
+        ])->assertCreated()->assertJsonPath('data.identity.type', $type)
+            ->assertJsonPath('data.identity.no', $number);
+    }
+
+    #[DataProvider('invalidIdentities')]
+    public function test_new_registrations_reject_invalid_document_numbers(string $type, mixed $number): void
+    {
+        $this->createReferenceData();
+        $this->createMemberGroups();
+        [, $account] = $this->createMemberAccount('DST', '0001/0000/0000', 'invalid.identity.sponsor');
+        $this->actingAs($account, 'member_api');
+        $payload = $this->registrationPayload('invalid.identity', '081234567890', '0001234567890123');
+        $payload['identity_type'] = $type;
+        $payload['identity_no'] = $number;
+        $this->postJson('/api/v1/member/network/registrations', $payload)
+            ->assertUnprocessable()->assertJsonValidationErrors('identity_no');
+        unset($payload['level_id']);
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $this->postJson('/api/v1/admin/partnership/registrations', $payload)
+            ->assertUnprocessable()->assertJsonValidationErrors('identity_no');
+        $this->postJson('/api/v1/admin/partnership/distributors', [
+            ...$payload, 'domicile_address' => 'Jalan Domisili', 'status' => 1,
+        ])->assertUnprocessable()->assertJsonValidationErrors('identity_no');
+        $this->assertDatabaseCount('member_registration', 0);
+    }
+
+    public static function validIdentities(): array
+    {
+        return [
+            'ktp' => ['KTP', '0001234567890123'],
+            'kk' => ['KK', '0001234567890123'],
+            'sim' => ['SIM', '0001234567890123'],
+            'health' => ['BPJS', '0001234567890'],
+            'employment kpj' => ['BPJS_KETENAGAKERJAAN', '00012345678'],
+            'employment nik' => ['BPJS_KETENAGAKERJAAN', '0001234567890123'],
+            'passport' => ['PASPOR', 'A0123456'],
+        ];
+    }
+
+    public static function invalidIdentities(): array
+    {
+        return [
+            'short ktp' => ['KTP', '123456789012345'],
+            'long kk' => ['KK', '12345678901234567'],
+            'old sim' => ['SIM', '123456789012'],
+            'health short' => ['BPJS', '123456789012'],
+            'health long' => ['BPJS', '12345678901234'],
+            'employment between' => ['BPJS_KETENAGAKERJAAN', '123456789012'],
+            'numeric letters' => ['KTP', 'A234567890123456'],
+            'numeric punctuation' => ['BPJS', '123456789012-'],
+            'passport short' => ['PASPOR', 'A123456'],
+            'passport long' => ['PASPOR', 'A12345678'],
+            'passport punctuation' => ['PASPOR', 'A123-567'],
+            'number instead of string' => ['KTP', 1234567890123456],
+        ];
+    }
+
+    public function test_registration_documents_are_visible_in_history_approval_and_member_directory(): void
+    {
+        Mail::fake();
+        $this->createReferenceData();
+        $this->createMemberGroups();
+        [, $account] = $this->createMemberAccount('DST', '0001/0000/0000', 'document.sponsor');
+        $this->actingAs($account, 'member_api');
+        $this->getJson('/api/v1/member/network/registrations/options')
+            ->assertJsonPath('data.identity_types', ['KTP', 'KK', 'SIM', 'BPJS', 'BPJS_KETENAGAKERJAAN', 'PASPOR']);
+        $payload = [
+            ...$this->registrationPayload('documents', '081234567810', '0001234567890'),
+            'identity_type' => 'bpjs',
+            'identity_image_url' => 'https://example.test/bpjs.jpg',
+            'nib' => '0123456789012',
+            'image_url' => 'https://example.test/profile.jpg',
+            'payment_proof_image_url' => 'https://example.test/transfer.jpg',
+        ];
+        $id = $this->postJson('/api/v1/member/network/registrations', $payload)
+            ->assertSuccessful()
+            ->assertJsonPath('data.identity.type', 'BPJS')
+            ->assertJsonPath('data.identity.image_url', $payload['identity_image_url'])
+            ->assertJsonPath('data.payment_proof_image_url', $payload['payment_proof_image_url'])
+            ->assertJsonPath('data.image_url', $payload['image_url'])
+            ->assertJsonPath('data.npwp', null)->json('data.id');
+        $this->getJson('/api/v1/member/network/registrations')
+            ->assertJsonPath('data.results.0.identity.type', 'BPJS')
+            ->assertJsonPath('data.results.0.nib', $payload['nib'])
+            ->assertJsonPath('data.results.0.payment_proof_image_url', $payload['payment_proof_image_url']);
+        $this->getJson("/api/v1/member/network/registrations/{$id}")
+            ->assertJsonPath('data.npwp', null);
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $this->getJson('/api/v1/admin/partnership/registrations')
+            ->assertJsonPath('data.results.0.npwp', null);
+        $this->getJson("/api/v1/admin/partnership/registrations/{$id}")
+            ->assertJsonPath('data.payment_proof_image_url', $payload['payment_proof_image_url']);
+        $this->postJson("/api/v1/admin/partnership/registrations/{$id}/approve")
+            ->assertOk()->assertJsonPath('data.status.code', 'approved');
+        $member = Member::query()->where('member_mobilephone', '+6281234567810')->firstOrFail();
+        $this->assertDatabaseHas('member', [
+            'member_id' => $member->getKey(),
+            'member_identity_type' => 'BPJS',
+            'member_nib' => $payload['nib'],
+            'member_npwp' => null,
+            'member_image' => $payload['image_url'],
+        ]);
+        $this->getJson("/api/v1/admin/partnership/members/{$member->getKey()}")
+            ->assertOk()
+            ->assertJsonPath('data.identity.type', 'BPJS')
+            ->assertJsonPath('data.npwp', null)
+            ->assertJsonPath('data.image', $payload['image_url'])
+            ->assertJsonPath('data.payment_proof_image_url', $payload['payment_proof_image_url']);
+        $this->getJson('/api/v1/admin/partnership/members?search=documents')
+            ->assertOk()->assertJsonCount(1, 'data.results')
+            ->assertJsonPath('data.results.0.npwp', null)
+            ->assertJsonPath('data.results.0.payment_proof_image_url', $payload['payment_proof_image_url']);
+        $this->actingAs($member->accounts()->firstOrFail(), 'member_api');
+        $this->getJson('/api/v1/member/profile')
+            ->assertOk()->assertJsonPath('data.member.nib', $payload['nib'])
+            ->assertJsonPath('data.member.npwp', null)
+            ->assertJsonPath('data.member.image', $payload['image_url'])
+            ->assertJsonPath('data.member.identity.image', $payload['identity_image_url'])
+            ->assertJsonPath('data.member.payment_proof_image_url', $payload['payment_proof_image_url'])
+            ->assertJsonCount(1, 'data.member.addresses')->assertJsonCount(1, 'data.member.bank_accounts');
+    }
+
+    public function test_member_registration_does_not_accept_npwp(): void
+    {
+        $this->createReferenceData();
+        $this->createMemberGroups();
+        [, $account] = $this->createMemberAccount('DST', '0001/0000/0000', 'npwp.sponsor');
+        $this->actingAs($account, 'member_api');
+        $this->postJson('/api/v1/member/network/registrations', [
+            ...$this->registrationPayload('without.npwp', '081234567831', '0001234567831'),
+            'npwp' => '0123456789012345',
+        ])->assertUnprocessable()->assertJsonValidationErrors('npwp')
+            ->assertJsonPath('errors.npwp.0', 'NPWP tidak digunakan pada pendaftaran member.');
+        $this->assertDatabaseCount('member_registration', 0);
+    }
+
+    public function test_distributor_registration_snapshots_multiple_banks_and_approval_copies_all(): void
+    {
+        Mail::fake();
+        $this->createReferenceData();
+        $this->createMemberGroups();
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $payload = $this->multipleContactPayload();
+        $payload['nib'] = '0123456789012';
+        $payload['npwp'] = '0123456789012345';
+        $id = $this->postJson('/api/v1/admin/partnership/registrations', $payload)
+            ->assertSuccessful()
+            ->assertJsonMissingPath('data.addresses')
+            ->assertJsonCount(2, 'data.bank_accounts')
+            ->assertJsonPath('data.address.address', 'Jalan DNY Nomor 1')
+            ->assertJsonPath('data.bank.account_number', '0012345678')
+            ->json('data.id');
+        $registration = MemberRegistration::query()->findOrFail($id);
+        $this->assertCount(2, $registration->member_registration_bank_accounts);
+        $this->postJson("/api/v1/admin/partnership/registrations/{$id}/approve")->assertOk();
+        $memberId = $registration->fresh()->member_registration_member_id;
+        $this->getJson("/api/v1/admin/partnership/members/{$memberId}")
+            ->assertOk()
+            ->assertJsonCount(1, 'data.addresses')
+            ->assertJsonPath('data.addresses.0.full_address', 'Jalan DNY Nomor 1')
+            ->assertJsonPath('data.nib', $payload['nib'])->assertJsonPath('data.npwp', $payload['npwp'])
+            ->assertJsonCount(2, 'data.bank_accounts')
+            ->assertJsonPath('data.bank_accounts.0.account_number', '0012345678');
+        $this->assertDatabaseHas('member_bank_account', [
+            'member_bank_account_member_id' => $memberId,
+            'member_bank_account_number' => '0012345678',
+            'member_bank_account_is_default' => 1,
+        ]);
+    }
+
+    public function test_distributor_registration_can_be_approved_without_bank_accounts(): void
+    {
+        Mail::fake();
+        $this->createReferenceData();
+        $this->createMemberGroups();
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        foreach (['omitted', 'empty', 'null'] as $index => $mode) {
+            $payload = $this->multipleContactPayload();
+            $payload['mobile_phone'] = '08123456782'.$index;
+            $payload['identity_no'] = '000123456789012'.$index;
+            if ($mode === 'omitted') {
+                unset($payload['bank_accounts']);
+            } else {
+                $payload['bank_accounts'] = $mode === 'empty' ? [] : null;
+            }
+            $id = $this->postJson('/api/v1/admin/partnership/registrations', $payload)
+                ->assertOk()->assertJsonPath('data.bank_accounts', [])
+                ->assertJsonPath('data.bank', null)->json('data.id');
+            $this->postJson("/api/v1/admin/partnership/registrations/{$id}/approve")->assertOk();
+            $memberId = MemberRegistration::query()->findOrFail($id)->member_registration_member_id;
+            $this->assertDatabaseMissing('member_bank_account', ['member_bank_account_member_id' => $memberId]);
+        }
+    }
+
+    public function test_private_registration_documents_can_be_opened_by_admin_and_store_canonical_urls(): void
+    {
+        $this->createReferenceData();
+        $this->createMemberGroups();
+        [, $account] = $this->createMemberAccount('DST', '0001/0000/0000', 'media.sponsor');
+        Storage::fake('local');
+        $uuid = (string) Str::uuid();
+        $path = "media/general/{$uuid}.jpg";
+        Storage::disk('local')->put($path, 'identity-document');
+        $media = Media::query()->create([
+            'media_uuid' => $uuid, 'media_uploader_type' => $account->getMorphClass(),
+            'media_uploader_id' => $account->getKey(), 'media_collection' => 'general',
+            'media_original_name' => 'identity.jpg', 'media_original_mime_type' => 'image/jpeg',
+            'media_original_size' => 17, 'media_mime_type' => 'image/jpeg', 'media_size' => 17,
+            'media_chunk_size' => 1024, 'media_total_chunks' => 1, 'media_uploaded_chunks' => 1,
+            'media_status' => Media::STATUS_READY, 'media_disk' => 'local', 'media_path' => $path,
+            'media_expires_at' => now()->addDay(),
+        ]);
+        $this->actingAs($account, 'member_api');
+        $signedUrl = MediaUrl::privateContentUrl($media, 'member');
+        $id = $this->postJson('/api/v1/member/network/registrations', [
+            ...$this->registrationPayload('private.docs', '081234567813', '3578010101010013'),
+            'identity_image_url' => $signedUrl,
+            'payment_proof_image_url' => $signedUrl,
+        ])->assertSuccessful()->json('data.id');
+        $registration = MemberRegistration::query()->findOrFail($id);
+        $this->assertStringNotContainsString('signature=', $registration->member_registration_identity_image);
+        $this->assertStringNotContainsString('signature=', $registration->member_registration_payment_proof_image);
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $url = $this->getJson("/api/v1/admin/partnership/registrations/{$id}")->assertOk()
+            ->json('data.payment_proof_image_url');
+        $this->assertStringContainsString('/api/v1/admin/', $url);
+        $this->assertStringContainsString('signature=', $url);
+        $this->get($url)->assertOk();
+        $this->getJson("/api/v1/admin/media/uploads/{$uuid}")->assertOk();
+    }
+
+    public function test_registration_rejects_unknown_identity_and_contact_ids_from_existing_members(): void
+    {
+        $this->createReferenceData();
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $payload = $this->multipleContactPayload();
+        $payload['identity_type'] = 'LAINNYA';
+        $payload['addresses'] = [['full_address' => 'Alamat tambahan']];
+        $payload['bank_accounts'][0]['id'] = 1;
+        $this->postJson('/api/v1/admin/partnership/registrations', $payload)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['identity_type', 'addresses', 'bank_accounts.0.id']);
+        $this->assertDatabaseCount('member_registration', 0);
+    }
+
+    public function test_registration_rejects_multiple_defaults_invalid_regions_and_inactive_default_bank(): void
+    {
+        $this->createReferenceData();
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $payload = $this->multipleContactPayload();
+        $payload['bank_accounts'][1]['is_default'] = true;
+        $payload['bank_accounts'][0]['is_active'] = false;
+        DB::table('ref_province')->insert(['province_id' => '12', 'province_name' => 'Provinsi lain']);
+        $payload['province_id'] = '12';
+        $this->postJson('/api/v1/admin/partnership/registrations', $payload)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['bank_accounts', 'province_id', 'bank_accounts.0.is_default']);
+        $this->assertDatabaseCount('member_registration', 0);
+    }
+
+    public function test_approval_keeps_legacy_registration_contacts_without_snapshots(): void
+    {
+        Mail::fake();
+        $this->createReferenceData();
+        $this->createMemberGroups();
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $id = $this->postJson('/api/v1/admin/partnership/registrations',
+            $this->registrationPayload('legacy', '081234567812', '3578010101010012', null))
+            ->assertSuccessful()->json('data.id');
+        MemberRegistration::query()->findOrFail($id)->update([
+            'member_registration_bank_accounts' => null,
+        ]);
+        $this->postJson("/api/v1/admin/partnership/registrations/{$id}/approve")->assertOk();
+        $this->assertDatabaseHas('member_bank_account', ['member_bank_account_number' => '1234567890']);
+        $this->assertDatabaseHas('member_address', ['member_address_full' => 'Jalan DNY Nomor 1']);
+    }
+
+    /** @return array<string, mixed> */
+    private function multipleContactPayload(): array
+    {
+        $payload = $this->registrationPayload('contacts', '081234567811', '3578010101010011', null);
+        foreach (['bank_id', 'bank_account_name', 'bank_account_number', 'bank_city', 'bank_branch'] as $field) {
+            unset($payload[$field]);
+        }
+        $bank = ['bank_id' => 1, 'account_name' => 'Calon Mitra', 'account_number' => '0012345678',
+            'is_default' => true];
+        $payload['bank_accounts'] = [$bank, [...$bank, 'account_number' => '0098765432', 'is_default' => false]];
+
+        return $payload;
+    }
 
     public function test_member_credentials_mail_renders_registration_template(): void
     {
@@ -154,15 +545,18 @@ class MemberRegistrationWorkflowTest extends TestCase
             ->assertJsonPath('data.submitted_by.id', $distributor->getKey())
             ->assertJsonMissingPath('data.upline')
             ->assertJsonPath('data.status.code', 'requested')
+            ->assertJsonPath('data.status.label', 'Menunggu Verifikasi')
             ->assertJsonPath('data.identity.image_url', null)
             ->assertJsonMissingPath('data.applicant.password');
         $registrationId = $response->json('data.id');
 
         $this->getJson('/api/v1/member/network/registrations?search=agent.one')
             ->assertOk()
-            ->assertJsonCount(1, 'data.results');
+            ->assertJsonCount(1, 'data.results')
+            ->assertJsonPath('data.results.0.status.label', 'Menunggu Verifikasi');
         $this->getJson("/api/v1/member/network/registrations/{$registrationId}")
             ->assertOk()
+            ->assertJsonPath('data.status.label', 'Menunggu Verifikasi')
             ->assertJsonPath('data.identity.number', '3578010101010001');
 
         [, $otherAccount] = $this->createMemberAccount(
@@ -179,7 +573,8 @@ class MemberRegistrationWorkflowTest extends TestCase
         $this->actingAs($administrator, 'admin_api');
         $this->postJson("/api/v1/admin/partnership/registrations/{$registrationId}/approve")
             ->assertOk()
-            ->assertJsonPath('data.status.code', 'approved');
+            ->assertJsonPath('data.status.code', 'approved')
+            ->assertJsonPath('data.status.label', 'Disetujui');
 
         $agent = Member::query()->where('member_mobilephone', '+6281234567801')->firstOrFail();
         $this->assertSame('0001/0001/0000', $agent->member_code);
@@ -200,13 +595,16 @@ class MemberRegistrationWorkflowTest extends TestCase
 
     public function test_recruitment_levels_follow_the_sponsor_level(): void
     {
+        Mail::fake();
         $this->createReferenceData();
         $this->createMemberGroups();
-        [, $agentAccount] = $this->createMemberAccount(
+        [$distributor, $distributorAccount] = $this->createMemberAccount('DST', '0001/0000/0000', 'agent.distributor', '081234567899');
+        [$agent, $agentAccount] = $this->createMemberAccount(
             'AGT',
             '0001/0001/0000',
             'agent.sponsor'
         );
+        $agent->update(['member_parent_member_id' => $distributor->getKey()]);
         $this->actingAs($agentAccount, 'member_api');
 
         $this->getJson('/api/v1/member/network/registrations/options')
@@ -236,7 +634,11 @@ class MemberRegistrationWorkflowTest extends TestCase
             $resellerPayload
         )->assertSuccessful()
             ->assertJsonPath('data.submitted_by.id', $agentAccount->member_account_member_id)
+            ->assertJsonPath('data.next_approval', 'distributor')
             ->json('data.id');
+
+        $this->actingAs($distributorAccount, 'member_api');
+        $this->postJson("/api/v1/member/network/registration-approvals/{$registrationId}/approve")->assertOk();
 
         $administrator = $this->createAdministrator();
         $this->actingAs($administrator, 'admin_api');
@@ -530,7 +932,8 @@ class MemberRegistrationWorkflowTest extends TestCase
         $this->postJson("/api/v1/admin/partnership/registrations/{$registrationId}/reject", [
             'note' => 'Dokumen identitas tidak terbaca.',
         ])->assertOk()
-            ->assertJsonPath('data.status.code', 'rejected');
+            ->assertJsonPath('data.status.code', 'rejected')
+            ->assertJsonPath('data.status.label', 'Ditolak');
         Mail::assertSent(MemberRegistrationRejectedMail::class, function (MemberRegistrationRejectedMail $mail): bool {
             return $mail->rejectionReason === 'Dokumen identitas tidak terbaca.';
         });
@@ -557,6 +960,206 @@ class MemberRegistrationWorkflowTest extends TestCase
         $this->assertDatabaseMissing('member_account', [
             'member_account_member_id' => 2,
         ]);
+    }
+
+    public function test_agent_registration_is_hidden_from_admin_until_distributor_approval(): void
+    {
+        [$registration, $distributor, $distributorAccount, $agent, $agentAccount] = $this->createAgentRegistration();
+        $id = $registration->getKey();
+        $this->assertDatabaseCount('member', 2);
+        $this->assertDatabaseCount('member_account', 2);
+        $this->assertSame(0, $this->registrationApprovalCount());
+        $this->getJson("/api/v1/member/network/registrations/{$id}")->assertOk()
+            ->assertJsonPath('data.status.label', 'Menunggu Verifikasi')
+            ->assertJsonPath('data.next_approval', 'distributor')
+            ->assertJsonPath('data.distributor_approval.status.code', 'pending')
+            ->assertJsonPath('data.distributor_approval.distributor.id', $distributor->getKey());
+
+        $administrator = $this->createAdministrator();
+        $this->actingAs($administrator, 'admin_api');
+        $this->getJson('/api/v1/admin/partnership/registrations?filter[status]=requested')
+            ->assertOk()->assertJsonCount(0, 'data.results')->assertJsonPath('data.pagination.total_data', 0);
+        $this->getJson("/api/v1/admin/partnership/registrations/{$id}")->assertNotFound();
+        foreach (['approve', 'reject'] as $action) {
+            $this->postJson("/api/v1/admin/partnership/registrations/{$id}/{$action}", ['note' => 'Admin mencoba langsung'])
+                ->assertUnprocessable()->assertJsonPath('message', 'Pengajuan harus disetujui Distributor terlebih dahulu.');
+        }
+
+        $this->actingAs($distributorAccount, 'member_api');
+        $this->getJson('/api/v1/member/network/registration-approvals?filter[distributor_approval_status]=pending')
+            ->assertOk()->assertJsonCount(1, 'data.results')
+            ->assertJsonPath('data.results.0.distributor_approval.status.code', 'pending');
+        $this->getJson("/api/v1/member/network/registration-approvals/{$id}")->assertOk()
+            ->assertJsonPath('data.payment_proof_image_url', 'https://example.test/agent-transfer.jpg');
+        $this->postJson("/api/v1/member/network/registration-approvals/{$id}/approve", ['note' => 'Dokumen sudah diperiksa'])
+            ->assertOk()->assertJsonPath('data.status.code', 'requested')
+            ->assertJsonPath('data.status.label', 'Menunggu Verifikasi')
+            ->assertJsonPath('data.next_approval', 'admin')
+            ->assertJsonPath('data.distributor_approval.status.code', 'approved')
+            ->assertJsonPath('data.distributor_approval.note', 'Dokumen sudah diperiksa')
+            ->assertJsonPath('data.processed_by', null);
+        $this->assertDatabaseCount('member_account', 2);
+        Mail::assertNothingSent();
+        $this->assertSame(1, $this->registrationApprovalCount());
+        $this->postJson("/api/v1/member/network/registration-approvals/{$id}/approve")->assertUnprocessable();
+        $this->postJson("/api/v1/member/network/registration-approvals/{$id}/reject", ['note' => 'Ulang'])->assertUnprocessable();
+        $this->getJson('/api/v1/member/network/registration-approvals?filter[distributor_approval_status]=pending')
+            ->assertOk()->assertJsonCount(0, 'data.results');
+
+        $this->actingAs($agentAccount, 'member_api');
+        $this->getJson("/api/v1/member/network/registrations/{$id}")->assertOk()->assertJsonPath('data.next_approval', 'admin');
+        $this->actingAs($administrator, 'admin_api');
+        $this->getJson('/api/v1/admin/partnership/registrations?filter[status]=requested')
+            ->assertOk()->assertJsonCount(1, 'data.results');
+        $this->postJson("/api/v1/admin/partnership/registrations/{$id}/approve")->assertOk()
+            ->assertJsonPath('data.status.code', 'approved')->assertJsonPath('data.next_approval', null)
+            ->assertJsonPath('data.distributor_approval.status.code', 'approved');
+        $this->assertDatabaseCount('member_account', 3);
+        $this->assertSame(0, $this->registrationApprovalCount());
+        $this->assertDatabaseHas('member', ['member_mobilephone' => '+6281234567891', 'member_parent_member_id' => $agent->getKey()]);
+        Mail::assertSent(MemberRegistrationApprovedMail::class, 1);
+    }
+
+    public function test_distributor_cannot_access_another_distributors_registration_approval(): void
+    {
+        [$registration, $distributor, $distributorAccount] = $this->createAgentRegistration();
+        [, $otherAccount] = $this->createMemberAccount('DST', '0002/0000/0000', 'other.distributor', '081234567892');
+        $id = $registration->getKey();
+        $this->actingAs($otherAccount, 'member_api');
+        $this->getJson('/api/v1/member/network/registration-approvals')->assertOk()->assertJsonCount(0, 'data.results');
+        $this->getJson("/api/v1/member/network/registration-approvals/{$id}")->assertNotFound();
+        foreach (['approve', 'reject'] as $action) {
+            $this->postJson("/api/v1/member/network/registration-approvals/{$id}/{$action}", ['note' => 'Bukan jaringan saya'])
+                ->assertNotFound();
+        }
+        $this->assertSame('pending', $registration->fresh()->member_registration_distributor_approval_status);
+        $this->actingAs($distributorAccount, 'member_api');
+        $this->postJson("/api/v1/member/network/registration-approvals/{$id}/approve", [
+            'note' => 'Sesuai', 'distributor_approval_status' => 'rejected', 'distributor_member_id' => 999,
+        ])->assertOk()->assertJsonPath('data.distributor_approval.status.code', 'approved')
+            ->assertJsonPath('data.distributor_approval.distributor.id', $distributor->getKey());
+    }
+
+    public function test_distributor_rejection_requires_a_reason_and_does_not_reach_admin(): void
+    {
+        [$registration, , $distributorAccount, , $agentAccount] = $this->createAgentRegistration();
+        $id = $registration->getKey();
+        $this->actingAs($distributorAccount, 'member_api');
+        $this->postJson("/api/v1/member/network/registration-approvals/{$id}/reject", [])
+            ->assertUnprocessable()->assertJsonValidationErrors('note')
+            ->assertJsonPath('errors.note.0', 'Alasan penolakan wajib diisi.');
+        $this->postJson("/api/v1/member/network/registration-approvals/{$id}/approve", ['note' => str_repeat('a', 1001)])
+            ->assertUnprocessable()->assertJsonValidationErrors('note');
+        $this->postJson("/api/v1/member/network/registration-approvals/{$id}/reject", ['note' => 'Bukti transfer belum sesuai'])
+            ->assertOk()->assertJsonPath('data.status.code', 'rejected')
+            ->assertJsonPath('data.distributor_approval.status.code', 'rejected')
+            ->assertJsonPath('data.distributor_approval.note', 'Bukti transfer belum sesuai')
+            ->assertJsonPath('data.next_approval', null);
+        $this->postJson("/api/v1/member/network/registration-approvals/{$id}/approve")->assertUnprocessable();
+        $this->assertDatabaseCount('member_account', 2);
+        $this->assertSame(0, $this->registrationApprovalCount());
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $this->getJson('/api/v1/admin/partnership/registrations')->assertOk()->assertJsonCount(0, 'data.results');
+        $this->getJson("/api/v1/admin/partnership/registrations/{$id}")->assertNotFound();
+        $this->postJson("/api/v1/admin/partnership/registrations/{$id}/approve")->assertUnprocessable();
+        $this->actingAs($agentAccount, 'member_api');
+        $this->getJson("/api/v1/member/network/registrations/{$id}")->assertOk()
+            ->assertJsonPath('data.note', 'Bukti transfer belum sesuai');
+        $this->postJson('/api/v1/member/network/registrations', $this->registrationPayload('review.applicant', '081234567891', '3578010101010091', 'RSL'))
+            ->assertSuccessful()->assertJsonPath('data.distributor_approval.status.code', 'pending');
+        Mail::assertNothingSent();
+    }
+
+    public function test_registration_approval_endpoints_require_authentication(): void
+    {
+        $this->getJson('/api/v1/member/network/registration-approvals')->assertUnauthorized();
+        $this->getJson('/api/v1/member/network/registration-approvals/1')->assertUnauthorized();
+        $this->postJson('/api/v1/member/network/registration-approvals/1/approve')->assertUnauthorized();
+        $this->postJson('/api/v1/member/network/registration-approvals/1/reject')->assertUnauthorized();
+    }
+
+    public function test_agents_and_resellers_cannot_use_distributor_approval_endpoints(): void
+    {
+        [$registration] = $this->createAgentRegistration();
+        $id = $registration->getKey();
+        $this->getJson('/api/v1/member/network/registration-approvals')->assertForbidden();
+        $this->getJson("/api/v1/member/network/registration-approvals/{$id}")->assertForbidden();
+        $this->postJson("/api/v1/member/network/registration-approvals/{$id}/approve")->assertForbidden();
+        $this->postJson("/api/v1/member/network/registration-approvals/{$id}/reject", ['note' => 'Ditolak'])->assertForbidden();
+        [, $resellerAccount] = $this->createMemberAccount('RSL', '0001/0001/0001', 'review.reseller', '081234567893');
+        $this->actingAs($resellerAccount, 'member_api');
+        $this->getJson('/api/v1/member/network/registration-approvals')->assertForbidden();
+        $this->postJson("/api/v1/member/network/registration-approvals/{$id}/approve")->assertForbidden();
+    }
+
+    public function test_distributor_approval_rechecks_network_and_active_accounts(): void
+    {
+        [$registration, $distributor, $distributorAccount, $agent] = $this->createAgentRegistration();
+        $id = $registration->getKey();
+        $agent->update(['member_parent_member_id' => 0]);
+        $this->actingAs($distributorAccount, 'member_api');
+        $this->postJson("/api/v1/member/network/registration-approvals/{$id}/approve")
+            ->assertUnprocessable()->assertJsonPath('message', 'Agen Utama bukan bagian dari jaringan Distributor.');
+        $agent->update(['member_parent_member_id' => $distributor->getKey(), 'member_status' => 2]);
+        $this->postJson("/api/v1/member/network/registration-approvals/{$id}/approve")->assertUnprocessable();
+        $distributor->update(['member_status' => 2]);
+        $distributorAccount->unsetRelation('member');
+        $this->postJson("/api/v1/member/network/registration-approvals/{$id}/approve")->assertForbidden();
+        $this->assertSame('pending', $registration->fresh()->member_registration_distributor_approval_status);
+        $this->assertDatabaseCount('member_account', 2);
+    }
+
+    public function test_agent_cannot_submit_without_an_active_distributor_or_forge_approval_fields(): void
+    {
+        [$registration, $distributor, , $agent, $agentAccount] = $this->createAgentRegistration();
+        $this->assertSame('pending', $registration->member_registration_distributor_approval_status);
+        $this->assertSame((int) $distributor->getKey(), (int) $registration->member_registration_distributor_member_id);
+        $agent->update(['member_parent_member_id' => 0]);
+        $this->actingAs($agentAccount, 'member_api');
+        $this->postJson('/api/v1/member/network/registrations', $this->registrationPayload('missing.distributor', '081234567894', '3578010101010094', 'RSL'))
+            ->assertUnprocessable()->assertJsonPath('message', 'Distributor Agen Utama tidak aktif atau tidak tersedia.');
+        $this->assertDatabaseCount('member_registration', 1);
+    }
+
+    public function test_admin_cannot_approve_after_the_agent_moves_away_from_the_approving_distributor(): void
+    {
+        [$registration, , $distributorAccount, $agent] = $this->createAgentRegistration();
+        $id = $registration->getKey();
+        $this->actingAs($distributorAccount, 'member_api');
+        $this->postJson("/api/v1/member/network/registration-approvals/{$id}/approve")->assertOk();
+        $agent->update(['member_parent_member_id' => 0]);
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $this->postJson("/api/v1/admin/partnership/registrations/{$id}/approve")
+            ->assertUnprocessable()->assertJsonPath('message', 'Jaringan Agen Utama berubah. Ajukan pendaftaran kembali untuk persetujuan Distributor.');
+        $this->assertDatabaseCount('member_account', 2);
+        $this->assertSame('requested', $registration->fresh()->member_registration_status);
+        Mail::assertNothingSent();
+    }
+
+    /** @return array{MemberRegistration, Member, MemberAccount, Member, MemberAccount} */
+    private function createAgentRegistration(): array
+    {
+        Mail::fake();
+        $this->createReferenceData();
+        $this->createMemberGroups();
+        [$distributor, $distributorAccount] = $this->createMemberAccount('DST', '0001/0000/0000', 'review.distributor', '081234567890');
+        [$agent, $agentAccount] = $this->createMemberAccount('AGT', '0001/0001/0000', 'review.agent', '081234567889');
+        $agent->update(['member_parent_member_id' => $distributor->getKey()]);
+        $this->actingAs($agentAccount, 'member_api');
+        $id = $this->postJson('/api/v1/member/network/registrations', [
+            ...$this->registrationPayload('review.applicant', '081234567891', '3578010101010091', 'RSL'),
+            'payment_proof_image_url' => 'https://example.test/agent-transfer.jpg',
+            'distributor_approval_status' => 'approved', 'distributor_member_id' => 999,
+        ])->assertSuccessful()->json('data.id');
+
+        return [MemberRegistration::query()->findOrFail($id), $distributor, $distributorAccount, $agent, $agentAccount];
+    }
+
+    private function registrationApprovalCount(): int
+    {
+        $summary = app(AdminActionSummaryService::class)->summary();
+
+        return collect($summary['menus'])->firstWhere('route', '/admin/partnership/registration-approvals')['count'];
     }
 
     private function createReferenceData(): void

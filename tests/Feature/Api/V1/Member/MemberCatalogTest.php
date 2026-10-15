@@ -36,6 +36,8 @@ class MemberCatalogTest extends TestCase
             'product_name' => 'Brightening Serum',
             'product_bpom_number' => 'NA18260100001',
             'product_customer_price' => 200000,
+            'product_monthly_points' => 3,
+            'product_annual_points' => 7,
             'member_prices' => [
                 ['member_level_id' => 1, 'price' => 130000],
                 ['member_level_id' => 2, 'price' => 150000],
@@ -66,6 +68,8 @@ class MemberCatalogTest extends TestCase
             ->assertJsonPath('data.results.0.bpom_number', 'NA18260100001')
             ->assertJsonPath('data.results.0.price', 150000)
             ->assertJsonPath('data.results.0.customer_price', 200000)
+            ->assertJsonPath('data.results.0.monthly_points', 3)
+            ->assertJsonPath('data.results.0.annual_points', 7)
             ->assertJsonMissingPath('data.results.0.pv')
             ->assertJsonPath('data.results.0.category.name', 'Skincare')
             ->assertJsonPath('data.pagination.total_data', 1)
@@ -79,6 +83,8 @@ class MemberCatalogTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.price', 150000)
             ->assertJsonPath('data.customer_price', 200000)
+            ->assertJsonPath('data.monthly_points', 3)
+            ->assertJsonPath('data.annual_points', 7)
             ->assertJsonCount(3, 'data.member_prices')
             ->assertJsonPath('data.member_prices.0', ['id' => 2, 'level' => 'Agen Utama', 'price' => 150000])
             ->assertJsonPath('data.member_prices.1', ['id' => 3, 'level' => 'Reseller', 'price' => 170000])
@@ -88,6 +94,70 @@ class MemberCatalogTest extends TestCase
             ->assertOk()
             ->assertJsonCount(1, 'data.results')
             ->assertJsonMissingPath('data.pagination');
+    }
+
+    public function test_purchase_catalog_categories_and_products_follow_category_order(): void
+    {
+        $this->actingAs($this->createMemberAccount('distributor'), 'member_api');
+
+        $laterCategory = $this->createCategory('Kategori Kedua');
+        $firstCategory = $this->createCategory('Kategori Pertama');
+        $laterCategory->update(['product_category_sort_order' => 2]);
+        $firstCategory->update(['product_category_sort_order' => 1]);
+        $laterProduct = $this->createProduct($laterCategory, [
+            'product_code' => 'LATER-CATEGORY',
+            'product_name' => 'Produk A',
+        ]);
+        $firstProduct = $this->createProduct($firstCategory, [
+            'product_code' => 'FIRST-CATEGORY',
+            'product_name' => 'Produk Z',
+        ]);
+
+        $this->getJson('/api/v1/member/purchases/catalog/categories')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $firstCategory->getKey())
+            ->assertJsonPath('data.0.sort_order', 1)
+            ->assertJsonPath('data.1.id', $laterCategory->getKey());
+
+        $this->getJson('/api/v1/member/purchases/catalog/products?pagination=false')
+            ->assertOk()
+            ->assertJsonPath('data.results.0.id', $firstProduct->getKey())
+            ->assertJsonPath('data.results.1.id', $laterProduct->getKey());
+    }
+
+    public function test_purchase_catalog_prioritizes_available_stock_before_category_order(): void
+    {
+        $this->actingAs($this->createMemberAccount('distributor'), 'member_api');
+
+        $firstCategory = $this->createCategory('Kategori Pertama');
+        $laterCategory = $this->createCategory('Kategori Kedua');
+        $firstCategory->update(['product_category_sort_order' => 1]);
+        $laterCategory->update(['product_category_sort_order' => 2]);
+        $emptyProduct = $this->createProduct($firstCategory, [
+            'product_code' => 'EMPTY-FIRST-CATEGORY',
+        ]);
+        $availableProduct = $this->createProduct($laterCategory, [
+            'product_code' => 'AVAILABLE-LATER-CATEGORY',
+        ]);
+        DB::table('warehouse_stock')->insert([
+            [
+                'warehouse_stock_warehouse_id' => 1,
+                'warehouse_stock_product_id' => $emptyProduct->getKey(),
+                'warehouse_stock_balance' => 0,
+            ],
+            [
+                'warehouse_stock_warehouse_id' => 1,
+                'warehouse_stock_product_id' => $availableProduct->getKey(),
+                'warehouse_stock_balance' => 5,
+            ],
+        ]);
+
+        $this->getJson('/api/v1/member/purchases/catalog/products?pagination=false')
+            ->assertOk()
+            ->assertJsonPath('data.results.0.id', $availableProduct->getKey())
+            ->assertJsonPath('data.results.0.stock.available', 5)
+            ->assertJsonPath('data.results.1.id', $emptyProduct->getKey())
+            ->assertJsonPath('data.results.1.stock.available', 0);
     }
 
     public function test_distributor_catalog_exposes_own_downline_and_customer_prices(): void

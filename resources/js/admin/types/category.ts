@@ -4,6 +4,7 @@ export interface Category {
     description: string;
     product_count: number;
     is_active: boolean;
+    sort_order: number;
 }
 
 export interface CategoryPayload {

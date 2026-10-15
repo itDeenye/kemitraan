@@ -573,7 +573,9 @@ const confirmReceipt = async () => {
     try {
         const response = await purchaseService.confirmGoodsReceipt(
             receiptId,
-            form.value,
+            receipt.value?.actions?.requires_delivery_note_number
+                ? form.value
+                : {},
         );
         if (response.success) {
             snackbar.showMessage(

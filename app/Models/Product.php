@@ -28,6 +28,8 @@ class Product extends Model
         'product_image',
         'product_image_filename',
         'product_customer_price',
+        'product_monthly_points',
+        'product_annual_points',
         'product_weight',
         'product_length',
         'product_height',
@@ -38,6 +40,11 @@ class Product extends Model
         'product_is_active',
         'product_is_deleted',
         'product_input_datetime',
+    ];
+
+    protected $attributes = [
+        'product_monthly_points' => 1,
+        'product_annual_points' => 1,
     ];
 
     public function category(): BelongsTo
@@ -91,6 +98,8 @@ class Product extends Model
     {
         return [
             'product_customer_price' => 'integer',
+            'product_monthly_points' => 'integer',
+            'product_annual_points' => 'integer',
             'product_weight' => 'integer',
             'product_length' => 'integer',
             'product_height' => 'integer',

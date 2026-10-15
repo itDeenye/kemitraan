@@ -89,7 +89,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useMediaUpload } from "@/shared/composables/useMediaUpload";
 import { useSnackbarStore } from "@/shared/stores/snackbar";
 
@@ -118,6 +118,23 @@ const { isUploading, progress, upload, cancel } = useMediaUpload();
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const previewUrl = ref<string | null>(null);
 const imageError = ref(false);
+
+const clearLocalPreview = () => {
+    if (previewUrl.value) {
+        URL.revokeObjectURL(previewUrl.value);
+        previewUrl.value = null;
+    }
+};
+
+watch(
+    () => props.modelValue,
+    () => {
+        clearLocalPreview();
+        imageError.value = false;
+    },
+);
+
+onBeforeUnmount(clearLocalPreview);
 
 /** Compute initials from fallbackText */
 const computedInitials = computed(() => {
@@ -154,6 +171,7 @@ const handleFileChange = async (event: Event) => {
     input.value = "";
 
     // Create a local object URL for immediate preview
+    clearLocalPreview();
     previewUrl.value = URL.createObjectURL(file);
     emit("uploading", true);
 
@@ -164,7 +182,7 @@ const handleFileChange = async (event: Event) => {
         emit("success", uploadedUrl);
     } catch (e: any) {
         // Revert preview on failure
-        previewUrl.value = null;
+        clearLocalPreview();
         emit("error", e);
         snackbar.showMessage(e.message || "Gagal mengunggah media", "error");
     } finally {
@@ -174,7 +192,7 @@ const handleFileChange = async (event: Event) => {
 
 const cancelUpload = () => {
     cancel();
-    previewUrl.value = null;
+    clearLocalPreview();
     emit("uploading", false);
     snackbar.showMessage("Upload dibatalkan", "info");
 };

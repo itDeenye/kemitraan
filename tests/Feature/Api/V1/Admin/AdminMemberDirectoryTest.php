@@ -19,11 +19,65 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
+use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Feature\Api\V1\Partnership\MemberRegistrationWorkflowTest;
 use Tests\TestCase;
 
 class AdminMemberDirectoryTest extends TestCase
 {
     use RefreshDatabase;
+
+    #[DataProvider('validIdentities')]
+    public function test_admin_member_updates_accept_document_formats(string $type, string $number): void
+    {
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $member = $this->createMember('IDENTITY', 'Identity', 'reseller', 1);
+        $this->putJson("/api/v1/admin/partnership/members/{$member->getKey()}", [
+            ...$this->identityUpdatePayload(), 'identity_type' => $type, 'identity_no' => $number,
+        ])->assertOk()->assertJsonPath('data.identity.type', $type)->assertJsonPath('data.identity.number', $number);
+    }
+
+    #[DataProvider('invalidIdentities')]
+    public function test_admin_member_updates_reject_invalid_document_numbers(string $type, mixed $number): void
+    {
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $member = $this->createMember('IDENTITY', 'Identity', 'reseller', 1);
+        $this->putJson("/api/v1/admin/partnership/members/{$member->getKey()}", [
+            ...$this->identityUpdatePayload(), 'identity_type' => $type, 'identity_no' => $number,
+        ])->assertUnprocessable()->assertJsonValidationErrors('identity_no');
+    }
+
+    public function test_admin_can_keep_legacy_identity_but_cannot_change_it_to_an_invalid_value(): void
+    {
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $member = $this->createMember('IDENTITY', 'Identity', 'reseller', 1);
+        $member->update(['member_identity_type' => 'SIM', 'member_identity_no' => '001234567890']);
+        $url = "/api/v1/admin/partnership/members/{$member->getKey()}";
+        $this->putJson($url, $this->identityUpdatePayload())->assertOk()
+            ->assertJsonPath('data.identity.number', '001234567890');
+        $this->putJson($url, [...$this->identityUpdatePayload(), 'identity_type' => 'SIM', 'identity_no' => '001234567890'])
+            ->assertOk()->assertJsonPath('data.identity.number', '001234567890');
+        $this->putJson($url, [...$this->identityUpdatePayload(), 'identity_no' => '123'])
+            ->assertUnprocessable()->assertJsonValidationErrors('identity_no');
+        $this->putJson($url, [...$this->identityUpdatePayload(), 'identity_type' => 'KTP'])
+            ->assertUnprocessable()->assertJsonValidationErrors('identity_no');
+    }
+
+    private function identityUpdatePayload(): array
+    {
+        return ['name' => 'Identity', 'mobile_phone' => '08123456789', 'gender' => 'Laki-laki',
+            'status' => 1, 'addresses' => [], 'bank_accounts' => []];
+    }
+
+    public static function validIdentities(): array
+    {
+        return MemberRegistrationWorkflowTest::validIdentities();
+    }
+
+    public static function invalidIdentities(): array
+    {
+        return MemberRegistrationWorkflowTest::invalidIdentities();
+    }
 
     public function test_administrator_can_list_filter_and_view_non_deleted_members(): void
     {
@@ -148,6 +202,12 @@ class AdminMemberDirectoryTest extends TestCase
 
         $this->putJson("/api/v1/admin/partnership/members/{$member->getKey()}", [
             'name' => 'Rina Diperbarui',
+            'identity_type' => 'SIM',
+            'identity_no' => '0012345678901234',
+            'identity_image_url' => 'https://example.test/rina-sim.jpg',
+            'nib' => '0123456789012',
+            'npwp' => '0123456789012345',
+            'image_url' => 'https://example.test/rina.jpg',
             'email' => 'rina@example.test',
             'mobile_phone' => '081234567890',
             'gender' => 'Perempuan',
@@ -203,6 +263,12 @@ class AdminMemberDirectoryTest extends TestCase
             ],
         ])->assertOk()
             ->assertJsonPath('data.name', 'Rina Diperbarui')
+            ->assertJsonPath('data.identity.type', 'SIM')
+            ->assertJsonPath('data.identity.number', '0012345678901234')
+            ->assertJsonPath('data.identity.image', 'https://example.test/rina-sim.jpg')
+            ->assertJsonPath('data.nib', '0123456789012')
+            ->assertJsonPath('data.npwp', '0123456789012345')
+            ->assertJsonPath('data.image', 'https://example.test/rina.jpg')
             ->assertJsonCount(2, 'data.addresses')
             ->assertJsonPath('data.addresses.0.label', 'Gudang')
             ->assertJsonPath('data.addresses.0.is_default', true)

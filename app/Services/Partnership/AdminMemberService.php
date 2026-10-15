@@ -34,7 +34,13 @@ class AdminMemberService
             'member.member_status as status',
             'member.member_join_datetime as joined_at',
             'member.member_image as image',
+            'member.member_identity_type as identity_type',
+            'member.member_identity_no as identity_no',
+            'member.member_identity_image as identity_image',
+            'member.member_nib as nib',
+            'member.member_npwp as npwp',
         ])
+            ->selectRaw("(SELECT member_registration_payment_proof_image FROM member_registration WHERE member_registration_member_id = member.member_id AND member_registration_status = 'approved' ORDER BY member_registration_id DESC LIMIT 1) as payment_proof_image_url")
             ->from('member')
             ->leftJoin('member_level', 'member_level.member_level_id = member.member_member_level_id')
             ->where('member.member_status', '!=', 3)
@@ -70,6 +76,7 @@ class AdminMemberService
                 'parent',
                 'level',
                 'stockist',
+                'approvedRegistration',
                 'addresses' => fn ($query) => $query
                     ->with(['province', 'city', 'district', 'subdistrict', 'country'])
                     ->orderByDesc('member_address_is_default')
@@ -104,6 +111,17 @@ class AdminMemberService
 
         DB::transaction(function () use ($member, $data): void {
             $member->update([
+                ...collect([
+                    'identity_type' => 'member_identity_type',
+                    'identity_no' => 'member_identity_no',
+                    'identity_image_url' => 'member_identity_image',
+                    'nib' => 'member_nib',
+                    'npwp' => 'member_npwp',
+                ])->filter(fn (string $column, string $input): bool => array_key_exists($input, $data))
+                    ->mapWithKeys(fn (string $column, string $input): array => [
+                        $column => $input === 'identity_image_url'
+                            ? MediaUrl::canonicalPrivateUrl($data[$input]) : $data[$input],
+                    ])->all(),
                 'member_name' => $data['name'],
                 'member_email' => $data['email'] ?? '',
                 'member_mobilephone' => $data['mobile_phone'],

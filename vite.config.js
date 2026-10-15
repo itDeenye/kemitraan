@@ -18,6 +18,7 @@ export default defineConfig({
         laravel({
             input: [
                 'resources/css/app.css',
+                'resources/js/shared/version.ts',
                 'resources/js/member/app.ts',
                 'resources/js/admin/app.ts',
             ],

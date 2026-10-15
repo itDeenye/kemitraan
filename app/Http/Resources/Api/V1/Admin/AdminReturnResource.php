@@ -81,21 +81,10 @@ class AdminReturnResource extends ApiResource
             'created_at' => $return
                 ? $return->return_created_datetime?->toAtomString()
                 : $this->resource->created_at,
-            'actions' => [
-                'can_approve' => in_array($status, ['submitted', 'return_shipping_failed'], true),
-                'can_reject' => $status === 'submitted',
-                'can_receive' => $return !== null
-                    && $return->return_shipping_method !== 'pickup'
-                    && in_array($status, ['waiting_member_shipment', 'return_in_transit'], true),
-                'requires_pickup_pin' => $return !== null
-                    && $status === 'submitted'
-                    && $return->return_shipping_method === 'pickup',
-                'can_ship_replacement' => in_array(
-                    $status,
-                    ['received_by_company', 'replacement_shipping_failed'],
-                    true,
-                ),
-            ],
+            'actions' => ReturnModel::adminActions(
+                $status,
+                $return?->return_shipping_method ?? $this->resource->shipping_method ?? null,
+            ),
             'details' => $this->when($return !== null, fn () => $return->details->map(fn ($detail): array => [
                 'id' => (int) $detail->return_detail_id,
                 'goods_receive_detail_id' => $detail->return_detail_goods_receive_detail_id

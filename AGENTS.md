@@ -160,3 +160,11 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 - To filter on a particular test name: `php artisan test --compact --filter=testName` (recommended after making a change to a related file).
 
 </laravel-boost-guidelines>
+
+## API Release Versioning and Push Confirmation
+
+- The public `GET /api/v1/version` endpoint reports the release version from `config/api.php`. Keep this version committed with the code, not generated from the current clock or configured through a local `.env` override.
+- Use the Asia/Jakarta release date in `YY.MM.DD` format, for example `26.10.13`. Further approved releases on that date use `26.10.13-01`, `26.10.13-02`, and so on. A release on a new date starts without a suffix.
+- Before every user-requested push, ask whether the API release version should be changed. State the current version and the proposed next version, and wait for the user's answer before pushing. Do not silently increment the version.
+- If approved, update `config/api.php` and the current version example in `docs/DNY API.postman_collection.json`, then run the version endpoint tests before pushing. If declined, preserve the current version.
+- This is a release identifier, not a route-contract version: do not change the existing `/api/v1` routes when bumping it. After deployment, rebuild any cached Laravel configuration so the endpoint reflects the deployed version.

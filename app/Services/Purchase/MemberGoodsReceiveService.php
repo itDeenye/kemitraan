@@ -73,6 +73,7 @@ class MemberGoodsReceiveService
             "{$trxTable}.trx_id as id",
             "{$trxTable}.trx_code as code",
             "{$trxTable}.trx_seller_type as seller_type",
+            "{$trxTable}.trx_seller_type as transaction_seller_type",
             "{$trxTable}.trx_seller_id as seller_id",
             "{$trxTable}.trx_shipping_method as shipping_method",
             "{$trxTable}.trx_is_preorder as is_preorder",
@@ -194,7 +195,9 @@ class MemberGoodsReceiveService
                 ->loadVisiblePurchaseChain($root)
                 ->getRelation('preorderChain');
             /** @var Trx|null $fulfillment */
-            $fulfillment = $chain->last();
+            $fulfillment = $root->trx_preorder_fulfillment_mode === 'upline_transit'
+                ? $chain->first()
+                : $chain->last();
             if (! $fulfillment) {
                 continue;
             }
@@ -258,6 +261,7 @@ class MemberGoodsReceiveService
             $lockedTrx = $this->preorderChainService->loadVisiblePurchaseChain($lockedTrx);
             /** @var Trx $shippingTrx */
             $shippingTrx = $lockedTrx->trx_is_preorder
+                && $lockedTrx->trx_preorder_fulfillment_mode !== 'upline_transit'
                 ? ($lockedTrx->preorderChain->last() ?? $lockedTrx)
                 : $lockedTrx;
             $now = now();
@@ -280,8 +284,7 @@ class MemberGoodsReceiveService
                 default => null,
             };
             $submittedDeliveryNote = $data['delivery_note_number'] ?? null;
-            $mustVerifyDeliveryNote = $shippingTrx->trx_seller_type === 'warehouse'
-                || filled($submittedDeliveryNote);
+            $mustVerifyDeliveryNote = $lockedTrx->trx_seller_type === 'warehouse';
             if ($mustVerifyDeliveryNote
                 && (blank($shippingDeliveryNote) || $shippingDeliveryNote !== $submittedDeliveryNote)) {
                 throw new ProcessException(

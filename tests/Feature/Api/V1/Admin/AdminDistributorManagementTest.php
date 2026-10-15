@@ -6,6 +6,7 @@ use App\Mail\MemberCredentialsMail;
 use App\Models\Member;
 use App\Models\MemberGroup;
 use App\Models\MemberLevel;
+use App\Models\RefBank;
 use App\Models\RefCity;
 use App\Models\RefDistrict;
 use App\Models\RefProvince;
@@ -20,6 +21,71 @@ use Tests\TestCase;
 class AdminDistributorManagementTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_distributor_can_be_created_with_documents_existing_address_fields_and_multiple_banks(): void
+    {
+        Mail::fake();
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $this->setupRegion();
+        MemberGroup::query()->create(['member_group_name' => 'Distributor', 'member_group_is_active' => 1]);
+        RefBank::query()->create(['bank_id' => 1, 'bank_code' => 'BCA', 'bank_name' => 'BCA', 'bank_is_active' => 1]);
+        $bank = ['bank_id' => 1, 'account_name' => 'Doni', 'account_number' => '0012345678', 'is_default' => true];
+        $payload = [
+            'name' => 'Doni', 'email' => 'doni@example.test', 'mobile_phone' => '081234567890',
+            'gender' => 'Laki-laki', 'birth_date' => '1990-01-01', 'status' => 1,
+            'identity_type' => 'BPJS', 'identity_no' => '0001234567890',
+            'identity_image_url' => 'https://example.test/bpjs.jpg',
+            'image_url' => 'https://example.test/doni.jpg', 'nib' => '0123456789012', 'npwp' => '0123456789012345',
+            'address' => 'Jl. KTP', 'domicile_address' => 'Jl. Domisili',
+            'province_id' => '35', 'city_id' => '3578',
+            'district_id' => '357801', 'subdistrict_id' => 3578010001,
+            'bank_accounts' => [$bank, [...$bank, 'account_number' => '0098765432', 'is_default' => false]],
+        ];
+        $id = $this->postJson('/api/v1/admin/partnership/distributors', $payload)
+            ->assertCreated()
+            ->assertJsonPath('data.identity.type', 'BPJS')
+            ->assertJsonPath('data.nib', $payload['nib'])
+            ->assertJsonPath('data.npwp', $payload['npwp'])
+            ->assertJsonPath('data.image', $payload['image_url'])
+            ->assertJsonCount(2, 'data.addresses')
+            ->assertJsonCount(2, 'data.bank_accounts')
+            ->json('data.id');
+        $this->getJson("/api/v1/admin/partnership/distributors/{$id}")
+            ->assertOk()->assertJsonPath('data.bank_accounts.0.account_number', '0012345678');
+        $this->getJson('/api/v1/admin/partnership/distributors')
+            ->assertOk()->assertJsonPath('data.results.0.npwp', $payload['npwp']);
+        $this->assertDatabaseHas('member', ['member_id' => $id, 'member_npwp' => $payload['npwp']]);
+        $this->assertDatabaseHas('member_address', ['member_address_member_id' => $id,
+            'member_address_full' => 'Jl. Domisili', 'member_address_is_default' => 1]);
+    }
+
+    public function test_distributor_can_be_created_without_bank_accounts_and_rejects_address_arrays(): void
+    {
+        Mail::fake();
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $this->setupRegion();
+        MemberGroup::query()->create(['member_group_name' => 'Distributor', 'member_group_is_active' => 1]);
+        $payload = [
+            'name' => 'Tanpa Rekening', 'mobile_phone' => '081234567811',
+            'gender' => 'Laki-laki', 'birth_date' => '1990-01-01', 'status' => 1,
+            'identity_type' => 'SIM', 'identity_no' => '0001234567890123',
+            'address' => 'Jl. KTP', 'domicile_address' => 'Jl. Domisili',
+            'province_id' => '35', 'city_id' => '3578', 'district_id' => '357801', 'subdistrict_id' => 3578010001,
+        ];
+        $this->postJson('/api/v1/admin/partnership/distributors', [...$payload, 'addresses' => [['full_address' => 'Tambahan']]])
+            ->assertUnprocessable()->assertJsonValidationErrors('addresses');
+        foreach (['omitted', 'empty', 'null'] as $index => $mode) {
+            $payload['mobile_phone'] = '08123456782'.$index;
+            $payload['identity_no'] = '000123456789012'.$index;
+            if ($mode !== 'omitted') {
+                $payload['bank_accounts'] = $mode === 'empty' ? [] : null;
+            }
+            $id = $this->postJson('/api/v1/admin/partnership/distributors', $payload)
+                ->assertCreated()->assertJsonPath('data.bank_accounts', [])
+                ->assertJsonPath('data.bank.bank_id', 0)->json('data.id');
+            $this->assertDatabaseMissing('member_bank_account', ['member_bank_account_member_id' => $id]);
+        }
+    }
 
     public function test_administrator_can_list_and_view_distributors(): void
     {

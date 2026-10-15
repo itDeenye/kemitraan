@@ -236,6 +236,43 @@
                             </v-row>
                         </v-col>
 
+                        <v-col cols="12" md="6">
+                            <label class="text-caption font-weight-medium mb-1 d-block text-medium-emphasis">
+                                Poin Bulanan <span class="text-error">*</span>
+                            </label>
+                            <v-text-field
+                                v-model.number="form.monthly_points"
+                                name="monthly_points"
+                                type="number"
+                                min="0"
+                                max="4294967295"
+                                step="1"
+                                variant="outlined"
+                                density="comfortable"
+                                hide-details="auto"
+                                class="mb-4"
+                                :rules="[rules.points('Poin Bulanan')]"
+                            />
+                        </v-col>
+                        <v-col cols="12" md="6">
+                            <label class="text-caption font-weight-medium mb-1 d-block text-medium-emphasis">
+                                Poin Tahunan <span class="text-error">*</span>
+                            </label>
+                            <v-text-field
+                                v-model.number="form.annual_points"
+                                name="annual_points"
+                                type="number"
+                                min="0"
+                                max="4294967295"
+                                step="1"
+                                variant="outlined"
+                                density="comfortable"
+                                hide-details="auto"
+                                class="mb-4"
+                                :rules="[rules.points('Poin Tahunan')]"
+                            />
+                        </v-col>
+
                         <v-col cols="12">
                             <label
                                 class="text-caption font-weight-medium mb-1 d-block text-medium-emphasis"
@@ -358,6 +395,13 @@ const parseNumber = (value: string | number) => {
 };
 
 const rules = {
+    points: (field: string) => (v: any) =>
+        ((typeof v === "number" || typeof v === "string") &&
+            String(v).trim() !== "" &&
+            Number.isInteger(Number(v)) &&
+            Number(v) >= 0 &&
+            Number(v) <= 4294967295) ||
+        `${field} harus berupa bilangan bulat antara 0 dan 4.294.967.295`,
     required: (field: string) => (v: any) => !!v || `${field} wajib diisi`,
     requiredSelect: (field: string) => (v: any) =>
         !!v || `${field} wajib dipilih`,
@@ -375,6 +419,8 @@ const initialFormState: ProductPayload = {
     image_url: null,
     description: "",
     customer_price: 0,
+    monthly_points: 1,
+    annual_points: 1,
     distributor_price: 0,
     agent_price: 0,
     reseller_price: 0,
@@ -416,6 +462,8 @@ const open = async (product?: Product) => {
                 image_url: detail.image || null,
                 description: detail.description || "",
                 customer_price: detail.prices.customer,
+                monthly_points: detail.monthly_points ?? 1,
+                annual_points: detail.annual_points ?? 1,
                 member_prices:
                     detail.prices?.members?.map((m) => ({
                         member_level_id: m.member_level_id,
@@ -440,6 +488,8 @@ const open = async (product?: Product) => {
                 image_url: product.image || null,
                 description: product.description || "",
                 customer_price: product.prices.customer,
+                monthly_points: product.monthly_points ?? 1,
+                annual_points: product.annual_points ?? 1,
                 member_prices:
                     product.prices?.members?.map((m) => ({
                         member_level_id: m.member_level_id,

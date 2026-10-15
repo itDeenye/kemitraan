@@ -380,6 +380,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    '/member/network/registration-approvals/[id]': RouteRecordInfo<
+      '/member/network/registration-approvals/[id]',
+      '/member/network/registration-approvals/:id',
+      { id: ParamValue<true> },
+      { id: ParamValue<false> },
+      | never
+    >,
     '/member/network/registrations/': RouteRecordInfo<
       '/member/network/registrations/',
       '/member/network/registrations',
@@ -527,11 +534,18 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
-    '/member/stock/adjustment': RouteRecordInfo<
-      '/member/stock/adjustment',
+    '/member/stock/adjustment/': RouteRecordInfo<
+      '/member/stock/adjustment/',
       '/member/stock/adjustment',
       Record<never, never>,
       Record<never, never>,
+      | never
+    >,
+    '/member/stock/adjustment/[id]': RouteRecordInfo<
+      '/member/stock/adjustment/[id]',
+      '/member/stock/adjustment/:id',
+      { id: ParamValue<true> },
+      { id: ParamValue<false> },
       | never
     >,
     '/member/stock/mutation': RouteRecordInfo<
@@ -965,6 +979,12 @@ declare module 'vue-router/auto-routes' {
       views:
         | never
     }
+    'resources/js/member/pages/network/registration-approvals/[id].vue': {
+      routes:
+        | '/member/network/registration-approvals/[id]'
+      views:
+        | never
+    }
     'resources/js/member/pages/network/registrations/index.vue': {
       routes:
         | '/member/network/registrations/'
@@ -1091,9 +1111,15 @@ declare module 'vue-router/auto-routes' {
       views:
         | never
     }
-    'resources/js/member/pages/stock/adjustment.vue': {
+    'resources/js/member/pages/stock/adjustment/index.vue': {
       routes:
-        | '/member/stock/adjustment'
+        | '/member/stock/adjustment/'
+      views:
+        | never
+    }
+    'resources/js/member/pages/stock/adjustment/[id].vue': {
+      routes:
+        | '/member/stock/adjustment/[id]'
       views:
         | never
     }

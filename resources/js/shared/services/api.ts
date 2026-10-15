@@ -1,6 +1,8 @@
 import axios from 'axios'
 import type { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios'
 
+export const ADMIN_ACTION_SUMMARY_REFRESH_EVENT = 'admin:action-summary-refresh'
+
 /**
  * Base Axios instance untuk komunikasi dengan API Laravel.
  * Semua panel menggunakan instance ini.
@@ -61,7 +63,20 @@ api.interceptors.request.use(
 
 // Response interceptor
 api.interceptors.response.use(
-    (response) => response,
+    (response) => {
+        const method = response.config.method?.toLowerCase() || 'get'
+        const url = response.config.url?.split('?')[0] || ''
+        if (typeof window !== 'undefined'
+            && window.location.pathname.startsWith('/admin')
+            && /^\/admin\/(transactions|inventory|partnership|rewards)\//.test(url)
+            && ['post', 'put', 'patch', 'delete'].includes(method)
+            && !url.endsWith('/couriers')
+            && response.status >= 200 && response.status < 300
+            && response.data?.success !== false) {
+            window.dispatchEvent(new Event(ADMIN_ACTION_SUMMARY_REFRESH_EVENT))
+        }
+        return response
+    },
     async (error: AxiosError) => {
         const status = error.response?.status
         const isClient = typeof window !== 'undefined';

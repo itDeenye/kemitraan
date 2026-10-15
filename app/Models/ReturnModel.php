@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -13,6 +14,12 @@ use Illuminate\Database\Eloquent\Relations\HasOneThrough;
  */
 class ReturnModel extends Model
 {
+    public const ADMIN_APPROVAL_STATUSES = ['submitted', 'return_shipping_failed'];
+
+    public const ADMIN_RECEIVE_STATUSES = ['waiting_member_shipment', 'return_in_transit'];
+
+    public const ADMIN_REPLACEMENT_STATUSES = ['received_by_company', 'replacement_shipping_failed'];
+
     protected $table = 'return';
 
     protected $primaryKey = 'return_id';
@@ -49,6 +56,33 @@ class ReturnModel extends Model
         'return_completed_datetime',
         'return_created_datetime',
     ];
+
+    /** @return array{can_approve: bool, can_reject: bool, can_receive: bool, requires_pickup_pin: bool, can_ship_replacement: bool} */
+    public static function adminActions(string $status, ?string $shippingMethod): array
+    {
+        return [
+            'can_approve' => in_array($status, self::ADMIN_APPROVAL_STATUSES, true),
+            'can_reject' => $status === 'submitted',
+            'can_receive' => $shippingMethod !== 'pickup'
+                && in_array($status, self::ADMIN_RECEIVE_STATUSES, true),
+            'requires_pickup_pin' => $status === 'submitted' && $shippingMethod === 'pickup',
+            'can_ship_replacement' => in_array($status, self::ADMIN_REPLACEMENT_STATUSES, true),
+        ];
+    }
+
+    public function scopeNeedsAdminAction(Builder $query): Builder
+    {
+        return $query->where(function (Builder $actions): void {
+            $actions->whereIn('return_status', [...self::ADMIN_APPROVAL_STATUSES, ...self::ADMIN_REPLACEMENT_STATUSES])
+                ->orWhere(function (Builder $receive): void {
+                    $receive->whereIn('return_status', self::ADMIN_RECEIVE_STATUSES)
+                        ->where(function (Builder $method): void {
+                            $method->whereNull('return_shipping_method')
+                                ->orWhere('return_shipping_method', '<>', 'pickup');
+                        });
+                });
+        });
+    }
 
     protected function casts(): array
     {

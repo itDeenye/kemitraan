@@ -90,162 +90,34 @@
                 </div>
             </div>
 
-            <div
+            <OrderPartyInfo title="Data Pembeli" icon="mdi-account-outline" :party="order.buyer" />
+            <OrderSellerInfo :seller="order.seller" />
+
+            <OrderShippingInfo
                 v-if="!isIntermediatePickupPreorder"
-                class="card"
-                style="margin-top: 16px; margin-bottom: 16px"
+                :method="isPickupOrder ? 'pickup' : order.shipping?.method || order.shipping_method"
+                :shipping="order.shipping"
+                :origin="order.seller?.origin"
+                :destination="order.buyer?.destination"
+                :pickup-location="pickupLocation"
+                :transit="isUplineTransit"
             >
                 <div
-                    class="border-b border-[var(--line)]"
-                    style="padding: 16px 20px"
+                    v-if="order.shipping?.code && (!order.is_preorder || !order.parent_transaction_id)"
+                    class="rounded-lg"
+                    style="padding: 12px 14px; border: 1px solid rgba(var(--v-theme-primary), 0.18); background: rgba(var(--v-theme-primary), 0.06)"
                 >
-                    <h3
-                        class="flex items-center gap-2 m-0"
-                        style="font-size: 14px"
-                    >
-                        <v-icon icon="mdi-map-marker-outline" size="18" />
-                        {{
-                            order.shipping?.method === "pickup"
-                                ? "Informasi Pengambilan"
-                                : "Informasi Pengiriman"
-                        }}
-                    </h3>
+                    <span class="text-[11px] font-semibold text-[var(--muted)] block mb-1">
+                        Kode Verifikasi Pengambilan
+                    </span>
+                    <strong class="text-[22px] tracking-[0.18em] text-[var(--primary)]">
+                        {{ order.shipping.code }}
+                    </strong>
+                    <p class="text-[12px] text-[var(--muted)] m-0 mt-1">
+                        Tunjukkan kode ini kepada petugas di lokasi pengambilan saat barang diambil.
+                    </p>
                 </div>
-                <div style="padding: 16px 20px">
-                    <div class="flex flex-col gap-3">
-                        <div v-if="order.shipping?.method === 'pickup'">
-                            <span
-                                class="text-[11px] font-semibold text-[var(--muted)] uppercase tracking-wider block mb-1"
-                                >LOKASI PENGAMBILAN</span
-                            >
-                            <strong class="text-[13px] block">{{
-                                order.shipping?.location ||
-                                order.seller?.origin?.name ||
-                                order.seller?.name ||
-                                "-"
-                            }}</strong>
-                            <p
-                                class="text-[12px] text-[var(--muted)] m-0 leading-relaxed"
-                                v-html="formatLocation(order.seller?.origin)"
-                            ></p>
-                            <div
-                                v-if="
-                                    order.shipping?.code &&
-                                    (!order.is_preorder ||
-                                        !order.parent_transaction_id)
-                                "
-                                class="mt-3 rounded-lg"
-                                style="
-                                    padding: 12px 14px;
-                                    border: 1px solid
-                                        rgba(var(--v-theme-primary), 0.18);
-                                    background: rgba(
-                                        var(--v-theme-primary),
-                                        0.06
-                                    );
-                                "
-                            >
-                                <span
-                                    class="text-[11px] font-semibold text-[var(--muted)] uppercase tracking-wider block mb-1"
-                                >
-                                    Kode Verifikasi Pengambilan
-                                </span>
-                                <strong
-                                    class="text-[22px] tracking-[0.18em] text-[var(--primary)]"
-                                >
-                                    {{ order.shipping.code }}
-                                </strong>
-                                <p
-                                    class="text-[12px] text-[var(--muted)] m-0 mt-1"
-                                >
-                                    Tunjukkan kode ini ke penjual saat barang
-                                    diambil.
-                                </p>
-                            </div>
-                        </div>
-                        <template v-else>
-                            <div>
-                                <span
-                                    class="text-[11px] font-semibold text-[var(--muted)] uppercase tracking-wider block mb-1"
-                                    >DARI</span
-                                >
-                                <strong class="text-[13px] block">{{
-                                    order.seller?.origin?.name ||
-                                    order.seller?.name ||
-                                    "-"
-                                }}</strong>
-                                <p
-                                    class="text-[12px] text-[var(--muted)] m-0 leading-relaxed"
-                                    v-html="
-                                        formatLocation(order.seller?.origin)
-                                    "
-                                ></p>
-                            </div>
-                            <div>
-                                <span
-                                    class="text-[11px] font-semibold text-[var(--muted)] uppercase tracking-wider block mb-1"
-                                    >TUJUAN</span
-                                >
-                                <strong class="text-[13px] block"
-                                    >{{
-                                        order.buyer?.destination?.name ||
-                                        order.buyer?.name ||
-                                        "-"
-                                    }}
-                                    {{
-                                        order.buyer?.destination?.phone
-                                            ? "(" +
-                                              order.buyer.destination.phone +
-                                              ")"
-                                            : ""
-                                    }}</strong
-                                >
-                                <p
-                                    class="text-[12px] text-[var(--muted)] m-0 leading-relaxed"
-                                    v-html="
-                                        formatLocation(order.buyer?.destination)
-                                    "
-                                ></p>
-                            </div>
-                        </template>
-                    </div>
-                </div>
-                <div
-                    class="border-t border-dashed border-[var(--line)] bg-[#fafafa] rounded-b-xl"
-                    style="padding: 12px 20px"
-                >
-                    <div
-                        class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 sm:gap-3"
-                    >
-                        <span class="soft-label flex items-center gap-[6px]">
-                            <v-icon icon="mdi-truck-outline" size="16" />
-                            Pengiriman
-                        </span>
-                        <strong
-                            class="text-[13px] sm:text-right"
-                            v-if="order.shipping?.method === 'pickup'"
-                        >
-                            Pickup (Diambil Sendiri)
-                        </strong>
-                        <strong class="text-[13px] sm:text-right" v-else>
-                            <span class="uppercase"
-                                >{{ order.shipping?.courier || "Kurir" }} -
-                            </span>
-                            {{ order.shipping?.service || "" }}
-                        </strong>
-                    </div>
-                    <div
-                        class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 sm:gap-3 mt-3 sm:mt-2"
-                        v-if="order.shipping?.tracking_number"
-                    >
-                        <span class="soft-label">Nomor Resi</span>
-                        <strong
-                            class="text-[var(--primary)] text-[13px] break-all"
-                            >{{ order.shipping.tracking_number }}</strong
-                        >
-                    </div>
-                </div>
-            </div>
+            </OrderShippingInfo>
 
             <div class="card" style="margin-bottom: 16px">
                 <div
@@ -337,6 +209,10 @@
                             <div class="text-[11px] text-[var(--muted)] mt-0.5">
                                 BPOM: {{ item.product.bpom_number || "-" }}
                             </div>
+                            <div class="text-[11px] text-[var(--muted)] mt-0.5">
+                                Poin Bulanan: {{ formatPrice(item.monthly_points ?? 0) }} ·
+                                Poin Tahunan: {{ formatPrice(item.annual_points ?? 0) }}
+                            </div>
                             <span class="text-[12px]"
                                 >{{ item.quantity }} x Rp{{
                                     formatPrice(item.net_price || item.price)
@@ -382,11 +258,19 @@
                             }}</span
                         >
                     </div>
+                    <div class="flex justify-between mb-2">
+                        <span class="soft-label">Total Poin Bulanan</span>
+                        <span class="text-[13px]">{{ formatPrice(order.summary?.total_monthly_points ?? 0) }}</span>
+                    </div>
+                    <div class="flex justify-between mb-2">
+                        <span class="soft-label">Total Poin Tahunan</span>
+                        <span class="text-[13px]">{{ formatPrice(order.summary?.total_annual_points ?? 0) }}</span>
+                    </div>
                     <div
                         class="flex justify-between mb-2"
                         v-if="
                             order.shipping &&
-                            order.shipping?.method !== 'pickup'
+                            !isPickupOrder
                         "
                     >
                         <span class="soft-label">Ongkos Kirim</span>
@@ -400,7 +284,7 @@
                         class="flex justify-between mb-2"
                         v-if="
                             order.shipping &&
-                            order.shipping?.method !== 'pickup'
+                            !isPickupOrder
                         "
                     >
                         <span class="soft-label">Asuransi Pengiriman</span>
@@ -849,11 +733,14 @@ import purchaseService from "@/member/services/purchase.service";
 import { useFormatter } from "@/shared/composables/useFormatter";
 import MobileConfirm from "@/member/components/MobileConfirm.vue";
 import PreorderOriginCard from "@/member/components/transactions/PreorderOriginCard.vue";
+import OrderSellerInfo from "@/member/components/transactions/OrderSellerInfo.vue";
+import OrderPartyInfo from "@/member/components/transactions/OrderPartyInfo.vue";
+import OrderShippingInfo from "@/member/components/transactions/OrderShippingInfo.vue";
 import { decodeRouteId, encodeRouteId } from "@/shared/utils/route-id";
 
 const route = useRoute();
 const router = useRouter();
-const { formatPrice, formatDateTime, formatLocation } = useFormatter();
+const { formatPrice, formatDateTime } = useFormatter();
 
 const confirmDialog = ref<InstanceType<typeof MobileConfirm> | null>(null);
 
@@ -872,6 +759,17 @@ const copyToClipboard = (text: string, subject: string = "Teks") => {
 };
 
 const order = ref<any>(null);
+const isUplineTransit = computed(
+    () => order.value?.preorder_fulfillment?.mode === "upline_transit",
+);
+const isPickupOrder = computed(
+    () => order.value?.shipping?.method === "pickup"
+        || (order.value?.shipping_method === "pickup"
+            && Number(order.value?.parent_transaction_id || 0) === 0),
+);
+const pickupLocation = computed(
+    () => order.value?.pickup_location || order.value?.seller?.origin,
+);
 const isIntermediatePickupPreorder = computed(
     () =>
         order.value?.is_preorder === true &&

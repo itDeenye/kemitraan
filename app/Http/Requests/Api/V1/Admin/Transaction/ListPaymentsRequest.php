@@ -34,6 +34,7 @@ class ListPaymentsRequest extends FormRequest
             ])],
             'filter.bank_id' => ['nullable', 'integer', 'min:1'],
             'filter.buyer_type' => ['nullable', Rule::in(['distributor', 'agent', 'reseller', 'customer'])],
+            'filter.seller_type' => ['nullable', Rule::in(['warehouse', 'distributor', 'agent', 'reseller'])],
             'filter.buyer_id' => ['nullable', 'integer', 'min:1'],
             'date_from' => ['nullable', 'date_format:Y-m-d'],
             'date_to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:date_from'],

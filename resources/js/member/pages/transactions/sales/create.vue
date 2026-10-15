@@ -17,23 +17,10 @@
                 />
             </div>
 
-            <div class="filter-chips">
-                <span
-                    class="filter-chip"
-                    :class="{ active: currentCategory === null }"
-                    @click="currentCategory = null"
-                    >Semua</span
-                >
-                <span
-                    v-for="cat in categories"
-                    :key="cat.id"
-                    class="filter-chip"
-                    :class="{ active: currentCategory === cat.id }"
-                    @click="currentCategory = cat.id"
-                >
-                    {{ cat.name }}
-                </span>
-            </div>
+            <CategorySlider
+                v-model="currentCategory"
+                :categories="categories"
+            />
 
             <div
                 v-if="isLoadingCatalog"
@@ -521,7 +508,7 @@
             </div>
 
             <div class="section-heading mb-2 mt-4">
-                <h3>Data Pelanggan</h3>
+                <h3>Data Pembeli</h3>
             </div>
 
             <div
@@ -565,8 +552,14 @@
                 </v-btn>
             </div>
 
+            <OrderSellerInfo
+                :seller="formOptions?.seller"
+                :phone="formOptions?.seller.origin?.phone"
+                :address="formatLocation(formOptions?.seller.origin)"
+            />
+
             <div class="section-heading mb-2 mt-4">
-                <h3>Opsi Pengiriman</h3>
+                <h3>Informasi Pengiriman</h3>
             </div>
             <div
                 style="
@@ -1014,6 +1007,8 @@ import { ref, computed, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import saleService from "@/member/services/sale.service";
 import purchaseService from "@/member/services/purchase.service";
+import CategorySlider from "@/member/components/transactions/CategorySlider.vue";
+import OrderSellerInfo from "@/member/components/transactions/OrderSellerInfo.vue";
 import { useFormatter } from "@/shared/composables/useFormatter";
 import { useSnackbarStore } from "@/shared/stores/snackbar";
 import CreateCustomerDialog from "@/member/components/sales/CreateCustomerDialog.vue";
@@ -1134,7 +1129,7 @@ const calculateShipping = async () => {
                 district_id: selectedCustomer.district_id || 0,
                 subdistrict_id: selectedCustomer.subdistrict_id || 0,
             },
-            couriers: ["jne", "jnt", "sicepat"],
+            couriers: [],
             items: cartProducts.value.map((item) => ({
                 product_id: item.product.id,
                 quantity: item.quantity,

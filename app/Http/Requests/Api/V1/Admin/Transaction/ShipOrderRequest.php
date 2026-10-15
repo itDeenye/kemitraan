@@ -28,6 +28,10 @@ class ShipOrderRequest extends FormRequest
         $isPickup = $shippingMethod === 'pickup';
         $isExpressReship = $isExpress && $trx instanceof Trx
             && $trx->trx_status === 'reship_required';
+        $isInitialUplineTransit = $isExpress && $trx instanceof Trx
+            && $trx->trx_status === 'processing'
+            && $this->isUplineTransit($trx);
+        $requiresCourier = $isExpressReship || $isInitialUplineTransit;
 
         return [
             'delivery_note_number' => ['required', 'string', 'max:50'],
@@ -62,31 +66,45 @@ class ShipOrderRequest extends FormRequest
                 : ['prohibited'],
             'courier' => [
                 'nullable',
-                Rule::requiredIf($isExpressReship),
+                Rule::requiredIf($requiresCourier),
                 'array',
             ],
             'courier.courier_code' => [
-                Rule::requiredIf($isExpressReship),
+                Rule::requiredIf($requiresCourier),
                 'string',
                 'max:30',
             ],
             'courier.courier_name' => [
-                Rule::requiredIf($isExpressReship),
+                Rule::requiredIf($requiresCourier),
                 'string',
                 'max:100',
             ],
             'courier.service_type' => [
-                Rule::requiredIf($isExpressReship),
+                Rule::requiredIf($requiresCourier),
                 'string',
                 'max:30',
             ],
-            'courier.cost' => [Rule::requiredIf($isExpressReship), 'integer', 'min:0'],
+            'courier.cost' => [Rule::requiredIf($requiresCourier), 'integer', 'min:0'],
             'courier.etd' => ['nullable', 'string', 'max:30'],
-            'courier.drop_off_available' => [Rule::requiredIf($isExpressReship), 'boolean'],
-            'courier.force_insurance' => [Rule::requiredIf($isExpressReship), 'boolean'],
-            'courier.insurance' => [Rule::requiredIf($isExpressReship), 'integer', 'min:0'],
+            'courier.drop_off_available' => [Rule::requiredIf($requiresCourier), 'boolean'],
+            'courier.force_insurance' => [Rule::requiredIf($requiresCourier), 'boolean'],
+            'courier.insurance' => [Rule::requiredIf($requiresCourier), 'integer', 'min:0'],
             'courier.logo_url' => ['nullable', 'string', 'max:500'],
         ];
+    }
+
+    private function isUplineTransit(Trx $trx): bool
+    {
+        $current = $trx;
+        while ((int) $current->trx_parent_trx_id !== 0) {
+            $parent = Trx::query()->find($current->trx_parent_trx_id);
+            if (! $parent) {
+                return false;
+            }
+            $current = $parent;
+        }
+
+        return $current->trx_preorder_fulfillment_mode === 'upline_transit';
     }
 
     /** @return array<string, string> */

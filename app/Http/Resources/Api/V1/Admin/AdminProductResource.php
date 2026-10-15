@@ -26,6 +26,8 @@ class AdminProductResource extends ApiResource
             'name' => $this->value('name', 'product_name'),
             'bpom_number' => $this->value('bpom_number', 'product_bpom_number'),
             'description' => $this->value('description', 'product_description'),
+            'monthly_points' => (int) $this->value('monthly_points', 'product_monthly_points'),
+            'annual_points' => (int) $this->value('annual_points', 'product_annual_points'),
             'image' => MediaUrl::publicUrl($this->value('image', 'product_image')),
             'image_filename' => $this->value('image_filename', 'product_image_filename'),
             'prices' => [
@@ -42,6 +44,9 @@ class AdminProductResource extends ApiResource
             'is_package' => (bool) $this->value('is_package', 'product_is_package'),
             'is_publish' => (bool) $this->value('is_publish', 'product_is_publish'),
             'is_active' => (bool) $this->value('is_active', 'product_is_active'),
+            'can_delete' => $this->resource instanceof Product
+                ? ! (bool) ($this->resource->getAttribute('trx_details_exists') ?? $this->resource->trxDetails()->exists())
+                : (bool) ($this->resource->can_delete ?? false),
             'category' => [
                 'id' => $category?->product_category_id ?? $this->value('category_id', 'product_product_category_id'),
                 'name' => $category?->product_category_name ?? $this->value('category_name', 'product_category_name'),

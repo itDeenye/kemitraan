@@ -6,6 +6,7 @@ use App\Models\MemberPointTransaction;
 use App\Models\RewardPointAnnual;
 use App\Models\RewardPointAnnualLog;
 use App\Models\Trx;
+use App\Support\PointCalculation;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
@@ -48,6 +49,9 @@ class MemberPointService
             return;
         }
 
+        $totals = $transaction->pointTotals();
+        $annualPoints = $totals['total_annual_points'];
+
         $approvedAt = Carbon::now();
         $ledger = MemberPointTransaction::query()
             ->where('member_point_transaction_trx_id', $transaction->getKey())
@@ -62,6 +66,8 @@ class MemberPointService
             'member_point_transaction_member_id' => $transaction->trx_buyer_id,
             'member_point_transaction_trx_id' => $transaction->getKey(),
             'member_point_transaction_quantity' => $quantity,
+            'member_point_transaction_monthly_points' => $totals['total_monthly_points'],
+            'member_point_transaction_annual_points' => $annualPoints,
             'member_point_transaction_year' => $approvedAt->year,
             'member_point_transaction_month' => $approvedAt->month,
             'member_point_transaction_approved_datetime' => $approvedAt,
@@ -71,7 +77,7 @@ class MemberPointService
             'reward_point_annual_log_member_id' => $transaction->trx_buyer_id,
             'reward_point_annual_log_trx_id' => $transaction->getKey(),
             'reward_point_annual_log_type' => 'in',
-            'reward_point_annual_log_points' => $quantity,
+            'reward_point_annual_log_points' => $annualPoints,
             'reward_point_annual_log_note' => "Poin dari transaksi {$transaction->trx_code}",
             'reward_point_annual_log_datetime' => $approvedAt,
         ]);
@@ -83,14 +89,15 @@ class MemberPointService
             ->first();
 
         if ($annualReward) {
-            $annualReward->increment('reward_point_annual_total_points', $quantity, [
+            PointCalculation::sum([$annualReward->reward_point_annual_total_points, $annualPoints]);
+            $annualReward->increment('reward_point_annual_total_points', $annualPoints, [
                 'reward_point_annual_last_updated_datetime' => $approvedAt,
             ]);
         } else {
             RewardPointAnnual::query()->create([
                 'reward_point_annual_member_id' => $transaction->trx_buyer_id,
                 'reward_point_annual_year' => $approvedAt->year,
-                'reward_point_annual_total_points' => $quantity,
+                'reward_point_annual_total_points' => $annualPoints,
                 'reward_point_annual_last_updated_datetime' => $approvedAt,
             ]);
         }
@@ -165,7 +172,8 @@ class MemberPointService
             return;
         }
 
-        $quantity = (int) $ledger->member_point_transaction_quantity;
+        $annualPoints = (int) ($ledger->member_point_transaction_annual_points
+            ?? $ledger->member_point_transaction_quantity);
         $year = (int) $ledger->member_point_transaction_year;
         $reversedAt = Carbon::now();
 
@@ -173,7 +181,7 @@ class MemberPointService
             'reward_point_annual_log_member_id' => $ledger->member_point_transaction_member_id,
             'reward_point_annual_log_trx_id' => $transaction->getKey(),
             'reward_point_annual_log_type' => 'out',
-            'reward_point_annual_log_points' => $quantity,
+            'reward_point_annual_log_points' => $annualPoints,
             'reward_point_annual_log_note' => "Poin dibatalkan karena transaksi {$transaction->trx_code} dibatalkan",
             'reward_point_annual_log_datetime' => $reversedAt,
         ]);
@@ -187,7 +195,7 @@ class MemberPointService
             $annualReward->update([
                 'reward_point_annual_total_points' => max(
                     0,
-                    (int) $annualReward->reward_point_annual_total_points - $quantity,
+                    (int) $annualReward->reward_point_annual_total_points - $annualPoints,
                 ),
                 'reward_point_annual_last_updated_datetime' => $reversedAt,
             ]);

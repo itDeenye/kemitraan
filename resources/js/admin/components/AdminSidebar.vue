@@ -192,6 +192,7 @@ import { computed, ref, watch, onMounted, onUnmounted } from "vue";
 import { useRoute } from "vue-router";
 import { useAuthStore } from "@/shared/stores/auth";
 import { AdminActionSummaryService } from "@/admin/services/action-summary.service";
+import { ADMIN_ACTION_SUMMARY_REFRESH_EVENT } from "@/shared/services/api";
 import type { SidebarMenuItem } from "@/admin/types/menu";
 
 const drawer = defineModel<boolean>("drawer");
@@ -201,6 +202,8 @@ const authStore = useAuthStore();
 
 const actionCountByRoute = ref<Record<string, number>>({});
 let actionRefreshInterval: ReturnType<typeof setInterval> | null = null;
+let actionRefreshTimeout: ReturnType<typeof setTimeout> | null = null;
+let actionSummaryRequestId = 0;
 
 const menuWithActionBadge = (item: SidebarMenuItem): SidebarMenuItem => {
     const children = item.children?.map(menuWithActionBadge);
@@ -214,7 +217,7 @@ const menuWithActionBadge = (item: SidebarMenuItem): SidebarMenuItem => {
     return {
         ...item,
         ...(children ? { children } : {}),
-        ...(badge > 0 ? { badge } : {}),
+        badge: badge > 0 ? badge : undefined,
     };
 };
 
@@ -226,14 +229,28 @@ const menuItems = computed(() =>
 const formatBadgeCount = (count: number) => (count > 99 ? "99+" : count);
 
 const loadActionSummary = async () => {
+    if (actionRefreshTimeout !== null) {
+        clearTimeout(actionRefreshTimeout);
+        actionRefreshTimeout = null;
+    }
+    const requestId = ++actionSummaryRequestId;
     try {
         const response = await AdminActionSummaryService.get();
+        if (requestId !== actionSummaryRequestId) return;
         actionCountByRoute.value = Object.fromEntries(
             response.data.menus.map((menu) => [menu.route, menu.count]),
         );
     } catch (error) {
-        console.error("Failed to load admin action summary:", error);
+        if (requestId === actionSummaryRequestId) {
+            console.error("Failed to load admin action summary:", error);
+        }
     }
+};
+
+const scheduleActionSummaryRefresh = () => {
+    actionSummaryRequestId++;
+    if (actionRefreshTimeout !== null) clearTimeout(actionRefreshTimeout);
+    actionRefreshTimeout = setTimeout(loadActionSummary, 100);
 };
 
 const openGroups = ref<string[]>([]);
@@ -285,10 +302,17 @@ watch(() => route.path, () => {
 watch(menuItems, updateOpenGroups);
 onMounted(() => {
     updateOpenGroups();
+    window.addEventListener(ADMIN_ACTION_SUMMARY_REFRESH_EVENT, scheduleActionSummaryRefresh);
     loadActionSummary();
     actionRefreshInterval = setInterval(loadActionSummary, 60_000);
 });
 onUnmounted(() => {
+    actionSummaryRequestId++;
+    window.removeEventListener(ADMIN_ACTION_SUMMARY_REFRESH_EVENT, scheduleActionSummaryRefresh);
+    if (actionRefreshTimeout !== null) {
+        clearTimeout(actionRefreshTimeout);
+        actionRefreshTimeout = null;
+    }
     if (actionRefreshInterval) {
         clearInterval(actionRefreshInterval);
     }

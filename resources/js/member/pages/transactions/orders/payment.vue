@@ -23,7 +23,7 @@
                     <strong
                         style="display: block; font-size: 14px; color: #9a5a00"
                     >
-                        Pesanan PO (inden)
+                        Pre Order
                     </strong>
                     <span
                         style="font-size: 12px; color: #805000; line-height: 1.5"
@@ -67,88 +67,27 @@
                 <div class="invoice-meta-row">
                     <span>Jenis Pesanan</span>
                     <strong>{{
-                        order.is_preorder ? "PO (inden)" : "Reguler"
+                        order.is_preorder ? "Pre Order" : "Reguler"
                     }}</strong>
                 </div>
             </div>
             <div class="invoice-divider"></div>
 
-            <div v-if="!isIntermediatePickupPreorder" class="invoice-meta">
-                <div
-                    style="
-                        font-size: 14px;
-                        font-weight: 700;
-                        color: var(--text);
-                        margin-bottom: 4px;
-                    "
-                >
-                    {{
-                        order.shipping?.method === "pickup"
-                            ? "Pengambilan"
-                            : "Pengiriman"
-                    }}
-                </div>
-                <template v-if="order.shipping?.method === 'pickup'">
-                    <div class="invoice-meta-row">
-                        <span>Lokasi Pengambilan</span>
-                        <strong style="text-align: right"
-                            >{{
-                                order.seller?.origin?.name ||
-                                order.seller?.name ||
-                                "-"
-                            }}<br />
-                            <span
-                                style="
-                                    font-size: 12px;
-                                    color: var(--muted);
-                                    font-weight: normal;
-                                "
-                                v-html="formatLocation(order.seller?.origin)"
-                            ></span>
-                        </strong>
-                    </div>
-                </template>
-                <template v-else>
-                    <div class="invoice-meta-row">
-                        <span>Dari</span>
-                        <strong style="text-align: right"
-                            >{{
-                                order.seller?.origin?.name ||
-                                order.seller?.name ||
-                                "-"
-                            }}<br />
-                            <span
-                                style="
-                                    font-size: 12px;
-                                    color: var(--muted);
-                                    font-weight: normal;
-                                "
-                                v-html="formatLocation(order.seller?.origin)"
-                            ></span>
-                        </strong>
-                    </div>
-                    <div class="invoice-meta-row">
-                        <span>Tujuan</span>
-                        <strong style="text-align: right"
-                            >{{
-                                order.buyer?.destination?.name ||
-                                order.buyer?.name ||
-                                "-"
-                            }}<br />
-                            <span
-                                style="
-                                    font-size: 12px;
-                                    color: var(--muted);
-                                    font-weight: normal;
-                                "
-                                v-html="
-                                    formatLocation(order.buyer?.destination)
-                                "
-                            ></span>
-                        </strong>
-                    </div>
-                </template>
-            </div>
+            <OrderPartyInfo title="Data Pembeli" icon="mdi-account-outline" :party="order.buyer" embedded />
+            <div class="invoice-divider"></div>
+            <OrderSellerInfo :seller="order.seller" embedded />
+            <div class="invoice-divider"></div>
+
+            <OrderShippingInfo
+                v-if="!isIntermediatePickupPreorder"
+                :method="isPickupOrder ? 'pickup' : order.shipping?.method || order.shipping_method"
+                :shipping="order.shipping"
+                :origin="order.seller?.origin"
+                :destination="order.buyer?.destination"
+                :pickup-location="pickupLocation"
+                :transit="order.preorder_fulfillment?.mode === 'upline_transit'"
+                embedded
+            />
             <div
                 v-if="!isIntermediatePickupPreorder"
                 class="invoice-divider"
@@ -203,6 +142,10 @@
                         <div class="text-[11px] text-[var(--muted)] mt-0.5">
                             BPOM: {{ item.product.bpom_number || "-" }}
                         </div>
+                        <div class="text-[11px] text-[var(--muted)] mt-0.5">
+                            Poin Bulanan: {{ formatPrice(item.monthly_points ?? 0) }} ·
+                            Poin Tahunan: {{ formatPrice(item.annual_points ?? 0) }}
+                        </div>
                     </div>
                     <strong style="white-space: nowrap">
                         {{ item.quantity }} x Rp{{ formatPrice(item.price) }}
@@ -220,9 +163,17 @@
                         }}</strong
                     >
                 </div>
+                <div class="invoice-meta-row">
+                    <span>Total Poin Bulanan</span>
+                    <strong>{{ formatPrice(order.summary?.total_monthly_points ?? 0) }}</strong>
+                </div>
+                <div class="invoice-meta-row">
+                    <span>Total Poin Tahunan</span>
+                    <strong>{{ formatPrice(order.summary?.total_annual_points ?? 0) }}</strong>
+                </div>
                 <div
                     class="invoice-meta-row"
-                    v-if="order.shipping && order.shipping?.method !== 'pickup'"
+                    v-if="order.shipping && !isPickupOrder"
                 >
                     <span>Ongkos Kirim</span>
                     <strong>
@@ -236,7 +187,7 @@
                 </div>
                 <div
                     class="invoice-meta-row"
-                    v-if="order.shipping && order.shipping?.method !== 'pickup'"
+                    v-if="order.shipping && !isPickupOrder"
                 >
                     <span>Asuransi Pengiriman</span>
                     <strong>
@@ -661,13 +612,16 @@ import purchaseService from "@/member/services/purchase.service";
 import { useFormatter } from "@/shared/composables/useFormatter";
 import { useSnackbarStore } from "@/shared/stores/snackbar";
 import BaseBadge from "@/shared/components/BaseBadge.vue";
+import OrderSellerInfo from "@/member/components/transactions/OrderSellerInfo.vue";
+import OrderPartyInfo from "@/member/components/transactions/OrderPartyInfo.vue";
+import OrderShippingInfo from "@/member/components/transactions/OrderShippingInfo.vue";
 import { decodeRouteId, encodeRouteId } from "@/shared/utils/route-id";
 
 import { useMediaUpload } from "@/shared/composables/useMediaUpload";
 
 const router = useRouter();
 const route = useRoute();
-const { formatPrice, formatDateTime, formatLocation } = useFormatter();
+const { formatPrice, formatDateTime } = useFormatter();
 const snackbar = useSnackbarStore();
 const { isUploading, progress, upload } = useMediaUpload();
 const spreadUpload = useMediaUpload();
@@ -675,6 +629,14 @@ const spreadUpload = useMediaUpload();
 const orderId = decodeRouteId(route.query.id);
 
 const order = ref<any>(null);
+const isPickupOrder = computed(
+    () => order.value?.shipping?.method === "pickup"
+        || (order.value?.shipping_method === "pickup"
+            && Number(order.value?.parent_transaction_id || 0) === 0),
+);
+const pickupLocation = computed(
+    () => order.value?.pickup_location || order.value?.seller?.origin,
+);
 const isIntermediatePickupPreorder = computed(
     () =>
         order.value?.is_preorder === true &&

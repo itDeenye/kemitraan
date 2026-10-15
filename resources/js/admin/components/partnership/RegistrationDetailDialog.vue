@@ -297,12 +297,11 @@
                                         density="compact"
                                         class="bg-transparent pa-2"
                                     >
-                                        <v-list-item
-                                            v-if="detail.submitted_by"
-                                        >
+                                        <v-list-item v-if="detail.submitted_by">
                                             <v-list-item-title
                                                 class="text-body-2 text-medium-emphasis"
-                                                >Didaftarkan oleh</v-list-item-title
+                                                >Didaftarkan
+                                                oleh</v-list-item-title
                                             >
                                             <template #append>
                                                 <div class="text-right">
@@ -352,7 +351,8 @@
                                         >
                                             <v-list-item-title
                                                 class="text-body-2 text-medium-emphasis"
-                                                >Distributor Jaringan</v-list-item-title
+                                                >Distributor
+                                                Jaringan</v-list-item-title
                                             >
                                             <template #append>
                                                 <div class="text-right">
@@ -413,6 +413,111 @@
                                     </v-list>
                                 </v-card>
                             </template>
+                        </v-col>
+
+                        <v-col cols="12" v-if="hasRegistrationMedia">
+                            <h3
+                                class="text-subtitle-1 font-weight-bold mb-3 mt-4 d-flex align-center ga-2 text-grey-darken-3"
+                            >
+                                <v-icon size="22" color="primary"
+                                    >mdi-file-image-outline</v-icon
+                                >
+                                Dokumen Pendaftaran
+                            </h3>
+                            <v-row dense>
+                                <v-col
+                                    v-for="media in registrationMedia"
+                                    :key="media.key"
+                                    cols="12"
+                                    sm="6"
+                                    md="4"
+                                >
+                                    <v-card
+                                        variant="flat"
+                                        class="registration-media-card rounded-lg border border-opacity-25 h-100"
+                                        :class="{
+                                            'registration-media-card--clickable':
+                                                media.url,
+                                        }"
+                                        :role="media.url ? 'button' : undefined"
+                                        :tabindex="media.url ? 0 : undefined"
+                                        @click="openMediaPreview(media)"
+                                        @keyup.enter="openMediaPreview(media)"
+                                    >
+                                        <div class="registration-media-preview">
+                                            <v-img
+                                                v-if="media.url"
+                                                :src="media.url"
+                                                :alt="media.title"
+                                                :cover="false"
+                                            >
+                                                <template #placeholder>
+                                                    <div
+                                                        class="d-flex fill-height align-center justify-center"
+                                                    >
+                                                        <v-progress-circular
+                                                            indeterminate
+                                                            color="primary"
+                                                            size="28"
+                                                            width="3"
+                                                        />
+                                                    </div>
+                                                </template>
+                                                <template #error>
+                                                    <div
+                                                        class="registration-media-fallback"
+                                                    >
+                                                        <v-icon
+                                                            icon="mdi-image-broken-variant"
+                                                            size="36"
+                                                        />
+                                                        <span
+                                                            >Gambar gagal
+                                                            dimuat</span
+                                                        >
+                                                    </div>
+                                                </template>
+                                            </v-img>
+                                            <div
+                                                v-else
+                                                class="registration-media-fallback"
+                                            >
+                                                <v-icon
+                                                    :icon="media.icon"
+                                                    size="36"
+                                                />
+                                                <span>Belum diunggah</span>
+                                            </div>
+                                            <div
+                                                v-if="media.url"
+                                                class="registration-media-overlay"
+                                            >
+                                                <v-icon
+                                                    icon="mdi-magnify-plus-outline"
+                                                    color="white"
+                                                    size="28"
+                                                />
+                                            </div>
+                                        </div>
+                                        <v-card-text class="pa-3">
+                                            <div
+                                                class="font-weight-bold text-body-2"
+                                            >
+                                                {{ media.title }}
+                                            </div>
+                                            <div
+                                                class="text-caption text-medium-emphasis mt-1"
+                                            >
+                                                {{
+                                                    media.url
+                                                        ? "Klik untuk memperbesar"
+                                                        : "Tidak ada gambar"
+                                                }}
+                                            </div>
+                                        </v-card-text>
+                                    </v-card>
+                                </v-col>
+                            </v-row>
                         </v-col>
 
                         <v-col cols="12" md="6" v-if="detail.address">
@@ -546,6 +651,55 @@
             </v-card-actions>
         </v-card>
     </v-dialog>
+
+    <v-dialog v-model="mediaPreviewDialog" max-width="900">
+        <v-card class="rounded-xl overflow-hidden">
+            <v-card-title
+                class="pa-4 d-flex align-center justify-space-between border-b"
+            >
+                <div class="d-flex align-center ga-2 min-w-0">
+                    <v-icon color="primary" size="22">mdi-image-outline</v-icon>
+                    <span
+                        class="text-subtitle-1 font-weight-bold text-truncate"
+                    >
+                        {{ selectedMedia?.title }}
+                    </span>
+                </div>
+                <v-btn
+                    icon="mdi-close"
+                    variant="text"
+                    density="comfortable"
+                    @click="mediaPreviewDialog = false"
+                />
+            </v-card-title>
+            <v-card-text class="media-preview-dialog pa-3 pa-sm-5">
+                <v-img
+                    v-if="selectedMedia?.url"
+                    :src="selectedMedia.url"
+                    :alt="selectedMedia.title"
+                    max-height="72vh"
+                    :cover="false"
+                >
+                    <template #placeholder>
+                        <div
+                            class="d-flex fill-height align-center justify-center"
+                        >
+                            <v-progress-circular
+                                indeterminate
+                                color="primary"
+                            />
+                        </div>
+                    </template>
+                    <template #error>
+                        <div class="registration-media-fallback py-12">
+                            <v-icon icon="mdi-image-broken-variant" size="48" />
+                            <span>Gambar gagal dimuat</span>
+                        </div>
+                    </template>
+                </v-img>
+            </v-card-text>
+        </v-card>
+    </v-dialog>
 </template>
 
 <script setup lang="ts">
@@ -561,11 +715,53 @@ const snackbar = useSnackbarStore();
 const dialog = ref(false);
 const loading = ref(false);
 const detail = ref<any>(null);
+const mediaPreviewDialog = ref(false);
+const selectedMedia = ref<RegistrationMedia | null>(null);
+
+interface RegistrationMedia {
+    key: "profile" | "identity" | "payment-proof";
+    title: string;
+    url: string | null;
+    icon: string;
+}
+
+const registrationMedia = computed<RegistrationMedia[]>(() => [
+    {
+        key: "profile",
+        title: "Foto Profil",
+        url: detail.value?.image_url || null,
+        icon: "mdi-account-circle-outline",
+    },
+    {
+        key: "identity",
+        title: "Dokumen Identitas",
+        url: detail.value?.identity?.image_url || null,
+        icon: "mdi-card-account-details-outline",
+    },
+    {
+        key: "payment-proof",
+        title: "Bukti Transfer",
+        url: detail.value?.payment_proof_image_url || null,
+        icon: "mdi-receipt-text-check-outline",
+    },
+]);
+const hasRegistrationMedia = computed(() =>
+    registrationMedia.value.some((media) => media.url),
+);
 const showNetworkDistributor = computed(
     () =>
         detail.value?.network_distributor &&
         detail.value.network_distributor.id !== detail.value.submitted_by?.id,
 );
+
+const openMediaPreview = (media: RegistrationMedia) => {
+    if (!media.url) {
+        return;
+    }
+
+    selectedMedia.value = media;
+    mediaPreviewDialog.value = true;
+};
 
 const open = async (id: number) => {
     dialog.value = true;
@@ -593,7 +789,91 @@ const open = async (id: number) => {
 
 const close = () => {
     dialog.value = false;
+    mediaPreviewDialog.value = false;
+    selectedMedia.value = null;
 };
 
 defineExpose({ open, close });
 </script>
+
+<style scoped>
+.registration-media-card {
+    overflow: hidden;
+    transition:
+        border-color 0.2s ease,
+        box-shadow 0.2s ease,
+        transform 0.2s ease;
+}
+
+.registration-media-card--clickable {
+    cursor: pointer;
+}
+
+.registration-media-card--clickable:hover,
+.registration-media-card--clickable:focus-visible {
+    border-color: rgb(var(--v-theme-primary)) !important;
+    box-shadow: 0 8px 20px rgba(53, 22, 28, 0.12);
+    outline: none;
+    transform: translateY(-2px);
+}
+
+.registration-media-preview {
+    position: relative;
+    height: 180px;
+    overflow: hidden;
+    background: rgb(var(--v-theme-surface-variant));
+}
+
+.registration-media-preview .v-img {
+    width: 100%;
+    height: 100%;
+}
+
+.registration-media-fallback {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 8px;
+    color: rgba(var(--v-theme-on-surface), var(--v-medium-emphasis-opacity));
+    font-size: 12px;
+}
+
+.registration-media-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.38);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.registration-media-card--clickable:hover .registration-media-overlay,
+.registration-media-card--clickable:focus-visible .registration-media-overlay {
+    opacity: 1;
+}
+
+.media-preview-dialog {
+    min-height: 240px;
+    background: rgb(var(--v-theme-surface-variant));
+}
+
+@media (max-width: 600px) {
+    .registration-media-preview {
+        height: 210px;
+    }
+
+    .registration-media-overlay {
+        top: auto;
+        left: auto;
+        width: 42px;
+        height: 42px;
+        border-radius: 12px 0 0;
+        opacity: 1;
+    }
+}
+</style>

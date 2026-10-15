@@ -84,6 +84,8 @@ export interface TransactionPaymentDetails {
 }
 
 export interface TransactionPaymentTotals {
+    total_monthly_points: number;
+    total_annual_points: number;
     product_total: number;
     discount_percent: number;
     discount_value: number;
@@ -104,6 +106,8 @@ export interface TransactionPaymentProduct {
     code: string | null;
     name: string | null;
     image: string | null;
+    monthly_points: number;
+    annual_points: number;
 }
 
 export interface TransactionPaymentItem {
@@ -117,6 +121,8 @@ export interface TransactionPaymentItem {
     preorder_quantity: number;
     subtotal: number;
     points: number;
+    monthly_points: number;
+    annual_points: number;
 }
 
 export interface TransactionPaymentActions {

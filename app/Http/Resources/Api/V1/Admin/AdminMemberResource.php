@@ -49,6 +49,18 @@ class AdminMemberResource extends ApiResource
                 ? $member->member_join_datetime?->toAtomString()
                 : $this->resource->joined_at,
             'image' => MediaUrl::publicUrl($this->value('image', 'member_image')),
+            'nib' => $this->value('nib', 'member_nib'),
+            'npwp' => $this->value('npwp', 'member_npwp'),
+            'identity' => [
+                'type' => $this->value('identity_type', 'member_identity_type'),
+                'number' => $this->value('identity_no', 'member_identity_no'),
+                'image' => MediaUrl::temporaryPrivateUrl($this->value('identity_image', 'member_identity_image'), 'admin'),
+                'image_filename' => $member?->member_identity_image_filename,
+            ],
+            'payment_proof_image_url' => MediaUrl::temporaryPrivateUrl(
+                $member ? $member->approvedRegistration?->member_registration_payment_proof_image
+                    : $this->resource->payment_proof_image_url, 'admin',
+            ),
             'image_filename' => $this->when(
                 $member !== null,
                 fn (): ?string => $member->member_image_filename,
@@ -69,13 +81,6 @@ class AdminMemberResource extends ApiResource
                 'name' => $member->parent->member_name,
             ] : null,
             ...($member === null ? [] : [
-                'identity' => [
-                    'type' => $member->member_identity_type,
-                    'number' => $member->member_identity_no,
-                    'image' => MediaUrl::publicUrl($member->member_identity_image),
-                    'image_filename' => $member->member_identity_image_filename,
-                ],
-                'nib' => $member->member_nib,
                 'social_media' => [
                     'instagram' => $member->member_instagram,
                     'facebook' => $member->member_facebook,

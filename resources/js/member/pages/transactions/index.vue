@@ -127,7 +127,13 @@
                         <strong>POS</strong>
                         <span>Penjualan langsung kepada customer</span>
                     </div>
-                    <div class="row-side">›</div>
+                    <div class="row-side">
+                        <v-icon
+                            class="navigation-chevron"
+                            icon="mdi-chevron-right"
+                            size="24"
+                        />
+                    </div>
                 </div>
             </div>
         </div>

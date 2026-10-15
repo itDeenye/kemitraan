@@ -3,6 +3,8 @@
 namespace App\Policies;
 
 use App\Models\Media;
+use App\Models\Member;
+use App\Models\MemberRegistration;
 use App\Models\ReturnModel;
 use App\Models\SiteAdministrator;
 use App\Models\TrxPaymentTransfer;
@@ -40,6 +42,12 @@ class MediaPolicy
         return TrxPaymentTransfer::query()
             ->where('payment_transfer_receipt_file', 'like', $uuidPattern)
             ->exists()
+            || MemberRegistration::query()
+                ->where(function ($query) use ($uuidPattern): void {
+                    $query->where('member_registration_identity_image', 'like', $uuidPattern)
+                        ->orWhere('member_registration_payment_proof_image', 'like', $uuidPattern);
+                })->exists()
+            || Member::query()->where('member_identity_image', 'like', $uuidPattern)->exists()
             || TrxSpreadPayment::query()
                 ->where('trx_spread_payment_receipt_file', 'like', $uuidPattern)
                 ->exists()

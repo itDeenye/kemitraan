@@ -7,12 +7,11 @@ use App\Jobs\SyncSupplyChainMember;
 use App\Libraries\DataTable;
 use App\Models\Member;
 use App\Models\MemberAccount;
-use App\Models\MemberAddress;
-use App\Models\MemberBankAccount;
 use App\Models\MemberGroup;
 use App\Models\MemberHistory;
 use App\Models\MemberLevel;
 use App\Services\Notification\PartnershipEmailService;
+use App\Support\MediaUrl;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -23,6 +22,7 @@ class AdminDistributorService
         private readonly MemberCodeService $memberCodeService,
         private readonly MemberPasswordService $memberPasswordService,
         private readonly PartnershipEmailService $partnershipEmailService,
+        private readonly MemberOnboardingContacts $onboardingContacts,
     ) {}
 
     /**
@@ -42,6 +42,12 @@ class AdminDistributorService
             'member.member_mobilephone as mobile_phone',
             'member.member_status as status',
             'member.member_join_datetime as joined_at',
+            'member.member_image as image',
+            'member.member_nib as nib',
+            'member.member_npwp as npwp',
+            'member.member_identity_type as identity_type',
+            'member.member_identity_no as identity_no',
+            'member.member_identity_image as identity_image',
             'ref_province.province_name as province_name',
             'ref_city.city_name as city_name',
         ])
@@ -64,7 +70,12 @@ class AdminDistributorService
         }
 
         return Member::query()
-            ->with(['accounts', 'level', 'addresses', 'bankAccounts'])
+            ->with([
+                'accounts', 'level', 'approvedRegistration',
+                'defaultAddress.province', 'defaultAddress.city', 'defaultBankAccount.bank',
+                'addresses.province', 'addresses.city', 'addresses.district', 'addresses.subdistrict', 'addresses.country',
+                'bankAccounts.bank',
+            ])
             ->where('member_status', '!=', 3)
             ->findOrFail($member->getKey());
     }
@@ -107,8 +118,11 @@ class AdminDistributorService
                 'member_birth_date' => $data['birth_date'],
                 'member_identity_type' => $data['identity_type'],
                 'member_identity_no' => $data['identity_no'],
-                'member_identity_image' => $data['identity_image_url'] ?? '',
+                'member_identity_image' => MediaUrl::canonicalPrivateUrl($data['identity_image_url'] ?? null),
                 'member_identity_image_filename' => '',
+                'member_nib' => $data['nib'] ?? null,
+                'member_npwp' => $data['npwp'] ?? null,
+                'member_image' => $data['image_url'] ?? null,
                 'member_join_datetime' => now(),
                 'member_status' => $data['status'],
                 'member_instagram' => $data['instagram'] ?? null,
@@ -124,46 +138,11 @@ class AdminDistributorService
                 'member_account_pin' => '',
             ]);
 
-            MemberAddress::query()->create([
-                'member_address_member_id' => $member->getKey(),
-                'member_address_label' => 'KTP',
-                'member_address_recipient' => $data['name'],
-                'member_address_phone' => $data['mobile_phone'],
-                'member_address_full' => $data['address'],
-                'member_address_province_id' => $data['province_id'],
-                'member_address_city_id' => $data['city_id'],
-                'member_address_district_id' => $data['district_id'],
-                'member_address_subdistrict_id' => $data['subdistrict_id'],
-                'member_address_country_id' => $data['country_id'] ?? 1,
-                'member_address_is_default' => 0,
-            ]);
-
-            MemberAddress::query()->create([
-                'member_address_member_id' => $member->getKey(),
-                'member_address_label' => 'Domisili',
-                'member_address_recipient' => $data['name'],
-                'member_address_phone' => $data['mobile_phone'],
-                'member_address_full' => $data['domicile_address'],
-                'member_address_province_id' => $data['province_id'],
-                'member_address_city_id' => $data['city_id'],
-                'member_address_district_id' => $data['district_id'],
-                'member_address_subdistrict_id' => $data['subdistrict_id'],
-                'member_address_country_id' => $data['country_id'] ?? 1,
-                'member_address_is_default' => 1,
-            ]);
-
-            if ((int) ($data['bank_id'] ?? 0) !== 0) {
-                MemberBankAccount::query()->create([
-                    'member_bank_account_member_id' => $member->getKey(),
-                    'member_bank_account_bank_id' => $data['bank_id'],
-                    'member_bank_account_name' => $data['bank_account_name'],
-                    'member_bank_account_number' => $data['bank_account_number'],
-                    'member_bank_account_city' => $data['bank_city'] ?? null,
-                    'member_bank_account_branch' => $data['bank_branch'] ?? null,
-                    'member_bank_account_is_active' => 1,
-                    'member_bank_account_is_default' => 1,
-                ]);
-            }
+            $this->onboardingContacts->store(
+                $member,
+                $this->onboardingContacts->addresses($data, true),
+                $this->onboardingContacts->bankAccounts($data),
+            );
 
             MemberHistory::query()->create([
                 'member_history_member_id' => $member->getKey(),

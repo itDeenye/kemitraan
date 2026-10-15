@@ -13,7 +13,7 @@
 
         <BaseDataTable
             ref="upgradeTable"
-            url="/admin/partnership/upgrades?status=requested"
+            url="/admin/partnership/upgrades?filter[status]=requested"
             :headers="headers"
             v-model:search="search"
         >
@@ -77,7 +77,7 @@
                     />
                     <v-btn
                         v-tooltip:top="'Setujui Kualifikasi'"
-                        v-if="item.status?.code !== 'scheduled'"
+                        v-if="item.status?.code === 'requested'"
                         icon="mdi-check-circle-outline"
                         variant="outlined"
                         size="small"
@@ -93,7 +93,7 @@
                     />
                     <v-btn
                         v-tooltip:top="'Tolak Kualifikasi'"
-                        v-if="item.status?.code !== 'scheduled'"
+                        v-if="item.status?.code === 'requested'"
                         icon="mdi-close-circle-outline"
                         variant="outlined"
                         size="small"

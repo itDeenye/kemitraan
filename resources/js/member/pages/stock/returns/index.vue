@@ -1,24 +1,19 @@
 <template>
     <div class="screen-body" style="padding-bottom: 80px">
-        <div class="card summary-card mb-4">
-            <div class="summary-line">
-                <div class="d-flex items-center gap-2">
-                    <v-icon size="24">mdi-information-outline</v-icon>
-                    <strong>Informasi Retur</strong>
-                </div>
+        <div class="return-info-card mb-4">
+            <div class="return-info-card__header">
+                <v-icon icon="mdi-information-outline" size="22" />
+                <strong>Informasi Retur</strong>
             </div>
-            <div class="summary-line ml-5">
-                <span>• Berdasarkan kode penerimaan barang.</span>
-            </div>
-            <div class="summary-line ml-5">
-                <span>• Maksimal 3 hari sejak barang diterima.</span>
-            </div>
-            <div class="summary-line ml-5">
-                <span>• Alasan dan foto bukti wajib disertakan.</span>
-            </div>
-            <div class="summary-line ml-5">
-                <span>• Stok ditahan sejak pengajuan retur dikirim.</span>
-            </div>
+            <ul class="return-info-card__list">
+                <li>Berdasarkan kode penerimaan barang.</li>
+                <li v-if="actionSummary.return_max_days > 0">
+                    Maksimal {{ actionSummary.return_max_days }} hari sejak
+                    barang diterima.
+                </li>
+                <li>Alasan dan foto bukti wajib disertakan.</li>
+                <li>Stok ditahan sejak pengajuan retur dikirim.</li>
+            </ul>
         </div>
 
         <div class="return-tabs mt-4">
@@ -477,6 +472,7 @@ const actionSummary = ref<ReturnActionSummary>({
     action_required: 0,
     history: 0,
     total_actions: 0,
+    return_max_days: 0,
 });
 
 const paginationEligible = ref<DataTablePagination>({
@@ -697,6 +693,50 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.return-info-card {
+    padding: 14px 16px;
+    border: 1px solid #bfdbfe;
+    border-radius: 14px;
+    color: #1e3a8a;
+    background: #eff6ff;
+    box-shadow: 0 5px 14px rgba(30, 64, 175, 0.05);
+}
+
+.return-info-card__header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #1d4ed8;
+    font-size: 13px;
+}
+
+.return-info-card__list {
+    display: grid;
+    gap: 6px;
+    margin: 9px 0 0 30px;
+    padding: 0;
+    list-style: none;
+}
+
+.return-info-card__list li {
+    position: relative;
+    color: #334e7d;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.return-info-card__list li::before {
+    position: absolute;
+    top: 0.62em;
+    left: -13px;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: #3b82f6;
+    content: "";
+    transform: translateY(-50%);
+}
+
 .flow-link {
     cursor: pointer;
     transition: all 0.2s ease-in-out;

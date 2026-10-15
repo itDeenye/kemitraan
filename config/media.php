@@ -76,7 +76,11 @@ return [
         'warehouse' => ['warehouse_logo'],
         'site_administrator' => ['administrator_image'],
         'member' => ['member_identity_image', 'member_image'],
-        'member_registration' => ['member_registration_identity_image'],
+        'member_registration' => [
+            'member_registration_identity_image',
+            'member_registration_image',
+            'member_registration_payment_proof_image',
+        ],
         'product' => ['product_image'],
         'stockist' => ['stockist_image'],
         'reward_annual' => ['reward_annual_image'],

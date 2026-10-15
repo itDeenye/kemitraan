@@ -10,6 +10,30 @@ use Illuminate\Support\Collection;
 trait BuildsMemberPreorder
 {
     /** @return array<string, mixed>|null */
+    private function memberPreorderFulfillment(Trx $trx): ?array
+    {
+        if (! $trx->trx_is_preorder
+            || ! $trx->relationLoaded('preorderChain')
+            || $trx->preorderChain->isEmpty()) {
+            return null;
+        }
+
+        /** @var Trx $root */
+        $root = $trx->preorderChain->first();
+        /** @var Trx $terminal */
+        $terminal = $trx->preorderChain->last();
+
+        return [
+            'mode' => (string) ($root->trx_preorder_fulfillment_mode ?: 'direct'),
+            'status' => (string) ($root->shippingPickup?->latestStatus?->shipping_pickup_status_value
+                ?? $root->trx_status),
+            'pickup_point' => $this->memberChainParty($root, 'seller'),
+            'stock_source' => $this->memberChainParty($terminal, 'seller'),
+            'source_shipping_method' => $terminal->trx_shipping_method,
+        ];
+    }
+
+    /** @return array<string, mixed>|null */
     private function memberPreorder(Trx $trx): ?array
     {
         if (! $trx->relationLoaded('preorderChain') || $trx->preorderChain->isEmpty()) {

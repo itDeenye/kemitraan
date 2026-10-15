@@ -185,4 +185,5 @@ export interface ReturnActionSummary {
     action_required: number;
     history: number;
     total_actions: number;
+    return_max_days: number;
 }

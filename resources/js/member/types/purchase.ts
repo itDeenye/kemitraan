@@ -1,4 +1,9 @@
-import type { SaleOrderType, SalePreorder } from "./sale";
+import type {
+    SaleOrderType,
+    SalePreorder,
+    SalePreorderFulfillment,
+    SaleItem,
+} from "./sale";
 
 export interface PurchaseOrderSummary {
     purchases: {
@@ -65,6 +70,8 @@ export interface PurchaseProduct {
     image_filename: string;
     price: number;
     customer_price: number;
+    monthly_points: number;
+    annual_points: number;
     weight_grams: number;
     dimensions_cm: {
         length: number;
@@ -89,6 +96,7 @@ export interface PurchaseCheckoutBuyer {
     id: number;
     code: string;
     name: string;
+    phone?: string | null;
     level: string;
     minimum_order: number;
     destination: {
@@ -115,6 +123,7 @@ export interface PurchaseCheckoutSeller {
     id: number;
     code: string | null;
     name: string;
+    phone?: string | null;
     address: string;
     origin: {
         type?: string;
@@ -169,6 +178,7 @@ export interface PurchaseCheckoutShippingMethod {
 export interface PurchaseCheckoutOptions {
     buyer: PurchaseCheckoutBuyer;
     seller: PurchaseCheckoutSeller;
+    pickup_location?: PurchaseCheckoutSeller["origin"];
     warehouses?: PurchaseCheckoutWarehouse[];
     addresses: PurchaseCheckoutAddress[];
     banks: PurchaseCheckoutBank[];
@@ -223,9 +233,12 @@ export interface PurchaseOrder {
     is_preorder: boolean;
     order_type?: SaleOrderType;
     preorder?: SalePreorder | null;
+    preorder_fulfillment?: SalePreorderFulfillment | null;
     summary: {
         product_count: number;
         total_quantity: number;
+        total_monthly_points: number;
+        total_annual_points: number;
         preorder_quantity: number;
         product_total?: number;
         discount_percent?: number;
@@ -252,11 +265,12 @@ export interface PurchaseOrder {
         subtotal: number;
         other_product_count: number;
     };
-    items?: any[];
+    items?: SaleItem[];
     shipping?: any;
     payment?: any;
     payment_method: string;
     shipping_method: string;
+    pickup_location?: PurchaseOrder["seller"]["origin"] | null;
     status: {
         code: string;
         label: string;

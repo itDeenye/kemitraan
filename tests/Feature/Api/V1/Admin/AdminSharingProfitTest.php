@@ -8,6 +8,8 @@ use App\Models\SiteAdministrator;
 use App\Models\SiteAdministratorGroup;
 use App\Models\Trx;
 use App\Models\TrxSpreadPayment;
+use App\Services\Dashboard\AdminActionSummaryService;
+use App\Services\Reward\AdminSharingProfitService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
@@ -15,6 +17,28 @@ use Tests\TestCase;
 class AdminSharingProfitTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_badge_matches_actionable_sharing_profit_list(): void
+    {
+        $buyer = $this->createMitra('BUYER', 'Buyer');
+        foreach ([
+            ['PENDING', 'pending', null, 'completed'],
+            ['EMPTY', 'submitted', '', 'completed'],
+            ['SUBMITTED', 'submitted', 'receipt.webp', 'completed'],
+            ['APPROVED', 'approved', 'receipt.webp', 'completed'],
+            ['PAID', 'paid', 'receipt.webp', 'completed'],
+            ['INVALID', 'submitted', 'receipt.webp', 'cancelled'],
+        ] as [$code, $status, $receipt, $trxStatus]) {
+            $upline = $this->createMitra($code, $code);
+            $this->createTrxAndSpreadPayment($upline, $buyer, $trxStatus, $status, $receipt);
+        }
+        $summary = app(AdminActionSummaryService::class)->summary();
+        $badge = collect($summary['menus'])->firstWhere('route', '/admin/rewards/profit-sharing')['count'];
+        $list = app(AdminSharingProfitService::class)->list([]);
+        $this->assertSame(2, $badge);
+        $this->assertCount(2, $list['results']);
+        $this->assertSame($list['results']->count(), $badge);
+    }
 
     private function createAdministrator(): SiteAdministrator
     {

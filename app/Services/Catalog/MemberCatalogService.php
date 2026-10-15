@@ -25,7 +25,7 @@ class MemberCatalogService
         $levelId = $this->memberLevelId($account);
         $sellerStock = $this->sellerStockQuery($account, $params);
 
-        $catalog = DataTable::select($this->catalogColumns())
+        $catalogQuery = DataTable::select($this->catalogColumns())
             ->selectRaw(
                 'COALESCE((SELECT product_price_value FROM product_price WHERE product_price_product_id = product.product_id AND product_price_member_level_id = ? LIMIT 1), product.product_customer_price) as price',
                 [$levelId],
@@ -46,13 +46,23 @@ class MemberCatalogService
             ->where('product.product_is_publish', 1)
             ->where('product.product_is_active', 1)
             ->where('product.product_is_deleted', 0)
-            ->where('product_category.product_category_is_active', 1)
+            ->where('product_category.product_category_is_active', 1);
+
+        $catalogQuery
             ->orderByRaw('CASE
                 WHEN COALESCE(seller_stock.direct_available_stock, 0) > 0 THEN 0
                 WHEN COALESCE(seller_stock.available_stock, 0) > 0 THEN 1
                 ELSE 2
             END')
-            ->orderByDesc('available_stock')
+            ->orderByDesc('available_stock');
+
+        if (blank($params['sort'] ?? null)) {
+            $catalogQuery
+                ->orderBy('product_category.product_category_sort_order')
+                ->orderBy('product_category.product_category_id');
+        }
+
+        $catalog = $catalogQuery
             ->search(['code', 'name'])
             ->defaultSort('-id')
             ->get($params);
@@ -70,7 +80,8 @@ class MemberCatalogService
     {
         return ProductCategory::query()
             ->active()
-            ->orderBy('product_category_name')
+            ->orderBy('product_category_sort_order')
+            ->orderBy('product_category_id')
             ->get();
     }
 
@@ -270,6 +281,8 @@ class MemberCatalogService
             'product.product_image',
             'product.product_image_filename',
             'product.product_customer_price',
+            'product.product_monthly_points',
+            'product.product_annual_points',
             'product.product_weight',
             'product.product_length',
             'product.product_height',
@@ -279,6 +292,7 @@ class MemberCatalogService
             'product_category.product_category_id as category_id',
             'product_category.product_category_name as category_name',
             'product_category.product_category_description as category_description',
+            'product_category.product_category_sort_order as category_sort_order',
         ];
     }
 }

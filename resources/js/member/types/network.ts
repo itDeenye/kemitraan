@@ -10,6 +10,11 @@ export interface RegistrationListParams {
     limit?: number;
     search?: string;
     pagination?: boolean;
+    sort?: string;
+    "filter[distributor_approval_status]"?:
+        | "pending"
+        | "approved"
+        | "rejected";
 }
 
 export interface MemberLevel {
@@ -86,6 +91,25 @@ export interface RegistrationStatus {
     label: string;
 }
 
+export interface RegistrationDistributorApproval {
+    status: RegistrationStatus;
+    distributor: {
+        id: number;
+        code: string;
+        name: string;
+    } | null;
+    note: string | null;
+    processed_at: string | null;
+}
+
+export interface RegistrationIdentity {
+    type: string;
+    number: string;
+    image_url: string | null;
+    nib: string | null;
+    npwp: string | null;
+}
+
 export interface RegistrationListItem {
     id: number;
     level: MemberLevel;
@@ -96,10 +120,25 @@ export interface RegistrationListItem {
         mobile_phone: string;
         username: string;
     };
+    image_url: string | null;
+    payment_proof_image_url: string | null;
+    identity: RegistrationIdentity;
     status: RegistrationStatus;
+    next_approval: "distributor" | "admin" | null;
+    distributor_approval: RegistrationDistributorApproval;
     processed_by: { id: number; name: string } | null;
     submitted_at: string;
     processed_at: string | null;
+}
+
+export interface RegistrationBankAccount {
+    bank_id: number;
+    account_name: string;
+    account_number: string;
+    city: string | null;
+    branch: string | null;
+    is_active: boolean;
+    is_default: boolean;
 }
 
 export interface RegistrationDetail extends RegistrationListItem {
@@ -113,11 +152,6 @@ export interface RegistrationDetail extends RegistrationListItem {
         username: string;
         gender: string;
         birth_date: string;
-    };
-    identity: {
-        type: string;
-        number: string;
-        nib: string | null;
     };
     address: {
         address: string;
@@ -139,7 +173,12 @@ export interface RegistrationDetail extends RegistrationListItem {
         name: string;
         account_name: string;
         account_number: string;
+        city?: string | null;
+        branch?: string | null;
     } | null;
+    bank_accounts: RegistrationBankAccount[];
+    nib: string | null;
+    npwp: string | null;
     note: string | null;
 }
 
@@ -167,5 +206,12 @@ export interface RegistrationPayload {
     bank_account_number: string | null;
     identity_type: string;
     identity_no: string;
+    identity_image_url: string;
+    image_url: string;
+    payment_proof_image_url: string;
     nib: string | null;
+}
+
+export interface RegistrationApprovalPayload {
+    note: string | null;
 }

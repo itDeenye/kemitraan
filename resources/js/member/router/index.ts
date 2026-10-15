@@ -123,6 +123,8 @@ router.beforeEach(async (to, _from, next) => {
             else if (to.path.startsWith('/member/transactions/orders/') && !['/member/transactions/orders/create', '/member/transactions/orders/payment'].includes(to.path)) menuTitle = 'Detail Pesanan';
             else if (to.path.startsWith('/member/transactions/sales/') && !['/member/transactions/sales/create', '/member/transactions/sales/payment', '/member/transactions/sales/shipping'].includes(to.path)) menuTitle = 'Detail Pesanan';
             else if (to.path.startsWith('/member/transactions/goods-receipts/')) menuTitle = 'Detail Penerimaan';
+            else if (to.path.startsWith('/member/stock/adjustment/')) menuTitle = 'Detail Penyesuaian Stok';
+            else if (to.path.startsWith('/member/network/registration-approvals/')) menuTitle = 'Approval Pendaftaran';
             else if (to.path.startsWith('/member/network/registrations/')) menuTitle = 'Detail Pendaftaran';
         }
 

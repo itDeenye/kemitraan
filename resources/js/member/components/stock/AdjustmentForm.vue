@@ -36,16 +36,12 @@
                 <v-text-field
                     v-model.number="form.qty"
                     type="number"
-                    label="Jumlah Penyesuaian *"
+                    label="Jumlah Pengurangan Stok *"
                     variant="outlined"
                     density="compact"
                     min="1"
                     :max="selectedStock?.balance"
-                    :hint="
-                        selectedStock
-                            ? `Stok tersedia: ${selectedStock.balance} ${selectedStock.product.unit || 'pcs'}`
-                            : ''
-                    "
+                    hint="Jumlah yang dimasukkan akan dikurangi dari stok tersedia, bukan menjadi stok akhir."
                     persistent-hint
                     :disabled="isSubmitting"
                     :error-messages="fieldErrors.qty"
@@ -56,7 +52,7 @@
 
                 <v-textarea
                     v-model="form.reason"
-                    label="Alasan Penyesuaian *"
+                    label="Alasan Pengurangan Stok *"
                     placeholder="Contoh: Barang rusak"
                     variant="outlined"
                     density="compact"
@@ -68,6 +64,43 @@
                     @update:model-value="fieldErrors.reason = []"
                     hide-details="auto"
                 />
+
+                <div v-if="selectedStock" class="stock-simulation">
+                    <div class="stock-simulation__row">
+                        <span>Stok saat ini</span>
+                        <strong>
+                            {{ currentBalance }} {{ selectedUnit }}
+                        </strong>
+                    </div>
+                    <div class="stock-simulation__row">
+                        <span>Pengurangan</span>
+                        <strong class="stock-simulation__reduction">
+                            −{{ adjustmentQuantity }} {{ selectedUnit }}
+                        </strong>
+                    </div>
+
+                    <div class="stock-simulation__divider" />
+
+                    <div class="stock-simulation__row stock-simulation__result">
+                        <span>Sisa stok</span>
+                        <strong
+                            :class="{
+                                'stock-simulation__remaining--invalid':
+                                    remainingBalance < 0,
+                            }"
+                        >
+                            {{ remainingBalance }} {{ selectedUnit }}
+                        </strong>
+                    </div>
+
+                    <div
+                        v-if="remainingBalance < 0"
+                        class="stock-simulation__warning"
+                    >
+                        <v-icon icon="mdi-alert-circle-outline" size="16" />
+                        Jumlah pengurangan melebihi stok yang tersedia.
+                    </div>
+                </div>
             </v-card-text>
             <v-divider />
             <v-card-actions class="pa-4">
@@ -147,6 +180,22 @@ const selectedStock = computed(() =>
     stocks.value.find((stock) => stock.product.id === form.product_id),
 );
 
+const currentBalance = computed(() =>
+    Number(selectedStock.value?.balance || 0),
+);
+
+const adjustmentQuantity = computed(() => {
+    const quantity = Number(form.qty);
+
+    return Number.isFinite(quantity) && quantity > 0 ? quantity : 0;
+});
+
+const remainingBalance = computed(
+    () => currentBalance.value - adjustmentQuantity.value,
+);
+
+const selectedUnit = computed(() => selectedStock.value?.product.unit || "pcs");
+
 watch(isOpen, async (val) => {
     if (val) {
         resetForm();
@@ -171,11 +220,13 @@ function closeForm() {
 
 function validateForm() {
     fieldErrors.product_id = form.product_id ? [] : ["Produk wajib dipilih."];
-    fieldErrors.qty = form.qty >= 1 ? [] : ["Jumlah minimal 1."];
-    fieldErrors.reason = form.reason?.trim() ? [] : ["Alasan wajib diisi."];
+    fieldErrors.qty = form.qty >= 1 ? [] : ["Jumlah pengurangan minimal 1."];
+    fieldErrors.reason = form.reason?.trim()
+        ? []
+        : ["Alasan pengurangan stok wajib diisi."];
 
     if (selectedStock.value && form.qty > selectedStock.value.balance) {
-        fieldErrors.qty = ["Jumlah melebihi stok yang tersedia."];
+        fieldErrors.qty = ["Jumlah pengurangan melebihi stok yang tersedia."];
     }
 
     return Object.values(fieldErrors).every((errors) => errors.length === 0);
@@ -208,7 +259,7 @@ async function submitAdjustment() {
             qty: Number(form.qty),
             reason: form.reason.trim(),
         });
-        snackbar.showMessage("Penyesuaian stok berhasil disimpan.", "success");
+        snackbar.showMessage("Pengurangan stok berhasil disimpan.", "success");
         isOpen.value = false;
         emit("success");
     } catch (error: any) {
@@ -226,3 +277,65 @@ async function submitAdjustment() {
     }
 }
 </script>
+
+<style scoped>
+.stock-simulation {
+    margin-top: 18px;
+    padding: 14px;
+    border: 1px solid #eadde0;
+    border-radius: 12px;
+    background: #fffaf7;
+}
+
+.stock-simulation__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    min-height: 28px;
+    color: #75676a;
+    font-size: 12px;
+}
+
+.stock-simulation__row strong {
+    color: #241619;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}
+
+.stock-simulation__row .stock-simulation__reduction {
+    color: #dc2626;
+}
+
+.stock-simulation__divider {
+    height: 1px;
+    margin: 9px 0;
+    background: #eadde0;
+}
+
+.stock-simulation__result {
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.stock-simulation__result strong {
+    color: #16845b;
+}
+
+.stock-simulation__result .stock-simulation__remaining--invalid {
+    color: #dc2626;
+}
+
+.stock-simulation__warning {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    margin-top: 10px;
+    padding: 9px 10px;
+    border-radius: 8px;
+    color: #b91c1c;
+    background: #fef2f2;
+    font-size: 11px;
+    line-height: 1.45;
+}
+</style>

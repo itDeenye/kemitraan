@@ -13,6 +13,7 @@ use App\Models\Trx;
 use App\Models\TrxDetail;
 use App\Models\TrxSpreadPayment;
 use App\Support\BusinessConfig;
+use App\Support\PointCalculation;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
@@ -126,7 +127,7 @@ class MonthlyPartnershipClosingService
                 $period->endOfMonth(),
             ])
             ->select("{$pointTable}.member_point_transaction_member_id as member_id")
-            ->selectRaw("SUM({$pointTable}.member_point_transaction_quantity) AS total_quantity")
+            ->selectRaw("SUM(COALESCE({$pointTable}.member_point_transaction_monthly_points, {$pointTable}.member_point_transaction_quantity)) AS total_quantity")
             ->groupBy("{$pointTable}.member_point_transaction_member_id")
             ->get();
 
@@ -147,13 +148,13 @@ class MonthlyPartnershipClosingService
             ->whereIn("{$trxTable}.trx_status", ['received', 'completed'])
             ->whereBetween("{$trxTable}.trx_datetime", [$period->startOfMonth(), $period->endOfMonth()])
             ->select("{$trxTable}.trx_buyer_id as member_id")
-            ->selectRaw("SUM({$detailTable}.trx_detail_qty) AS total_quantity")
+            ->selectRaw("SUM({$detailTable}.trx_detail_qty * {$detailTable}.trx_detail_product_monthly_points) AS total_quantity")
             ->groupBy("{$trxTable}.trx_buyer_id")
             ->get();
 
         return $ledger->concat($legacy)
             ->groupBy('member_id')
-            ->map(fn (Collection $rows): int => (int) $rows->sum('total_quantity'));
+            ->map(fn (Collection $rows): int => PointCalculation::sum($rows->pluck('total_quantity')));
     }
 
     /** @return Collection<int, int> */
@@ -240,7 +241,7 @@ class MonthlyPartnershipClosingService
         $existing->fill([
             'reward_point_monthly_total_qty' => $quantity,
             'reward_point_monthly_bonus_value' => $quantity >= $minimumQuantity
-                ? $quantity * (int) $member->level->member_level_point_value
+                ? PointCalculation::multiply($quantity, (int) $member->level->member_level_point_value)
                 : 0,
         ]);
         if (! $existing->exists) {

@@ -7,8 +7,6 @@ use App\Jobs\SyncSupplyChainMember;
 use App\Libraries\DataTable;
 use App\Models\Member;
 use App\Models\MemberAccount;
-use App\Models\MemberAddress;
-use App\Models\MemberBankAccount;
 use App\Models\MemberGroup;
 use App\Models\MemberHistory;
 use App\Models\MemberLevel;
@@ -17,6 +15,8 @@ use App\Models\MemberRegistration;
 use App\Models\RefBank;
 use App\Models\SiteAdministrator;
 use App\Services\Notification\PartnershipEmailService;
+use App\Support\MediaUrl;
+use App\Support\MemberIdentity;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -27,6 +27,7 @@ class MemberRegistrationService
         private readonly MemberCodeService $memberCodeService,
         private readonly MemberPasswordService $memberPasswordService,
         private readonly PartnershipEmailService $partnershipEmailService,
+        private readonly MemberOnboardingContacts $onboardingContacts,
     ) {}
 
     /**
@@ -47,7 +48,23 @@ class MemberRegistrationService
      */
     public function adminRegistrations(array $params): array
     {
-        return $this->registrationList($params);
+        return $this->registrationList($params, adminOnly: true);
+    }
+
+    /**
+     * @param  array<string, mixed>  $params
+     * @return array{results: Collection<int, object>, pagination?: array<string, mixed>}
+     */
+    public function distributorRegistrations(array $params, int $distributorId): array
+    {
+        return $this->registrationList($params, distributorId: $distributorId);
+    }
+
+    public function distributorRegistration(MemberRegistration $registration, int $distributorId): MemberRegistration
+    {
+        return $this->detailQuery()
+            ->where('member_registration_distributor_member_id', $distributorId)
+            ->findOrFail($registration->getKey());
     }
 
     public function memberOptions(Member $sponsor): array
@@ -76,7 +93,7 @@ class MemberRegistrationService
             'sponsor' => $sponsorData,
             'agents' => $agents,
             'genders' => ['Laki-laki', 'Perempuan'],
-            'identity_types' => ['KTP', 'SIM', 'PASPOR'],
+            'identity_types' => MemberIdentity::TYPES,
         ];
     }
 
@@ -100,7 +117,62 @@ class MemberRegistrationService
 
     public function adminRegistration(MemberRegistration $registration): MemberRegistration
     {
-        return $this->detailQuery()->findOrFail($registration->getKey());
+        return $this->detailQuery()->readyForAdmin()->findOrFail($registration->getKey());
+    }
+
+    public function approveByDistributor(MemberRegistration $registration, MemberAccount $account, ?string $note): MemberRegistration
+    {
+        return $this->reviewByDistributor($registration, $account, 'approved', $note);
+    }
+
+    public function rejectByDistributor(MemberRegistration $registration, MemberAccount $account, string $note): MemberRegistration
+    {
+        return $this->reviewByDistributor($registration, $account, 'rejected', $note);
+    }
+
+    private function reviewByDistributor(MemberRegistration $registration, MemberAccount $account, string $decision, ?string $note): MemberRegistration
+    {
+        return DB::transaction(function () use ($registration, $account, $decision, $note): MemberRegistration {
+            $distributorId = (int) $account->member_account_member_id;
+            $lockedRegistration = MemberRegistration::query()
+                ->whereKey($registration->getKey())
+                ->where('member_registration_distributor_member_id', $distributorId)
+                ->lockForUpdate()->firstOrFail();
+            $this->ensureRequested($lockedRegistration);
+
+            if ($lockedRegistration->member_registration_distributor_approval_status !== 'pending') {
+                throw new ProcessException('Persetujuan Distributor sudah diproses.');
+            }
+
+            $distributor = Member::query()->with('level')->whereKey($distributorId)->lockForUpdate()->firstOrFail();
+            if ($distributor->level?->member_level_code !== 'DST') {
+                throw new ProcessException('Hanya Distributor yang dapat memproses persetujuan ini.', 403);
+            }
+            $this->ensureMemberCanRecruit($distributor);
+
+            $agent = Member::query()->with('level')
+                ->whereKey($lockedRegistration->member_registration_upline_member_id)
+                ->lockForUpdate()->firstOrFail();
+            if ($agent->level?->member_level_code !== 'AGT'
+                || (int) $agent->member_parent_member_id !== $distributorId) {
+                throw new ProcessException('Agen Utama bukan bagian dari jaringan Distributor.');
+            }
+            $targetLevel = MemberLevel::query()->whereKey($lockedRegistration->member_registration_member_level_id)
+                ->where('member_level_code', 'RSL')->where('member_level_is_active', 1)->firstOrFail();
+            $this->ensureSponsorCanRecruit($agent, $targetLevel);
+
+            $lockedRegistration->update([
+                'member_registration_distributor_approval_status' => $decision,
+                'member_registration_distributor_approval_note' => $note,
+                'member_registration_distributor_approval_datetime' => now(),
+                ...($decision === 'rejected' ? [
+                    'member_registration_status' => 'rejected',
+                    'member_registration_note' => $note,
+                ] : []),
+            ]);
+
+            return $this->distributorRegistration($lockedRegistration, $distributorId);
+        });
     }
 
     /** @param array<string, mixed> $data */
@@ -155,6 +227,8 @@ class MemberRegistrationService
                 ->firstOrFail();
             $this->ensureRequested($lockedRegistration);
 
+            $this->ensureReadyForAdmin($lockedRegistration);
+
             $targetLevel = MemberLevel::query()
                 ->whereKey($lockedRegistration->member_registration_member_level_id)
                 ->where('member_level_is_active', 1)
@@ -190,8 +264,11 @@ class MemberRegistrationService
                 'member_account_password' => Hash::make($plainPassword),
                 'member_account_pin' => '',
             ]);
-            $this->createDefaultAddress($member, $lockedRegistration);
-            $this->createBankAccount($member, $lockedRegistration);
+            $this->onboardingContacts->store(
+                $member,
+                $this->legacyAddresses($lockedRegistration),
+                $lockedRegistration->member_registration_bank_accounts ?? $this->legacyBankAccounts($lockedRegistration),
+            );
             MemberHistory::query()->create([
                 'member_history_member_id' => $member->getKey(),
                 'member_history_action' => 'register',
@@ -244,6 +321,7 @@ class MemberRegistrationService
                 ->lockForUpdate()
                 ->firstOrFail();
             $this->ensureRequested($lockedRegistration);
+            $this->ensureReadyForAdmin($lockedRegistration);
             $lockedRegistration->update([
                 'member_registration_status' => 'rejected',
                 'member_registration_status_administrator_id' => $administrator->getKey(),
@@ -262,7 +340,7 @@ class MemberRegistrationService
      * @param  array<string, mixed>  $params
      * @return array{results: Collection<int, object>, pagination?: array<string, mixed>}
      */
-    private function registrationList(array $params, ?array $sponsorIds = null): array
+    private function registrationList(array $params, ?array $sponsorIds = null, bool $adminOnly = false, ?int $distributorId = null): array
     {
         $registrationTable = (new MemberRegistration)->getTable();
         $levelTable = (new MemberLevel)->getTable();
@@ -281,15 +359,28 @@ class MemberRegistrationService
             "{$registrationTable}.member_registration_mobilephone as mobile_phone",
             "{$registrationTable}.member_registration_username as username",
             "{$registrationTable}.member_registration_identity_no as identity_no",
+            "{$registrationTable}.member_registration_identity_type as identity_type",
+            "{$registrationTable}.member_registration_identity_image as identity_image_url",
+            "{$registrationTable}.member_registration_nib as nib",
+            "{$registrationTable}.member_registration_npwp as npwp",
+            "{$registrationTable}.member_registration_image as image_url",
+            "{$registrationTable}.member_registration_payment_proof_image as payment_proof_image_url",
             "{$registrationTable}.member_registration_status as status",
             "{$registrationTable}.member_registration_status_administrator_id as processed_by_id",
             "{$administratorTable}.administrator_name as processed_by_name",
             "{$registrationTable}.member_registration_datetime as submitted_at",
             "{$registrationTable}.member_registration_status_datetime as processed_at",
+            "{$registrationTable}.member_registration_distributor_member_id as approval_distributor_id",
+            'approval_distributor.member_code as approval_distributor_code',
+            'approval_distributor.member_name as approval_distributor_name',
+            "{$registrationTable}.member_registration_distributor_approval_status as distributor_approval_status",
+            "{$registrationTable}.member_registration_distributor_approval_note as distributor_approval_note",
+            "{$registrationTable}.member_registration_distributor_approval_datetime as distributor_approval_processed_at",
         ])
             ->from($registrationTable)
             ->leftJoin($levelTable, "{$levelTable}.member_level_id = {$registrationTable}.member_registration_member_level_id")
             ->leftJoin($memberTable, "{$memberTable}.member_id = {$registrationTable}.member_registration_upline_member_id")
+            ->leftJoin("{$memberTable} as approval_distributor", "approval_distributor.member_id = {$registrationTable}.member_registration_distributor_member_id")
             ->leftJoin(
                 $administratorTable,
                 "{$administratorTable}.administrator_id = {$registrationTable}.member_registration_status_administrator_id"
@@ -300,6 +391,13 @@ class MemberRegistrationService
                 "{$registrationTable}.member_registration_upline_member_id",
                 $sponsorIds,
             );
+        }
+
+        if ($adminOnly) {
+            $query->whereIn("{$registrationTable}.member_registration_distributor_approval_status", MemberRegistration::ADMIN_READY_APPROVAL_STATUSES);
+        }
+        if ($distributorId !== null) {
+            $query->where("{$registrationTable}.member_registration_distributor_member_id", $distributorId);
         }
 
         return $query
@@ -323,7 +421,7 @@ class MemberRegistrationService
                 ->orderBy('member_level_sort_order')
                 ->get(),
             'genders' => ['Laki-laki', 'Perempuan'],
-            'identity_types' => ['KTP', 'SIM', 'PASPOR'],
+            'identity_types' => MemberIdentity::TYPES,
         ];
     }
 
@@ -334,13 +432,29 @@ class MemberRegistrationService
         ?Member $sponsor = null,
         ?Member $submitter = null,
     ): MemberRegistration {
-        $bankName = isset($data['bank_id'])
-            ? (string) RefBank::query()->where('bank_id', $data['bank_id'])->value('bank_name')
+        $approvalDistributor = null;
+        if ($submitter?->level?->member_level_code === 'AGT' && $targetLevel->member_level_code === 'RSL') {
+            $approvalDistributor = Member::query()->with('level')
+                ->whereKey($submitter->member_parent_member_id)
+                ->where('member_status', 1)
+                ->whereHas('level', fn ($query) => $query->where('member_level_code', 'DST')->where('member_level_is_active', 1))
+                ->first();
+            if ($approvalDistributor === null) {
+                throw new ProcessException('Distributor Agen Utama tidak aktif atau tidak tersedia.');
+            }
+            $this->ensureMemberCanRecruit($approvalDistributor);
+        }
+        $banks = $this->onboardingContacts->bankAccounts($data);
+        $bank = collect($banks)->firstWhere('is_default', true);
+        $bankName = $bank !== null
+            ? (string) RefBank::query()->where('bank_id', $bank['bank_id'])->value('bank_name')
             : null;
         $registration = MemberRegistration::query()->create([
             'member_registration_member_level_id' => $targetLevel->getKey(),
             'member_registration_upline_member_id' => $sponsor?->getKey() ?? 0,
             'member_registration_submitter_member_id' => $submitter?->getKey() ?? 0,
+            'member_registration_distributor_member_id' => $approvalDistributor?->getKey() ?? 0,
+            'member_registration_distributor_approval_status' => $approvalDistributor === null ? 'not_required' : 'pending',
             'member_registration_name' => $data['name'],
             'member_registration_email' => $data['email'] ?? '',
             'member_registration_mobilephone' => $data['mobile_phone'],
@@ -352,17 +466,21 @@ class MemberRegistrationService
             'member_registration_district_id' => $data['district_id'],
             'member_registration_subdistrict_id' => $data['subdistrict_id'],
             'member_registration_country_id' => $data['country_id'] ?? 1,
-            'member_registration_bank_id' => $data['bank_id'] ?? 0,
+            'member_registration_bank_accounts' => $banks,
+            'member_registration_bank_id' => $bank['bank_id'] ?? 0,
             'member_registration_bank_name' => $bankName,
-            'member_registration_bank_account_name' => $data['bank_account_name'] ?? null,
-            'member_registration_bank_account_no' => $data['bank_account_number'] ?? null,
-            'member_registration_bank_city' => $data['bank_city'] ?? null,
-            'member_registration_bank_branch' => $data['bank_branch'] ?? null,
+            'member_registration_bank_account_name' => $bank['account_name'] ?? null,
+            'member_registration_bank_account_no' => $bank['account_number'] ?? null,
+            'member_registration_bank_city' => $bank['city'] ?? null,
+            'member_registration_bank_branch' => $bank['branch'] ?? null,
             'member_registration_identity_type' => $data['identity_type'],
             'member_registration_identity_no' => $data['identity_no'],
-            'member_registration_identity_image' => $data['identity_image_url'] ?? null,
+            'member_registration_identity_image' => MediaUrl::canonicalPrivateUrl($data['identity_image_url'] ?? null),
             'member_registration_identity_image_filename' => '',
             'member_registration_nib' => $data['nib'] ?? null,
+            'member_registration_npwp' => $data['npwp'] ?? null,
+            'member_registration_image' => $data['image_url'] ?? null,
+            'member_registration_payment_proof_image' => MediaUrl::canonicalPrivateUrl($data['payment_proof_image_url'] ?? null),
             'member_registration_username' => '',
             // A temporary hash keeps legacy schema compatibility. The real
             // credential is generated only when an administrator approves.
@@ -373,7 +491,11 @@ class MemberRegistrationService
             'member_registration_datetime' => now(),
         ]);
 
-        return $this->adminRegistration($registration);
+        if ($approvalDistributor !== null && $submitter !== null) {
+            $this->partnershipEmailService->sendDistributorRegistrationReview($registration, $approvalDistributor, $submitter);
+        }
+
+        return $this->detailQuery()->findOrFail($registration->getKey());
     }
 
     private function approvalSponsor(
@@ -400,6 +522,11 @@ class MemberRegistrationService
         }
 
         $this->ensureSponsorCanRecruit($sponsor, $targetLevel);
+
+        if ($registration->member_registration_distributor_approval_status === 'approved'
+            && (int) $sponsor->member_parent_member_id !== (int) $registration->member_registration_distributor_member_id) {
+            throw new ProcessException('Jaringan Agen Utama berubah. Ajukan pendaftaran kembali untuk persetujuan Distributor.');
+        }
 
         return $sponsor;
     }
@@ -576,6 +703,13 @@ class MemberRegistrationService
         }
     }
 
+    private function ensureReadyForAdmin(MemberRegistration $registration): void
+    {
+        if (! in_array($registration->member_registration_distributor_approval_status, MemberRegistration::ADMIN_READY_APPROVAL_STATUSES, true)) {
+            throw new ProcessException('Pengajuan harus disetujui Distributor terlebih dahulu.');
+        }
+    }
+
     private function ensureApplicantStillUnique(MemberRegistration $registration): void
     {
         if (Member::query()
@@ -613,46 +747,46 @@ class MemberRegistrationService
             'member_identity_image' => $registration->member_registration_identity_image,
             'member_identity_image_filename' => '',
             'member_nib' => $registration->member_registration_nib,
+            'member_npwp' => $registration->member_registration_npwp,
+            'member_image' => $registration->member_registration_image,
             'member_join_datetime' => now(),
             'member_status' => 1,
         ];
     }
 
-    private function createDefaultAddress(
-        Member $member,
-        MemberRegistration $registration
-    ): void {
-        MemberAddress::query()->create([
-            'member_address_member_id' => $member->getKey(),
-            'member_address_label' => 'Domisili',
-            'member_address_recipient' => $registration->member_registration_name,
-            'member_address_phone' => $registration->member_registration_mobilephone,
-            'member_address_full' => $registration->member_registration_address,
-            'member_address_province_id' => $registration->member_registration_province_id,
-            'member_address_city_id' => $registration->member_registration_city_id,
-            'member_address_district_id' => $registration->member_registration_district_id,
-            'member_address_subdistrict_id' => $registration->member_registration_subdistrict_id,
-            'member_address_country_id' => $registration->member_registration_country_id,
-            'member_address_is_default' => 1,
-        ]);
+    /** @return array<int, array<string, mixed>> */
+    private function legacyAddresses(MemberRegistration $registration): array
+    {
+        return [[
+            'label' => 'Domisili',
+            'recipient' => $registration->member_registration_name,
+            'phone' => $registration->member_registration_mobilephone,
+            'full_address' => $registration->member_registration_address,
+            'province_id' => $registration->member_registration_province_id,
+            'city_id' => $registration->member_registration_city_id,
+            'district_id' => $registration->member_registration_district_id,
+            'subdistrict_id' => $registration->member_registration_subdistrict_id,
+            'country_id' => $registration->member_registration_country_id,
+            'is_default' => true,
+        ]];
     }
 
-    private function createBankAccount(Member $member, MemberRegistration $registration): void
+    /** @return array<int, array<string, mixed>> */
+    private function legacyBankAccounts(MemberRegistration $registration): array
     {
         if ((int) $registration->member_registration_bank_id === 0) {
-            return;
+            return [];
         }
 
-        MemberBankAccount::query()->create([
-            'member_bank_account_member_id' => $member->getKey(),
-            'member_bank_account_bank_id' => $registration->member_registration_bank_id,
-            'member_bank_account_name' => $registration->member_registration_bank_account_name,
-            'member_bank_account_number' => $registration->member_registration_bank_account_no,
-            'member_bank_account_city' => $registration->member_registration_bank_city,
-            'member_bank_account_branch' => $registration->member_registration_bank_branch,
-            'member_bank_account_is_active' => 1,
-            'member_bank_account_is_default' => 1,
-        ]);
+        return [[
+            'bank_id' => $registration->member_registration_bank_id,
+            'account_name' => $registration->member_registration_bank_account_name,
+            'account_number' => $registration->member_registration_bank_account_no,
+            'city' => $registration->member_registration_bank_city,
+            'branch' => $registration->member_registration_bank_branch,
+            'is_active' => true,
+            'is_default' => true,
+        ]];
     }
 
     private function detailQuery()
@@ -663,6 +797,7 @@ class MemberRegistrationService
             'parent.parent.level',
             'submittedBy.level',
             'statusAdministrator',
+            'approvalDistributor',
             'province',
             'city',
             'district',

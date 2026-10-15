@@ -49,6 +49,10 @@ class MemberPurchaseOrderResource extends ApiResource
                 $trx !== null,
                 fn (): ?array => $isPreorder ? $this->memberPreorder($trx) : null,
             ),
+            'preorder_fulfillment' => $this->when(
+                $trx !== null,
+                fn (): ?array => $isPreorder ? $this->memberPreorderFulfillment($trx) : null,
+            ),
             'seller' => $this->seller($trx),
             'buyer' => $this->buyer($trx),
             // Alias kompatibilitas lintas order. Pembelian tidak mempunyai pelanggan retail.
@@ -56,6 +60,8 @@ class MemberPurchaseOrderResource extends ApiResource
             'summary' => $trx ? $this->detailSummary($trx) : [
                 'product_count' => (int) $this->resource->product_count,
                 'total_quantity' => (int) $this->resource->total_quantity,
+                'total_monthly_points' => (int) $this->resource->total_monthly_points,
+                'total_annual_points' => (int) $this->resource->total_annual_points,
                 'preorder_quantity' => (int) $this->resource->preorder_quantity,
                 'product_total' => (int) $this->resource->product_total,
                 'discount_percent' => (int) $this->resource->discount_percent,
@@ -75,6 +81,12 @@ class MemberPurchaseOrderResource extends ApiResource
             'product_preview' => $this->productPreview($trx),
             'payment_method' => $trx?->trx_payment_method ?? $this->resource->payment_method,
             'shipping_method' => $shippingMethod,
+            'pickup_location' => $this->when(
+                $trx !== null,
+                fn (): ?array => $shippingMethod === 'pickup'
+                    ? $this->shippingLocation($trx, 'origin')
+                    : null,
+            ),
             'status' => [
                 'code' => $status,
                 'label' => $this->statusLabel($status),
@@ -84,6 +96,7 @@ class MemberPurchaseOrderResource extends ApiResource
                 'requested_at' => $trx->trx_status_datetime?->toAtomString(),
             ] : null,
             'actions' => $this->actions(
+                $trx,
                 $status,
                 $shippingMethod,
                 $pickupStatus,
@@ -109,6 +122,8 @@ class MemberPurchaseOrderResource extends ApiResource
                         'id' => (int) $detail->trx_detail_product_id,
                         'code' => $detail->trx_detail_product_code,
                         'name' => $detail->trx_detail_product_name,
+                        'monthly_points' => (int) $detail->trx_detail_product_monthly_points,
+                        'annual_points' => (int) $detail->trx_detail_product_annual_points,
                         'bpom_number' => $detail->trx_detail_product_bpom_number
                             ?: $detail->product?->product_bpom_number,
                         'image' => MediaUrl::publicUrl($detail->product?->product_image),
@@ -122,7 +137,9 @@ class MemberPurchaseOrderResource extends ApiResource
                         ? (int) $detail->trx_detail_qty
                         : 0,
                     'subtotal' => (int) $detail->trx_detail_nett_price * (int) $detail->trx_detail_qty,
-                    'points' => (int) $detail->trx_detail_qty,
+                    'points' => $detail->monthlyPoints(),
+                    'monthly_points' => $detail->monthlyPoints(),
+                    'annual_points' => $detail->annualPoints(),
                 ]
             )->values()),
             'payment' => $trx
@@ -133,7 +150,7 @@ class MemberPurchaseOrderResource extends ApiResource
             'shipping' => $this->when(
                 $trx !== null,
                 fn (): ?array => $this->shipping(
-                    $this->preorderFulfillmentTransaction($trx) ?? $trx,
+                    $this->preorderShippingTransaction($trx),
                     ! $isPreorder || $parentTransactionId === 0,
                 ),
             ),
@@ -151,6 +168,16 @@ class MemberPurchaseOrderResource extends ApiResource
         $lastTransaction = $trx->preorderChain->last();
 
         return $lastTransaction?->is($trx) ? null : $lastTransaction;
+    }
+
+    private function preorderShippingTransaction(Trx $trx): Trx
+    {
+        if ($trx->trx_preorder_fulfillment_mode === 'upline_transit'
+            && in_array($trx->trx_status, ['ready_to_pickup', 'received', 'completed'], true)) {
+            return $trx;
+        }
+
+        return $this->preorderFulfillmentTransaction($trx) ?? $trx;
     }
 
     private function preorderOriginTransaction(Trx $trx): ?Trx
@@ -181,6 +208,7 @@ class MemberPurchaseOrderResource extends ApiResource
                 'id' => (int) $trx->trx_seller_id,
                 'code' => $type === 'warehouse' ? null : $seller?->member_code,
                 'name' => $type === 'warehouse' ? $seller?->warehouse_name : $seller?->member_name,
+                'phone' => $type === 'warehouse' ? $seller?->warehouse_phone : $seller?->member_mobilephone,
                 'origin' => $this->shippingLocation($originTransaction, 'origin')
                     ?? $this->partyLocation($originSeller)
                     ?? $this->partyLocation($seller),
@@ -194,6 +222,9 @@ class MemberPurchaseOrderResource extends ApiResource
             'name' => $type === 'warehouse'
                 ? $this->resource->warehouse_name
                 : $this->resource->seller_name,
+            'phone' => $type === 'warehouse'
+                ? ($this->resource->warehouse_phone ?? null)
+                : ($this->resource->seller_phone ?? null),
             'origin' => $this->listShippingLocation('origin')
                 ?? $this->listPartyLocation('seller'),
         ];
@@ -211,6 +242,7 @@ class MemberPurchaseOrderResource extends ApiResource
                 'id' => (int) $trx->trx_buyer_id,
                 'code' => $trx->buyer?->member_code,
                 'name' => $trx->buyer?->member_name,
+                'phone' => $trx->buyer?->member_mobilephone,
                 'destination' => $this->shippingLocation($fulfillmentTrx, 'destination')
                     ?? $this->partyLocation($originTrx->buyer),
             ];
@@ -221,6 +253,7 @@ class MemberPurchaseOrderResource extends ApiResource
             'id' => (int) ($this->resource->buyer_id ?? 0),
             'code' => $this->resource->buyer_code ?? null,
             'name' => $this->resource->buyer_name ?? null,
+            'phone' => $this->resource->buyer_phone ?? null,
             'destination' => $this->listShippingLocation('destination')
                 ?? $this->listPartyLocation('buyer'),
         ];
@@ -413,6 +446,7 @@ class MemberPurchaseOrderResource extends ApiResource
         return [
             'product_count' => $trx->details->count(),
             'total_quantity' => (int) $trx->details->sum('trx_detail_qty'),
+            ...$trx->pointTotals(),
             'preorder_quantity' => (bool) $trx->trx_is_preorder
                 ? (int) $trx->details->sum('trx_detail_qty')
                 : 0,
@@ -434,6 +468,7 @@ class MemberPurchaseOrderResource extends ApiResource
 
     /** @return array<string, bool> */
     private function actions(
+        ?Trx $trx,
         string $status,
         string $shippingMethod,
         ?string $pickupStatus,
@@ -443,6 +478,9 @@ class MemberPurchaseOrderResource extends ApiResource
         bool $isPreorder,
         int $parentTransactionId,
     ): array {
+        $isUplineTransitRoot = $trx !== null
+            && (int) $trx->trx_parent_trx_id === 0
+            && $trx->trx_preorder_fulfillment_mode === 'upline_transit';
         $canReceive = $status === 'received' && ($isPreorder || match ($shippingMethod) {
             'courier_express', 'courier_instant' => in_array(
                 $shippingStatus,
@@ -466,7 +504,9 @@ class MemberPurchaseOrderResource extends ApiResource
             'can_receive' => $canReceive,
             'requires_delivery_note_number' => $canReceive && $sellerType === 'warehouse',
             'can_show_pickup_code' => $shippingMethod === 'pickup'
-                && $status === 'processing'
+                && ($isUplineTransitRoot
+                    ? $status === 'ready_to_pickup'
+                    : $status === 'processing')
                 && (! $isPreorder || $parentTransactionId === 0)
                 && ! in_array($pickupStatus, ['picked_up', 'completed'], true),
             'can_verify_payment' => false,
@@ -636,7 +676,10 @@ class MemberPurchaseOrderResource extends ApiResource
                 'delivery_note_number' => $trx->shippingPickup->shipping_pickup_delivery_note_number,
                 'items' => $this->shippingItems($trx->shippingPickup->details),
                 'address' => $trx->shippingPickup->shipping_pickup_seller_address,
-                'code' => ! $includePickupCode || in_array(
+                'code' => ! $includePickupCode
+                || ($trx->trx_preorder_fulfillment_mode === 'upline_transit'
+                    && ! in_array($trx->trx_status, ['ready_to_pickup'], true))
+                || in_array(
                     $trx->shippingPickup->latestStatus?->shipping_pickup_status_value,
                     ['picked_up', 'completed'],
                     true,

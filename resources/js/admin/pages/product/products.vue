@@ -40,6 +40,17 @@
                 </div>
             </template>
 
+            <template #item.points="{ item }">
+                <div class="d-flex flex-column py-2">
+                    <div class="text-body-2 font-weight-medium">
+                        Bulanan: {{ item.monthly_points || "0" }}
+                    </div>
+                    <div class="text-body-2 font-weight-medium">
+                        Tahunan: {{ item.annual_points || "0" }}
+                    </div>
+                </div>
+            </template>
+
             <template #item.category="{ item }">
                 <BaseBadge
                     type="category"
@@ -53,7 +64,7 @@
             </template>
 
             <template #item.actions="{ item }">
-                <div class="d-flex ga-2">
+                <div class="d-flex ga-2 items-start">
                     <v-btn
                         v-tooltip:top="'Detail Produk'"
                         icon="mdi-eye-outline"
@@ -74,6 +85,7 @@
                     />
                     <v-btn
                         v-tooltip:top="'Hapus Produk'"
+                        v-if="item.can_delete"
                         icon="mdi-trash-can-outline"
                         variant="outlined"
                         size="small"
@@ -138,6 +150,13 @@ const headers = ref<any[]>([
         placeholder: "Masukkan Nama Produk",
     },
     {
+        title: "Poin",
+        key: "points",
+        type: "number",
+        align: "left",
+        sortable: false,
+    },
+    {
         title: "Kategori",
         align: "center",
         key: "category",
@@ -166,6 +185,7 @@ const headers = ref<any[]>([
         title: "Aksi",
         key: "actions",
         align: "center",
+        cellAlign: "left",
         sortable: false,
     },
 ]);
@@ -194,6 +214,13 @@ const openDetailDialog = (product: Product) => {
 };
 
 const deleteProduct = async (product: any) => {
+    if (!product.can_delete) {
+        snackbar.showMessage(
+            "Produk sudah digunakan dalam transaksi dan tidak dapat dihapus.",
+            "warning",
+        );
+        return;
+    }
     if (!confirmDialogRef.value) return;
 
     const isConfirmed = await confirmDialogRef.value.open({
@@ -209,9 +236,12 @@ const deleteProduct = async (product: any) => {
             await productService.deleteProduct(product.id);
             refreshTable();
             snackbar.showMessage("Berhasil menghapus produk", "success");
-        } catch (error) {
+        } catch (error: any) {
             console.error("Gagal menghapus produk", error);
-            snackbar.showMessage("Gagal menghapus produk", "error");
+            snackbar.showMessage(
+                error.response?.data?.message || "Gagal menghapus produk",
+                "error",
+            );
         }
     }
 };

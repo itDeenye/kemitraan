@@ -42,7 +42,12 @@ class BrdSchemaAdjustmentTest extends TestCase
         ));
         $this->assertFalse(Schema::hasColumn('member_registration', 'member_registration_member_level'));
         $this->assertFalse(Schema::hasColumn('member_registration', 'member_registration_agent_member_id'));
-        $this->assertFalse(Schema::hasColumn('member_registration', 'member_registration_distributor_member_id'));
+        $this->assertTrue(Schema::hasColumns('member_registration', [
+            'member_registration_distributor_member_id',
+            'member_registration_distributor_approval_status',
+            'member_registration_distributor_approval_note',
+            'member_registration_distributor_approval_datetime',
+        ]));
         $this->assertTrue(Schema::hasColumns('member_history', [
             'member_history_from_level_id',
             'member_history_to_level_id',

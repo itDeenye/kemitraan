@@ -224,6 +224,10 @@
                                             >
                                                 {{ item.product.code }}
                                             </div>
+                                            <div class="text-caption text-medium-emphasis">
+                                                Poin Bulanan: {{ formatPrice(item.monthly_points ?? 0) }} ·
+                                                Poin Tahunan: {{ formatPrice(item.annual_points ?? 0) }}
+                                            </div>
                                         </td>
                                         <td class="text-right text-body-2">
                                             {{ formatPrice(item.price) }}
@@ -241,6 +245,14 @@
                             </v-table>
                             <v-divider v-if="payment.totals" />
                             <div class="pa-4" v-if="payment.totals">
+                                <div class="d-flex justify-space-between mb-2 text-body-2">
+                                    <span class="text-medium-emphasis">Total Poin Bulanan</span>
+                                    <span class="font-weight-medium">{{ formatPrice(payment.totals?.total_monthly_points ?? 0) }}</span>
+                                </div>
+                                <div class="d-flex justify-space-between mb-2 text-body-2">
+                                    <span class="text-medium-emphasis">Total Poin Tahunan</span>
+                                    <span class="font-weight-medium">{{ formatPrice(payment.totals?.total_annual_points ?? 0) }}</span>
+                                </div>
                                 <div
                                     class="d-flex justify-space-between mb-2 text-body-2"
                                     v-if="
@@ -682,7 +694,7 @@
                             </h3>
                             <v-card
                                 variant="outlined"
-                                class="rounded-lg d-flex align-center justify-center overflow-hidden flex-grow-1"
+                                class="payment-receipt-card rounded-lg d-flex align-center justify-center overflow-hidden flex-grow-1"
                                 style="min-height: 150px"
                             >
                                 <div
@@ -694,26 +706,41 @@
                                         color="grey-lighten-1"
                                     />
                                 </div>
-                                <v-img
+                                <div
                                     v-else-if="receiptImageUrl"
-                                    :src="receiptImageUrl"
-                                    height="200"
-                                    contain
-                                    class="cursor-pointer"
+                                    class="payment-receipt-preview"
+                                    role="button"
+                                    tabindex="0"
                                     @click="openReceiptDialog(receiptImageUrl)"
-                                    @error="handleReceiptImageError"
+                                    @keyup.enter="
+                                        openReceiptDialog(receiptImageUrl)
+                                    "
                                 >
-                                    <template v-slot:placeholder>
-                                        <div
-                                            class="d-flex align-center justify-center fill-height"
-                                        >
-                                            <v-progress-circular
-                                                indeterminate
-                                                color="grey-lighten-1"
-                                            ></v-progress-circular>
-                                        </div>
-                                    </template>
-                                </v-img>
+                                    <v-img
+                                        :src="receiptImageUrl"
+                                        height="200"
+                                        :cover="false"
+                                        @error="handleReceiptImageError"
+                                    >
+                                        <template v-slot:placeholder>
+                                            <div
+                                                class="d-flex align-center justify-center fill-height"
+                                            >
+                                                <v-progress-circular
+                                                    indeterminate
+                                                    color="primary"
+                                                ></v-progress-circular>
+                                            </div>
+                                        </template>
+                                    </v-img>
+                                    <div class="payment-receipt-overlay">
+                                        <v-icon
+                                            icon="mdi-magnify-plus-outline"
+                                            color="white"
+                                            size="28"
+                                        />
+                                    </div>
+                                </div>
                                 <div
                                     v-else-if="payment.payment?.receipt_url"
                                     class="text-error text-body-2 pa-4 text-center"
@@ -865,29 +892,55 @@
         </v-card>
     </v-dialog>
 
-    <v-dialog v-model="receiptDialog" max-width="800">
-        <v-card class="rounded-lg">
-            <v-toolbar
-                color="transparent"
-                class="position-absolute w-100"
-                style="z-index: 1"
+    <v-dialog v-model="receiptDialog" max-width="900">
+        <v-card class="rounded-xl overflow-hidden">
+            <v-card-title
+                class="pa-4 d-flex align-center justify-space-between border-b"
             >
-                <v-spacer></v-spacer>
+                <div class="d-flex align-center ga-2 min-w-0">
+                    <v-icon color="primary" size="22"
+                        >mdi-image-outline</v-icon
+                    >
+                    <span class="text-subtitle-1 font-weight-bold text-truncate">
+                        Bukti Transfer
+                    </span>
+                </div>
                 <v-btn
                     icon="mdi-close"
-                    variant="elevated"
-                    color="white"
-                    class="mr-2"
+                    variant="text"
+                    density="comfortable"
                     @click="receiptDialog = false"
-                ></v-btn>
-            </v-toolbar>
-            <v-img
-                :src="selectedReceiptUrl"
-                width="100%"
-                contain
-                class="bg-grey-darken-4"
-                style="max-height: 80vh"
-            ></v-img>
+                />
+            </v-card-title>
+            <v-card-text class="payment-receipt-dialog pa-3 pa-sm-5">
+                <v-img
+                    :src="selectedReceiptUrl"
+                    width="100%"
+                    max-height="72vh"
+                    :cover="false"
+                    alt="Bukti Transfer"
+                >
+                    <template #placeholder>
+                        <div
+                            class="d-flex fill-height align-center justify-center"
+                        >
+                            <v-progress-circular
+                                indeterminate
+                                color="primary"
+                            />
+                        </div>
+                    </template>
+                    <template #error>
+                        <div class="payment-receipt-fallback py-12">
+                            <v-icon
+                                icon="mdi-image-broken-variant"
+                                size="48"
+                            />
+                            <span>Bukti transfer gagal dimuat</span>
+                        </div>
+                    </template>
+                </v-img>
+            </v-card-text>
         </v-card>
     </v-dialog>
 </template>
@@ -1070,3 +1123,70 @@ defineExpose({ open, close });
 
 onBeforeUnmount(clearReceiptImage);
 </script>
+
+<style scoped>
+.payment-receipt-card,
+.payment-receipt-dialog {
+    background: rgb(var(--v-theme-surface-variant));
+}
+
+.payment-receipt-preview {
+    position: relative;
+    width: 100%;
+    height: 200px;
+    cursor: pointer;
+    outline: none;
+}
+
+.payment-receipt-preview .v-img {
+    width: 100%;
+    height: 100%;
+}
+
+.payment-receipt-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.38);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.payment-receipt-preview:hover .payment-receipt-overlay,
+.payment-receipt-preview:focus-visible .payment-receipt-overlay {
+    opacity: 1;
+}
+
+.payment-receipt-fallback {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 8px;
+    color: rgba(var(--v-theme-on-surface), var(--v-medium-emphasis-opacity));
+    font-size: 12px;
+}
+
+.payment-receipt-dialog {
+    min-height: 240px;
+}
+
+@media (max-width: 600px) {
+    .payment-receipt-preview {
+        height: 210px;
+    }
+
+    .payment-receipt-overlay {
+        top: auto;
+        left: auto;
+        width: 42px;
+        height: 42px;
+        border-radius: 12px 0 0;
+        opacity: 1;
+    }
+}
+</style>

@@ -26,7 +26,7 @@
         </div>
 
         <div class="section-heading items-end justify-end">
-            <span>Total {{ pagination.total_data || 0 }} Data</span>
+            <span>{{ pagination.total_data || 0 }} Data</span>
         </div>
 
         <div v-if="isLoading" class="card adjustment-state">
@@ -34,24 +34,27 @@
             <p>Memuat riwayat penyesuaian...</p>
         </div>
 
-        <div v-else-if="adjustments.length > 0" class="card list-card pb-4">
-            <div
+        <div v-else-if="adjustments.length > 0" class="card list-card">
+            <button
                 v-for="adjustment in adjustments"
                 :key="adjustment.id"
-                class="list-row"
+                type="button"
+                class="list-row flow-link adjustment-row"
+                @click="openDetail(adjustment.id)"
             >
                 <div class="row-icon">
-                    <v-icon icon="mdi-pencil-outline" size="16" />
+                    <v-icon icon="mdi-package-variant-minus" size="16" />
                 </div>
-                <div class="row-main">
-                    <strong>{{ adjustment.code }}</strong>
-                    <span>{{ adjustment.note || "Tanpa keterangan" }}</span>
-                    <span>{{ formatDateTime(adjustment.happened_at) }}</span>
+                <div class="row-main min-w-0">
+                    <strong class="d-block text-truncate">
+                        {{ adjustment.code }}
+                    </strong>
+                    <span class="d-block text-truncate">
+                        {{ formatDateTime(adjustment.happened_at) }} ·
+                        {{ adjustment.note || "Tanpa keterangan" }}
+                    </span>
                 </div>
-                <div class="row-side adjustment-quantity">
-                    −{{ adjustment.total_quantity }} pcs
-                </div>
-            </div>
+            </button>
 
             <div
                 v-if="pagination.current < pagination.total_page"
@@ -91,6 +94,7 @@ import { useAuthStore } from "@/shared/stores/auth";
 import { useSnackbarStore } from "@/shared/stores/snackbar";
 import { useFormatter } from "@/shared/composables/useFormatter";
 import AdjustmentForm from "@/member/components/stock/AdjustmentForm.vue";
+import { encodeRouteId } from "@/shared/utils/route-id";
 import type {
     DataTablePagination,
     StockAdjustmentItem,
@@ -138,6 +142,10 @@ const isAllowed = computed(() =>
 
 function openForm() {
     showForm.value = true;
+}
+
+function openDetail(id: number) {
+    router.push(`/member/stock/adjustment/${encodeRouteId(id)}`);
 }
 
 async function handleSuccess() {
@@ -192,9 +200,6 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.adjustment-total {
-    margin-top: 4px;
-}
 .adjustment-state {
     padding: 28px 20px;
     text-align: center;
@@ -204,12 +209,17 @@ onMounted(() => {
     color: var(--muted);
     font-size: 13px;
 }
-.adjustment-quantity {
-    color: var(--orange);
-    font-weight: 700;
+.adjustment-row {
+    width: 100%;
+    border: 0;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
 }
-.adjustment-note {
-    margin-top: 16px;
+.adjustment-row:hover {
+    background: #fff8f9;
 }
 .adjustment-create {
     margin-top: 10px;

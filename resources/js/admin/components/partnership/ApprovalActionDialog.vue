@@ -44,22 +44,34 @@
                     Anda akan
                     {{ actionType === "approve" ? "menyetujui" : "menolak" }}
                     {{ contextName }} dari <strong>{{ memberName }}</strong
-                    >. Silakan tambahkan catatan (opsional).
+                    >.
+                    {{
+                        isRejectionReasonRequired
+                            ? "Silakan tambahkan alasan penolakan."
+                            : "Silakan tambahkan catatan (opsional)."
+                    }}
                 </p>
 
                 <v-form ref="formRef" @submit.prevent="submit">
                     <v-textarea
                         v-model="note"
-                        label="Catatan (opsional)"
+                        :label="
+                            isRejectionReasonRequired
+                                ? 'Alasan Penolakan *'
+                                : 'Catatan (opsional)'
+                        "
                         variant="outlined"
                         density="comfortable"
                         rows="3"
                         auto-grow
                         hide-details="auto"
+                        :rules="noteRules"
                         :placeholder="
                             actionType === 'approve'
-                                ? 'Dokumen telah diverifikasi...'
-                                : 'Dokumen tidak lengkap...'
+                                ? 'Tuliskan catatan penyetujuan...'
+                                : isRejectionReasonRequired
+                                  ? 'Tuliskan alasan penolakan...'
+                                  : 'Dokumen tidak lengkap...'
                         "
                     ></v-textarea>
                 </v-form>
@@ -91,7 +103,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, nextTick, ref } from "vue";
 import api from "@/shared/services/api";
 import { useSnackbarStore } from "@/shared/stores/snackbar";
 
@@ -109,6 +121,19 @@ const note = ref("");
 const resourceEndpoint = ref("registrations");
 const contextName = ref("registrasi");
 const contextTitle = ref("Registrasi");
+const isRejectionReasonRequired = computed(
+    () =>
+        actionType.value === "reject" &&
+        resourceEndpoint.value === "registrations",
+);
+const noteRules = computed(() =>
+    isRejectionReasonRequired.value
+        ? [
+              (value: string | null | undefined) =>
+                  Boolean(value?.trim()) || "Alasan penolakan wajib diisi.",
+          ]
+        : [],
+);
 
 const open = (
     id: number,
@@ -125,6 +150,7 @@ const open = (
     contextTitle.value = context.charAt(0).toUpperCase() + context.slice(1);
     note.value = "";
     dialog.value = true;
+    void nextTick(() => formRef.value?.resetValidation());
 };
 
 const close = () => {
@@ -135,9 +161,12 @@ const close = () => {
 const submit = async () => {
     if (!registrationId.value) return;
 
+    const validationResult = await formRef.value?.validate();
+    if (validationResult && !validationResult.valid) return;
+
     loading.value = true;
     try {
-        const payload = { note: note.value };
+        const payload = { note: note.value.trim() };
         const endpoint = `/admin/partnership/${resourceEndpoint.value}/${registrationId.value}/${actionType.value}`;
 
         await api.post(endpoint, payload);

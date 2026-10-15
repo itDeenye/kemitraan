@@ -110,7 +110,7 @@
                         </v-list>
                     </v-menu>
                     <v-btn
-                        v-if="['processing'].includes(item.status)"
+                        v-if="item.status === 'processing' && item.actions?.can_ship"
                         v-tooltip:top="shippingActionTooltip(item)"
                         icon="mdi-truck-fast"
                         variant="outlined"
@@ -120,7 +120,7 @@
                         @click="confirmComplete(item)"
                     />
                     <v-btn
-                        v-if="['reship_required'].includes(item.status)"
+                        v-if="item.actions?.can_reship"
                         v-tooltip:top="'Kirim Ulang Pesanan'"
                         icon="mdi-truck-cargo-container"
                         variant="outlined"
@@ -198,6 +198,7 @@ const snackbar = useSnackbarStore();
 
 const queryParams = computed(() => ({
     "filter[buyer.type]": "distributor",
+    "filter[seller.type]": "warehouse",
 }));
 
 const headers = [

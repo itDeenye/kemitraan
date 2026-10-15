@@ -16,23 +16,13 @@
             Pesanan Penjualan
         </button>
 
-        <div class="filter-chips mt-2">
-            <span
-                v-for="filter in [
-                    'Semua',
-                    'Perlu Diverifikasi',
-                    'Perlu Dikirim',
-                    'Dalam Pengiriman',
-                    'Selesai',
-                ]"
-                :key="filter"
-                class="filter-chip"
-                :class="{ active: currentFilter === filter }"
-                @click="currentFilter = filter"
-            >
-                {{ filter }}
-            </span>
-        </div>
+        <CategorySlider
+            :categories="saleStatusFilters"
+            :model-value="currentFilterId"
+            aria-label="Filter status pesanan penjualan"
+            item-label="filter status"
+            @update:model-value="selectStatusFilter"
+        />
 
         <div class="search-box">
             <v-icon icon="mdi-magnify" size="small" />
@@ -304,6 +294,21 @@
                     "
                 >
                     <button
+                        v-if="order.actions?.can_confirm_arrival"
+                        class="font-semibold transition-all text-white active:opacity-90"
+                        style="
+                            background-color: #2e7d32;
+                            padding: 6px 12px;
+                            font-size: 11px;
+                            border-radius: 6px;
+                            border: 1px solid #2e7d32;
+                        "
+                        type="button"
+                        @click="confirmArrival(order)"
+                    >
+                        Barang Sudah Tiba
+                    </button>
+                    <button
                         v-if="order.actions?.can_verify_payment"
                         class="font-semibold transition-all text-white shadow-[0_1px_2px_rgba(220,38,38,0.2)] active:opacity-90"
                         style="
@@ -339,7 +344,11 @@
                             )
                         "
                     >
-                        Kirim Pesanan
+                        {{
+                            order.actions?.requires_pickup_pin
+                                ? "Verifikasi Pesanan"
+                                : "Kirim Pesanan"
+                        }}
                     </button>
                     <button
                         class="font-semibold transition-all bg-white text-[var(--ink)] shadow-[0_1px_2px_rgba(0,0,0,0.05)] active:bg-[#f5f5f5]"
@@ -391,18 +400,38 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from "vue";
+import { computed, ref, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import saleService from "@/member/services/sale.service";
 import { useFormatter } from "@/shared/composables/useFormatter";
+import { useSnackbarStore } from "@/shared/stores/snackbar";
 import BaseBadge from "@/shared/components/BaseBadge.vue";
+import CategorySlider from "@/member/components/transactions/CategorySlider.vue";
 import type { SaleOrder } from "@/member/types/sale";
 import { encodeRouteId } from "@/shared/utils/route-id";
 
 const router = useRouter();
+const snackbar = useSnackbarStore();
 const { formatPrice, formatDateTime } = useFormatter();
 
 const currentFilter = ref("Semua");
+const saleStatusFilters = [
+    { id: 1, name: "Perlu Diverifikasi" },
+    { id: 2, name: "Perlu Dikirim" },
+    { id: 3, name: "Dalam Pengiriman" },
+    { id: 4, name: "Siap Diterima" },
+    { id: 5, name: "Selesai" },
+];
+const currentFilterId = computed(
+    () =>
+        saleStatusFilters.find((filter) => filter.name === currentFilter.value)
+            ?.id ?? null,
+);
+const selectStatusFilter = (filterId: number | null) => {
+    currentFilter.value =
+        saleStatusFilters.find((filter) => filter.id === filterId)?.name ??
+        "Semua";
+};
 const searchQuery = ref("");
 const orders = ref<SaleOrder[]>([]);
 const isLoading = ref(true);
@@ -440,9 +469,11 @@ const getStatusFilter = () => {
         case "Perlu Diverifikasi":
             return "waiting_payment_approval";
         case "Perlu Dikirim":
-            return "processing";
+            return undefined;
         case "Dalam Pengiriman":
             return "shipped";
+        case "Siap Diterima":
+            return "received";
         case "Selesai":
             return "completed";
         default:
@@ -489,16 +520,34 @@ const loadMore = () => {
     }
 };
 
+const confirmArrival = async (order: SaleOrder) => {
+    try {
+        const response = await saleService.confirmArrival(order.id);
+        snackbar.showMessage(response.message, "success");
+        await fetchOrders(pagination.value.current || 1);
+    } catch (error: any) {
+        snackbar.showMessage(
+            error.response?.data?.message ||
+                "Gagal mengonfirmasi kedatangan barang.",
+            "error",
+        );
+    }
+};
+
 const getOrderNote = (order: any) => {
     if (order.status?.code === "waiting_payment")
         return "Menunggu pembeli menyelesaikan pembayaran.";
     if (order.status?.code === "waiting_payment_approval")
         return "Bukti pembayaran sudah diterima dan perlu diverifikasi.";
     if (order.status?.code === "processing") {
+        if (order.actions?.can_confirm_arrival)
+            return "Barang dari sumber stok sedang menuju lokasi Anda. Konfirmasi setelah barang tiba.";
         return order.actions?.can_ship
             ? "Pembayaran telah disetujui dan pesanan perlu dikirim."
             : "Pesanan PO sedang diproses.";
     }
+    if (order.status?.code === "ready_to_pickup")
+        return "Barang sudah tiba dan siap diserahkan kepada pembeli menggunakan kode pickup.";
     if (order.status?.code === "shipped")
         return "Pesanan dalam pengiriman kurir.";
     if (order.status?.code === "canceled" || order.status?.code === "rejected")

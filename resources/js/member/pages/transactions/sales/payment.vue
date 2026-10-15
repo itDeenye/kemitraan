@@ -24,66 +24,29 @@
             </div>
             <div class="invoice-divider"></div>
 
+            <OrderPartyInfo
+                title="Data Pembeli"
+                icon="mdi-account-outline"
+                :party="order.buyer || order.customer"
+                :phone="order.customer?.whatsapp || order.customer?.phone"
+                embedded
+            />
+            <div class="invoice-divider"></div>
+            <OrderSellerInfo :seller="order.seller" embedded />
+            <div class="invoice-divider"></div>
+            <OrderShippingInfo
+                :method="order.shipping?.method || order.shipping_method"
+                :shipping="order.shipping"
+                :origin="order.seller?.origin"
+                :destination="order.buyer?.destination"
+                :pickup-location="pickupLocation"
+                :transit="isUplineTransit"
+                embedded
+            />
+            <div class="invoice-divider"></div>
             <div class="invoice-total">
                 <span>Total Pembayaran</span>
-                <strong
-                    >Rp{{
-                        formatPrice(order.summary?.grand_total || 0)
-                    }}</strong
-                >
-            </div>
-        </div>
-
-        <div class="card mb-4 detail-card">
-            <div class="detail-section">
-                <h3 class="detail-title">
-                    <v-icon icon="mdi-account-outline" size="18" />
-                    Data Pembeli
-                </h3>
-                <strong class="text-[13px]">{{
-                    order.customer?.name || order.buyer?.name || "-"
-                }}</strong>
-                <p v-if="order.customer?.whatsapp" class="detail-muted mt-1">
-                    {{ order.customer.whatsapp }}
-                </p>
-            </div>
-            <div class="detail-section detail-divider">
-                <h3 class="detail-title">
-                    <v-icon icon="mdi-truck-outline" size="18" />
-                    {{
-                        order.shipping?.method === "pickup"
-                            ? "Informasi Pengambilan"
-                            : "Informasi Pengiriman"
-                    }}
-                </h3>
-                <div class="detail-row">
-                    <span>Metode</span>
-                    <strong>{{ shippingLabel }}</strong>
-                </div>
-                <div class="detail-row" v-if="order.seller?.origin">
-                    <span>{{
-                        order.shipping?.method === "pickup"
-                            ? "Lokasi Pengambilan"
-                            : "Asal Barang"
-                    }}</span>
-                    <strong>{{ order.seller.origin.name || "-" }}</strong>
-                </div>
-                <div
-                    v-if="order.shipping?.method !== 'pickup'"
-                    class="detail-row"
-                >
-                    <span>Kurir</span>
-                    <strong>
-                        <span class="uppercase"
-                            >{{ order.shipping?.courier || "-" }} -
-                        </span>
-                        {{ order.shipping?.service || "" }}
-                    </strong>
-                </div>
-                <div v-if="order.shipping?.tracking_number" class="detail-row">
-                    <span>Nomor Resi</span>
-                    <strong>{{ order.shipping.tracking_number }}</strong>
-                </div>
+                <strong>Rp{{ formatPrice(order.summary?.grand_total || 0) }}</strong>
             </div>
         </div>
 
@@ -137,6 +100,10 @@
                         <span class="text-[11px] text-[var(--muted)] mt-0.5">
                             BPOM: {{ item.product?.bpom_number || "-" }}
                         </span>
+                        <span class="text-[11px] text-[var(--muted)] mt-0.5">
+                            Poin Bulanan: {{ formatPrice(item.monthly_points ?? 0) }} ·
+                            Poin Tahunan: {{ formatPrice(item.annual_points ?? 0) }}
+                        </span>
                         <span>
                             {{ item.quantity }} × Rp{{
                                 formatPrice(item.net_price || item.price || 0)
@@ -163,6 +130,14 @@
                             formatPrice(order.summary?.product_total || 0)
                         }}</strong
                     >
+                </div>
+                <div class="detail-row">
+                    <span>Total Poin Bulanan</span>
+                    <strong>{{ formatPrice(order.summary?.total_monthly_points ?? 0) }}</strong>
+                </div>
+                <div class="detail-row">
+                    <span>Total Poin Tahunan</span>
+                    <strong>{{ formatPrice(order.summary?.total_annual_points ?? 0) }}</strong>
                 </div>
                 <div
                     v-if="(order.summary?.total_discount || 0) > 0"
@@ -384,58 +359,120 @@
             </button>
         </div>
 
-        <v-dialog v-model="confirmDialog" max-width="400">
-            <v-card>
-                <v-card-title class="text-h6 font-weight-bold pt-4 px-4">
-                    Konfirmasi
-                    {{
-                        confirmAction === "approved"
-                            ? "Persetujuan"
-                            : "Penolakan"
-                    }}
+        <v-dialog v-model="confirmDialog" max-width="500" persistent>
+            <v-card class="rounded-xl">
+                <v-card-title class="payment-confirmation__header">
+                    <div class="d-flex align-center ga-3 min-w-0">
+                        <div
+                            class="payment-confirmation__icon"
+                            :class="
+                                confirmAction === 'approved'
+                                    ? 'payment-confirmation__icon--approve'
+                                    : 'payment-confirmation__icon--reject'
+                            "
+                        >
+                            <v-icon
+                                :icon="
+                                    confirmAction === 'approved'
+                                        ? 'mdi-check'
+                                        : 'mdi-close'
+                                "
+                                size="22"
+                            />
+                        </div>
+                        <div class="min-w-0">
+                            <div class="text-subtitle-1 font-weight-bold">
+                                {{
+                                    confirmAction === "approved"
+                                        ? "Setujui Pembayaran"
+                                        : "Tolak Pembayaran"
+                                }}
+                            </div>
+                            <div
+                                class="text-caption text-medium-emphasis text-truncate"
+                            >
+                                {{ order?.code || "Pembayaran Pesanan" }}
+                            </div>
+                        </div>
+                    </div>
+                    <v-btn
+                        icon="mdi-close"
+                        variant="text"
+                        density="comfortable"
+                        :disabled="submitting"
+                        aria-label="Tutup"
+                        @click="closeConfirmDialog"
+                    />
                 </v-card-title>
-                <v-card-text class="px-4">
-                    <p class="mb-4 text-[14px]">
-                        Apakah Anda yakin ingin
+
+                <v-divider />
+
+                <v-card-text class="pa-5 pa-sm-6">
+                    <v-alert
+                        :color="
+                            confirmAction === 'approved' ? 'success' : 'error'
+                        "
+                        variant="tonal"
+                        density="compact"
+                        class="mb-5"
+                    >
                         {{
                             confirmAction === "approved"
-                                ? "menyetujui"
-                                : "menolak"
+                                ? "Pastikan pembayaran telah diterima dan nominalnya sesuai sebelum menyetujui pembayaran."
+                                : "Pembayaran akan ditolak. Sertakan alasan agar pembeli mengetahui apa penyebab pembayaran ditolak."
                         }}
-                        pembayaran ini?
-                    </p>
+                    </v-alert>
+
                     <v-textarea
                         v-model="form.note"
                         :label="
                             confirmAction === 'rejected'
-                                ? 'Catatan (Wajib)'
-                                : 'Catatan (Opsional)'
+                                ? 'Alasan Penolakan *'
+                                : 'Catatan Persetujuan (Opsional)'
+                        "
+                        :placeholder="
+                            confirmAction === 'rejected'
+                                ? 'Contoh: Nominal transfer belum sesuai'
+                                : 'Contoh: Pembayaran sudah diterima'
                         "
                         rows="3"
                         variant="outlined"
-                        density="compact"
-                        hide-details="auto"
-                    ></v-textarea>
+                        density="comfortable"
+                        auto-grow
+                        maxlength="1000"
+                        counter="1000"
+                        :error-messages="confirmNoteError"
+                        @update:model-value="confirmNoteError = ''"
+                    />
                 </v-card-text>
-                <v-card-actions class="pb-4 px-4">
-                    <v-spacer></v-spacer>
+
+                <v-divider />
+
+                <v-card-actions class="pa-4 pa-sm-5">
+                    <v-spacer />
                     <v-btn
-                        color="grey-darken-1"
                         variant="outlined"
-                        @click="confirmDialog = false"
+                        color="medium-emphasis"
+                        class="text-none"
                         :disabled="submitting"
-                        >Batal</v-btn
+                        @click="closeConfirmDialog"
                     >
+                        Batal
+                    </v-btn>
                     <v-btn
                         :color="
                             confirmAction === 'approved' ? 'primary' : 'error'
                         "
                         variant="flat"
+                        class="text-none px-5"
                         :loading="submitting"
                         @click="executeSubmit"
                     >
-                        Ya,
-                        {{ confirmAction === "approved" ? "Setujui" : "Tolak" }}
+                        {{
+                            confirmAction === "approved"
+                                ? "Ya, Setujui"
+                                : "Ya, Tolak"
+                        }}
                     </v-btn>
                 </v-card-actions>
             </v-card>
@@ -471,6 +508,9 @@ import purchaseService from "@/member/services/purchase.service";
 import { useFormatter } from "@/shared/composables/useFormatter";
 import { useSnackbarStore } from "@/shared/stores/snackbar";
 import BaseBadge from "@/shared/components/BaseBadge.vue";
+import OrderSellerInfo from "@/member/components/transactions/OrderSellerInfo.vue";
+import OrderPartyInfo from "@/member/components/transactions/OrderPartyInfo.vue";
+import OrderShippingInfo from "@/member/components/transactions/OrderShippingInfo.vue";
 import { decodeRouteId, encodeRouteId } from "@/shared/utils/route-id";
 
 const router = useRouter();
@@ -480,30 +520,26 @@ const snackbar = useSnackbarStore();
 
 const orderId = decodeRouteId(route.query.id);
 const order = ref<any>(null);
+const isUplineTransit = computed(
+    () => order.value?.preorder_fulfillment?.mode === "upline_transit",
+);
+const pickupLocation = computed(() =>
+    isUplineTransit.value
+        ? order.value?.buyer?.destination
+        : order.value?.seller?.origin,
+);
 const isLoading = ref(true);
 const submitting = ref(false);
 const submittingAction = ref<"approved" | "rejected" | null>(null);
 
 const confirmDialog = ref(false);
 const confirmAction = ref<"approved" | "rejected" | null>(null);
+const confirmNoteError = ref("");
 
 const imageDialog = ref(false);
 const selectedImage = ref("");
 
 const isCustomer = computed(() => order.value?.buyer?.type === "customer");
-const shippingLabel = computed(() => {
-    const method =
-        order.value?.shipping?.method || order.value?.shipping_method;
-    const labels: Record<string, string> = {
-        pickup: "Diambil di Tempat",
-        courier_manual: "Kurir",
-        courier_express: "Kurir Ekspres",
-        courier_instant: "Kurir Instan",
-    };
-
-    return labels[method] || "-";
-});
-
 const form = reactive({
     note: "",
 });
@@ -594,7 +630,16 @@ const fetchOrder = async () => {
 const confirmSubmit = (status: "approved" | "rejected") => {
     confirmAction.value = status;
     form.note = "";
+    confirmNoteError.value = "";
     confirmDialog.value = true;
+};
+
+const closeConfirmDialog = () => {
+    if (submitting.value) {
+        return;
+    }
+
+    confirmDialog.value = false;
 };
 
 const executeSubmit = async () => {
@@ -602,12 +647,13 @@ const executeSubmit = async () => {
     if (!status) return;
 
     if (status === "rejected" && !form.note.trim()) {
-        snackbar.showMessage("Catatan penolakan wajib diisi.", "error");
+        confirmNoteError.value = "Alasan penolakan wajib diisi.";
         return;
     }
 
     submitting.value = true;
     submittingAction.value = status;
+    confirmNoteError.value = "";
     try {
         if (status === "approved") {
             const payload: any = {
@@ -693,3 +739,32 @@ onMounted(() => {
     fetchOrder();
 });
 </script>
+
+<style scoped>
+.payment-confirmation__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 18px 20px;
+}
+
+.payment-confirmation__icon {
+    display: grid;
+    width: 40px;
+    height: 40px;
+    flex: 0 0 40px;
+    place-items: center;
+    border-radius: 50%;
+}
+
+.payment-confirmation__icon--approve {
+    color: #15803d;
+    background: #dcfce7;
+}
+
+.payment-confirmation__icon--reject {
+    color: #b91c1c;
+    background: #fee2e2;
+}
+</style>

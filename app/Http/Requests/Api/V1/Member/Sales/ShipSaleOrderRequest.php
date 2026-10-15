@@ -23,12 +23,23 @@ class ShipSaleOrderRequest extends FormRequest
         $isManual = $shippingMethod === 'courier_manual';
         $isPickup = $shippingMethod === 'pickup';
         $isCustomerPickup = $isPickup && $trx instanceof Trx && $trx->trx_buyer_type === 'customer';
+        $isUplineTransit = $trx instanceof Trx && $this->isUplineTransit($trx);
+        $isTransitHandover = $isUplineTransit
+            && (int) $trx->trx_parent_trx_id === 0
+            && $trx->trx_status === 'ready_to_pickup';
+        $requiresManualCourier = $isManual && $isUplineTransit;
+        $isMemberStock = $trx instanceof Trx
+            && $trx->trx_type === 'stock'
+            && in_array($trx->trx_buyer_type, ['distributor', 'agent', 'reseller'], true)
+            && in_array($shippingMethod, ['pickup', 'courier_manual'], true);
 
         return [
-            'delivery_note_number' => $isCustomerPickup
+            'delivery_note_number' => $isCustomerPickup || $isTransitHandover
                 ? ['prohibited']
                 : ['nullable', 'string', 'max:50'],
-            'items' => ['required', 'array', 'min:1', 'max:500'],
+            'items' => $isTransitHandover
+                ? ['prohibited']
+                : [$isMemberStock ? 'sometimes' : 'required', 'array', 'min:1', 'max:500'],
             'items.*.product_id' => [
                 'required',
                 'integer',
@@ -55,7 +66,30 @@ class ShipSaleOrderRequest extends FormRequest
             'tracking_number' => $isManual
                 ? ['required', 'string', 'max:100']
                 : ['prohibited'],
+            'courier' => [
+                'nullable',
+                Rule::requiredIf($requiresManualCourier),
+                'array',
+            ],
+            'courier.name' => [Rule::requiredIf($requiresManualCourier), 'string', 'max:30'],
+            'courier.service' => [Rule::requiredIf($requiresManualCourier), 'string', 'max:100'],
+            'courier.service_type' => [Rule::requiredIf($requiresManualCourier), 'string', 'max:30'],
+            'courier.cost' => [Rule::requiredIf($requiresManualCourier), 'integer', 'min:0', 'max:4294967295'],
         ];
+    }
+
+    private function isUplineTransit(Trx $trx): bool
+    {
+        $current = $trx;
+        while ((int) $current->trx_parent_trx_id !== 0) {
+            $parent = Trx::query()->find($current->trx_parent_trx_id);
+            if (! $parent) {
+                return false;
+            }
+            $current = $parent;
+        }
+
+        return $current->trx_preorder_fulfillment_mode === 'upline_transit';
     }
 
     /** @return array<string, string> */
@@ -72,6 +106,11 @@ class ShipSaleOrderRequest extends FormRequest
             'pickup_method' => 'metode serah paket',
             'pickup_schedule' => 'jadwal pengambilan paket',
             'tracking_number' => 'nomor resi',
+            'courier' => 'kurir pengiriman',
+            'courier.name' => 'nama kurir',
+            'courier.service' => 'layanan kurir',
+            'courier.service_type' => 'jenis layanan kurir',
+            'courier.cost' => 'ongkos kirim',
         ];
     }
 

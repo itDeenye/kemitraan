@@ -260,6 +260,10 @@
                                             >
                                                 {{ item.product?.code }}
                                             </div>
+                                            <div class="text-caption text-medium-emphasis">
+                                                Poin Bulanan: {{ formatPrice(item.monthly_points ?? 0) }} ·
+                                                Poin Tahunan: {{ formatPrice(item.annual_points ?? 0) }}
+                                            </div>
                                         </td>
                                         <td class="text-right text-body-2">
                                             {{ formatPrice(item.price) }}
@@ -277,6 +281,14 @@
                             </v-table>
                             <v-divider />
                             <div class="pa-4">
+                                <div class="d-flex justify-space-between mb-2 text-body-2">
+                                    <span class="text-medium-emphasis">Total Poin Bulanan</span>
+                                    <span class="font-weight-medium">{{ formatPrice(order.totals?.total_monthly_points ?? 0) }}</span>
+                                </div>
+                                <div class="d-flex justify-space-between mb-2 text-body-2">
+                                    <span class="text-medium-emphasis">Total Poin Tahunan</span>
+                                    <span class="font-weight-medium">{{ formatPrice(order.totals?.total_annual_points ?? 0) }}</span>
+                                </div>
                                 <div
                                     class="d-flex justify-space-between mb-2 text-body-2"
                                 >
@@ -939,6 +951,8 @@ const printDocument = async (
                                                     batch.batch_number,
                                                 expiry_date: batch.expiry_date,
                                                 quantity: batch.quantity,
+                                                monthly_points: batch.quantity * (item.product.monthly_points ?? 0),
+                                                annual_points: batch.quantity * (item.product.annual_points ?? 0),
                                                 price: item.price,
                                                 discount_percent:
                                                     item.discount_percent || 0,
@@ -959,6 +973,8 @@ const printDocument = async (
                                                 item.product?.expiry_date ||
                                                 null,
                                             quantity: item.quantity,
+                                            monthly_points: item.monthly_points ?? 0,
+                                            annual_points: item.annual_points ?? 0,
                                             price: item.price,
                                             discount_percent:
                                                 item.discount_percent || 0,
@@ -972,7 +988,7 @@ const printDocument = async (
                                 <tr>
                                     <td style="padding: 4px;">${row.quantity} Pcs</td>
                                     <td style="padding: 4px;">${escapeHtml(row.code)}</td>
-                                    <td style="padding: 4px;">${escapeHtml(row.name)}</td>
+                                    <td style="padding: 4px;">${escapeHtml(row.name)}<br>Poin Bulanan: ${formatPrice(row.monthly_points)} · Poin Tahunan: ${formatPrice(row.annual_points)}</td>
                                     <td style="padding: 4px;">${escapeHtml(row.batch_number || "-")}</td>
                                     <td style="padding: 4px;">${row.expiry_date ? escapeHtml(formatDate(row.expiry_date)) : "-"}</td>
                                     <td style="text-align: right; padding: 4px;">Rp${formatPrice(row.price)}</td>
@@ -1008,6 +1024,8 @@ const printDocument = async (
                         </div>
                         <div style="width: 20%; font-size: 10px; padding-left: 10px;">
                             <table style="width: 100%; text-align: right;">
+                                <tr><td style="text-align: left;" colspan="2">Total Poin Bulanan</td><td>${formatPrice(data.totals?.total_monthly_points ?? 0)}</td></tr>
+                                <tr><td style="text-align: left;" colspan="2">Total Poin Tahunan</td><td>${formatPrice(data.totals?.total_annual_points ?? 0)}</td></tr>
                                 <tr><td style="text-align: left;">Gross</td><td>Rp</td><td>${formatPrice(data.totals?.product_total || 0)}</td></tr>
                                 <tr><td style="text-align: left;">Discount</td><td>Rp</td><td>${formatPrice(data.totals?.discount_value || 0)}</td></tr>
                                 <tr><td style="text-align: left;">Subtotal</td><td>Rp</td><td>${formatPrice((data.totals?.product_total || 0) - (data.totals?.discount_value || 0))}</td></tr>

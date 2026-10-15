@@ -7,6 +7,7 @@ use App\Models\Member;
 use App\Models\MemberAccount;
 use App\Models\MemberAddress;
 use App\Models\MemberBankAccount;
+use App\Support\MediaUrl;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -15,19 +16,31 @@ class MemberAccountService
 {
     public function updateProfile(Member $member, array $data): void
     {
-        $member->update([
+        $attributes = [
             'member_name' => $data['name'],
             'member_email' => $data['email'] ?? '',
             'member_mobilephone' => $data['phone'] ?? '',
             'member_gender' => $data['gender'] ?? 'Laki-laki',
             'member_birth_date' => $data['birth_date'] ?? null,
             'member_identity_type' => $data['identity_type'] ?? $member->member_identity_type,
-            'member_identity_no' => $data['identity_no'] ?? '',
+            'member_identity_no' => array_key_exists('identity_no', $data)
+                ? ($data['identity_no'] ?? '') : $member->member_identity_no,
             'member_nib' => $data['nib'] ?? null,
             'member_instagram' => $data['instagram'] ?? null,
             'member_facebook' => $data['facebook'] ?? null,
             'member_tiktok' => $data['tiktok'] ?? null,
-        ]);
+        ];
+        foreach (['identity_image_url' => 'member_identity_image', 'image_url' => 'member_image'] as $input => $column) {
+            if (array_key_exists($input, $data)) {
+                $url = $input === 'identity_image_url'
+                    ? MediaUrl::canonicalPrivateUrl($data[$input]) : $data[$input];
+                $attributes[$column] = $url;
+                $attributes[$column.'_filename'] = $url === null
+                    ? ($input === 'identity_image_url' ? '' : null)
+                    : basename((string) parse_url($url, PHP_URL_PATH));
+            }
+        }
+        $member->update($attributes);
     }
 
     public function updateProfilePhoto(Member $member, ?string $imageUrl): void

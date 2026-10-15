@@ -58,6 +58,7 @@ use App\Http\Controllers\Api\V1\Member\Inventory\StockAdjustmentController as Me
 use App\Http\Controllers\Api\V1\Member\Inventory\StockController as MemberStockController;
 use App\Http\Controllers\Api\V1\Member\Inventory\StockMutationController as MemberStockMutationController;
 use App\Http\Controllers\Api\V1\Member\Network\GenealogyController as MemberGenealogyController;
+use App\Http\Controllers\Api\V1\Member\Network\RegistrationApprovalController as MemberRegistrationApprovalController;
 use App\Http\Controllers\Api\V1\Member\Network\RegistrationController as MemberRegistrationController;
 use App\Http\Controllers\Api\V1\Member\Purchase\CatalogController as MemberCatalogController;
 use App\Http\Controllers\Api\V1\Member\Purchase\GoodsReceiveController as MemberGoodsReceiveController;
@@ -68,12 +69,14 @@ use App\Http\Controllers\Api\V1\Member\Reward\AnnualRewardController as MemberAn
 use App\Http\Controllers\Api\V1\Member\Reward\MonthlyRewardController as MemberMonthlyRewardController;
 use App\Http\Controllers\Api\V1\Member\Reward\SharingProfitController as MemberSharingProfitController;
 use App\Http\Controllers\Api\V1\Member\Reward\StockistRewardController as MemberStockistRewardController;
+use App\Http\Controllers\Api\V1\Member\SalesOrder\ArrivalController as MemberSaleArrivalController;
 use App\Http\Controllers\Api\V1\Member\SalesOrder\CustomerController as MemberSaleCustomerController;
 use App\Http\Controllers\Api\V1\Member\SalesOrder\OrderController as MemberSaleOrderController;
 use App\Http\Controllers\Api\V1\Member\SalesOrder\PaymentController as MemberSalePaymentController;
 use App\Http\Controllers\Api\V1\Member\SalesOrder\ShippingController as MemberSaleShippingController;
 use App\Http\Controllers\Api\V1\Member\Shipping\ShippingController as MemberShippingController;
 use App\Http\Controllers\Api\V1\Reference\ReferenceController;
+use App\Http\Controllers\Api\V1\VersionController;
 use Illuminate\Support\Facades\Route;
 
 $mediaUploadRoutes = function (): void {
@@ -87,6 +90,8 @@ $mediaUploadRoutes = function (): void {
 };
 
 Route::prefix('v1')->middleware('throttle:dny-api')->group(function () use ($mediaUploadRoutes): void {
+    Route::get('version', VersionController::class)->name('api.v1.version');
+
     Route::post('callbacks/stc/shipping', StcShippingController::class);
     Route::post('callbacks/supply-chain/sales/approved', SupplyChainSaleApprovalController::class)
         ->name('api.v1.callbacks.supply-chain.sales.approved');
@@ -135,6 +140,8 @@ Route::prefix('v1')->middleware('throttle:dny-api')->group(function () use ($med
             Route::get('dashboard/analytics', [AdminDashboardController::class, 'index']);
             Route::get('user-analytics/statistics', [AdminDashboardController::class, 'statistics']);
 
+            Route::patch('product/categories/{category}/move-up', [AdminProductCategoryController::class, 'moveUp']);
+            Route::patch('product/categories/{category}/move-down', [AdminProductCategoryController::class, 'moveDown']);
             Route::apiResource('product/categories', AdminProductCategoryController::class)
                 ->parameters(['categories' => 'category']);
             Route::get('product/prices', [AdminProductPriceController::class, 'index']);
@@ -338,6 +345,10 @@ Route::prefix('v1')->middleware('throttle:dny-api')->group(function () use ($med
             Route::get('network/registrations', [MemberRegistrationController::class, 'index']);
             Route::post('network/registrations', [MemberRegistrationController::class, 'store']);
             Route::get('network/registrations/{registration}', [MemberRegistrationController::class, 'show']);
+            Route::get('network/registration-approvals', [MemberRegistrationApprovalController::class, 'index']);
+            Route::get('network/registration-approvals/{registration}', [MemberRegistrationApprovalController::class, 'show']);
+            Route::post('network/registration-approvals/{registration}/approve', [MemberRegistrationApprovalController::class, 'approve']);
+            Route::post('network/registration-approvals/{registration}/reject', [MemberRegistrationApprovalController::class, 'reject']);
             Route::get('inventory/stocks', [MemberStockController::class, 'index']);
             Route::get('inventory/mutations', [MemberStockMutationController::class, 'index']);
             Route::get('inventory/adjustments', [MemberStockAdjustmentController::class, 'index']);
@@ -382,6 +393,8 @@ Route::prefix('v1')->middleware('throttle:dny-api')->group(function () use ($med
             Route::post('sales/orders/{trx}/payment/approve', [MemberSalePaymentController::class, 'approve']);
             Route::post('sales/orders/{trx}/payment/reject', [MemberSalePaymentController::class, 'reject']);
             Route::post('sales/orders/{trx}/ship', [MemberSaleShippingController::class, 'store']);
+            Route::get('sales/orders/{trx}/couriers', [MemberSaleShippingController::class, 'couriers']);
+            Route::post('sales/orders/{trx}/confirm-arrival', [MemberSaleArrivalController::class, 'store']);
         });
     });
 });

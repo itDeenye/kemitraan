@@ -512,9 +512,9 @@ const isItemSlot = (name: string): boolean => {
 const getCellAlignClass = (slotName: string): string => {
     const key = slotName.replace("item.", "");
     const col = activeHeaders.value.find((c: any) => c.key === key);
-    const align = col?.align || "start";
+    const align = col?.cellAlign || col?.align || "start";
     if (align === "center") return "justify-center";
-    if (align === "end") return "justify-end";
+    if (align === "end" || align === "right") return "justify-end";
     return "justify-start";
 };
 

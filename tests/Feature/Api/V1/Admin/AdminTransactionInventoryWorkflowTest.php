@@ -27,6 +27,10 @@ class AdminTransactionInventoryWorkflowTest extends TestCase
     {
         $this->actingAs($this->createAdministrator(), 'admin_api');
         $this->createData();
+        Trx::query()->findOrFail(1)->details()->update([
+            'trx_detail_product_monthly_points' => 3,
+            'trx_detail_product_annual_points' => 7,
+        ]);
         Trx::query()->findOrFail(1)->update([
             'trx_status' => 'processing',
             'trx_supply_chain_code' => 'C0126090000004',
@@ -50,6 +54,8 @@ class AdminTransactionInventoryWorkflowTest extends TestCase
         $this->getJson('/api/v1/admin/inventory/shipments?filter[buyer.type]=distributor')
             ->assertOk()
             ->assertJsonPath('data.results.0.invoice_number', 'C0126090000004')
+            ->assertJsonPath('data.results.0.totals.total_monthly_points', 6)
+            ->assertJsonPath('data.results.0.totals.total_annual_points', 14)
             ->assertJsonPath('data.results.0.supply_chain_status', 'completed')
             ->assertJsonPath('data.results.0.seller.origin.name', 'Gudang Pusat')
             ->assertJsonPath('data.results.0.seller.origin.province.name', 'DKI Jakarta')
@@ -62,12 +68,20 @@ class AdminTransactionInventoryWorkflowTest extends TestCase
         $this->getJson('/api/v1/admin/inventory/shipments/1')
             ->assertOk()
             ->assertJsonPath('data.invoice_number', 'C0126090000004')
+            ->assertJsonPath('data.details.0.monthly_points', 6)
+            ->assertJsonPath('data.details.0.annual_points', 14)
             ->assertJsonPath('data.seller.origin.phone', '0211234567')
             ->assertJsonPath('data.seller.origin.subdistrict.id', 31710101)
             ->assertJsonPath('data.buyer.destination.phone', '081234567890')
             ->assertJsonPath('data.buyer.destination.code', 'DST-001')
             ->assertJsonPath('data.buyer.destination.district.name', 'Gubeng')
             ->assertJsonPath('data.buyer.destination.postal_code', '60286');
+
+        $this->createPayment();
+        $this->getJson('/api/v1/admin/transactions/payments?filter[buyer.type]=distributor')
+            ->assertOk()
+            ->assertJsonPath('data.results.0.totals.total_monthly_points', 6)
+            ->assertJsonPath('data.results.0.totals.total_annual_points', 14);
 
         DB::table('shipping_courier_manual')->where('shipping_courier_manual_ref_id', 1)->update([
             'shipping_courier_manual_delivery_note_number' => null,
@@ -290,6 +304,109 @@ class AdminTransactionInventoryWorkflowTest extends TestCase
             ->assertJsonCount(1, 'data.results')
             ->assertJsonPath('data.results.0.transaction.code', 'TRX-001')
             ->assertJsonPath('data.results.0.transaction.status', 'waiting_payment');
+    }
+
+    public function test_payment_list_does_not_multiply_payments_by_return_shipping_or_spread_rows(): void
+    {
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $this->createData();
+        $this->createPayment();
+        DB::table('shipping_courier_manual')->update(['shipping_courier_manual_price' => 5000]);
+
+        $manual = (array) DB::table('shipping_courier_manual')->first();
+        unset($manual['shipping_courier_manual_id']);
+        foreach (['return_company', 'return_replacement'] as $referenceType) {
+            DB::table('shipping_courier_manual')->insert([
+                ...$manual,
+                'shipping_courier_manual_ref_type' => $referenceType,
+                'shipping_courier_manual_price' => 99000,
+            ]);
+            foreach (['express', 'instant'] as $type) {
+                $table = "shipping_courier_{$type}";
+                $payload = [
+                    "{$table}_ref_type" => $referenceType,
+                    "{$table}_ref_id" => 1,
+                    "{$table}_cost" => 99000,
+                    "{$table}_origin_address" => 'Alamat retur',
+                    "{$table}_destination_address" => 'Alamat perusahaan',
+                ];
+                if ($type === 'express') {
+                    $payload["{$table}_origin_subdistrict_id"] = 0;
+                    $payload["{$table}_destination_subdistrict_id"] = 0;
+                }
+                DB::table($table)->insert($payload);
+            }
+        }
+        foreach ([10000, 20000] as $amount) {
+            DB::table('trx_spread_payment')->insert([
+                'trx_spread_payment_trx_id' => 1,
+                'trx_spread_payment_upline_id' => 1,
+                'trx_spread_payment_member_id' => 1,
+                'trx_spread_payment_bank_id' => 1,
+                'trx_spread_payment_amount' => $amount,
+                'trx_spread_payment_status' => 'submitted',
+                'trx_spread_payment_created_datetime' => now(),
+            ]);
+        }
+        $payment = (array) DB::table('trx_payment_transfer')->first();
+        DB::table('trx_payment_transfer')->insert([...$payment, 'payment_transfer_id' => 2]);
+
+        $this->getJson('/api/v1/admin/transactions/payments?limit=1&page=1')
+            ->assertOk()
+            ->assertJsonPath('data.pagination.total_data', 2)
+            ->assertJsonCount(1, 'data.results')
+            ->assertJsonPath('data.results.0.payment.id', 2)
+            ->assertJsonPath('data.results.0.totals.shipping_cost', 5000)
+            ->assertJsonPath('data.results.0.payment.spread_payment.amount', 10000);
+
+        $this->getJson('/api/v1/admin/transactions/payments?limit=1&page=2')
+            ->assertOk()
+            ->assertJsonPath('data.pagination.total_data', 2)
+            ->assertJsonPath('data.results.0.payment.id', 1);
+    }
+
+    public function test_payment_verification_badge_matches_the_actionable_page_filters(): void
+    {
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $this->createData();
+        $this->createPayment();
+        Trx::query()->findOrFail(1)->update(['trx_status' => 'waiting_payment_approval']);
+        $payment = (array) DB::table('trx_payment_transfer')->first();
+        foreach (['pending', 'approved', 'rejected'] as $index => $status) {
+            DB::table('trx_payment_transfer')->insert([
+                ...$payment,
+                'payment_transfer_id' => $index + 2,
+                'payment_transfer_approval_status' => $status,
+            ]);
+        }
+        foreach ([['agent', 'warehouse'], ['distributor', 'agent']] as $index => [$buyer, $seller]) {
+            $id = $index + 2;
+            DB::table('trx')->insert([
+                ...$this->trxPayload(),
+                'trx_id' => $id,
+                'trx_code' => "TRX-OTHER-{$id}",
+                'trx_buyer_type' => $buyer,
+                'trx_seller_type' => $seller,
+                'trx_status' => 'waiting_payment_approval',
+            ]);
+            DB::table('trx_payment_transfer')->insert([
+                ...$payment,
+                'payment_transfer_id' => $id + 3,
+                'payment_transfer_trx_id' => $id,
+            ]);
+        }
+
+        $list = $this->getJson('/api/v1/admin/transactions/payments'
+            .'?filter[buyer.type]=distributor&filter[seller.type]=warehouse'
+            .'&filter[status]=submitted&filter[transaction.status][eq]=waiting_payment_approval')
+            ->assertOk()
+            ->assertJsonCount(1, 'data.results')
+            ->assertJsonPath('data.pagination.total_data', 1)
+            ->assertJsonPath('data.results.0.payment.id', 1);
+        $summary = $this->getJson('/api/v1/admin/dashboard/action-summary')->assertOk();
+        $badge = collect($summary->json('data.menus'))
+            ->firstWhere('route', '/admin/transactions/payment-verification')['count'];
+        $this->assertSame($list->json('data.pagination.total_data'), $badge);
     }
 
     public function test_preorder_type_and_origin_chain_are_consistent_in_admin_transaction_details(): void

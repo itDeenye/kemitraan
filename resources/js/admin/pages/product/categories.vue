@@ -34,12 +34,37 @@
             <template #item.actions="{ item }">
                 <div class="d-flex ga-2">
                     <v-btn
+                        v-tooltip:top="'Naikkan Urutan'"
+                        icon="mdi-arrow-up"
+                        variant="text"
+                        size="small"
+                        color="success"
+                        :loading="isReorderingCategory(item, 'up')"
+                        :disabled="
+                            reorderingCategory !== null || item.sort_order <= 1
+                        "
+                        @click="handleMoveOrder(item, 'up')"
+                    ></v-btn>
+                    <v-btn
+                        v-tooltip:top="'Turunkan Urutan'"
+                        icon="mdi-arrow-down"
+                        variant="text"
+                        size="small"
+                        color="primary"
+                        :loading="isReorderingCategory(item, 'down')"
+                        :disabled="
+                            reorderingCategory !== null || isLastCategory(item)
+                        "
+                        @click="handleMoveOrder(item, 'down')"
+                    ></v-btn>
+                    <v-btn
                         v-tooltip:top="'Edit Kategori'"
                         icon="mdi-pencil-outline"
                         variant="outlined"
                         size="small"
                         color="info"
                         class="rounded"
+                        :disabled="reorderingCategory !== null"
                         @click="openFormDialog(item)"
                     ></v-btn>
                     <v-btn
@@ -49,6 +74,7 @@
                         size="small"
                         color="error"
                         class="rounded"
+                        :disabled="reorderingCategory !== null"
                         @click="confirmDelete(item)"
                     ></v-btn>
                 </div>
@@ -62,7 +88,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { onMounted, ref } from "vue";
 import BaseDataTable from "@/shared/components/BaseDataTable.vue";
 import BaseConfirm from "@/shared/components/BaseConfirm.vue";
 import BaseBadge from "@/shared/components/BaseBadge.vue";
@@ -77,6 +103,11 @@ const search = ref("");
 const categoryTable = ref<InstanceType<typeof BaseDataTable> | null>(null);
 const categoryFormRef = ref<InstanceType<typeof CategoryForm> | null>(null);
 const confirmDialogRef = ref<InstanceType<typeof BaseConfirm> | null>(null);
+const totalCategories = ref(0);
+const reorderingCategory = ref<{
+    id: number;
+    direction: "up" | "down";
+} | null>(null);
 
 const headers = [
     {
@@ -122,6 +153,7 @@ const headers = [
         key: "actions",
         align: "center",
         sortable: false,
+        width: 220,
     },
 ];
 
@@ -129,8 +161,68 @@ const openFormDialog = (category?: Category) => {
     categoryFormRef.value?.open(category);
 };
 
+const refreshCategoryCount = async () => {
+    try {
+        const categories = await categoryService.getCategories({
+            pagination: false,
+        });
+        totalCategories.value = categories.length;
+    } catch (error) {
+        console.error("Gagal memuat jumlah kategori", error);
+    }
+};
+
 const refreshTable = () => {
     categoryTable.value?.refresh();
+    void refreshCategoryCount();
+};
+
+const isLastCategory = (category: Category) => {
+    return (
+        totalCategories.value > 0 &&
+        category.sort_order >= totalCategories.value
+    );
+};
+
+const isReorderingCategory = (category: Category, direction: "up" | "down") => {
+    return (
+        reorderingCategory.value?.id === category.id &&
+        reorderingCategory.value.direction === direction
+    );
+};
+
+const handleMoveOrder = async (
+    category: Category,
+    direction: "up" | "down",
+) => {
+    if (
+        reorderingCategory.value !== null ||
+        (direction === "up" && category.sort_order <= 1) ||
+        (direction === "down" && isLastCategory(category))
+    ) {
+        return;
+    }
+
+    reorderingCategory.value = { id: category.id, direction };
+
+    try {
+        if (direction === "up") {
+            await categoryService.moveCategoryUp(category.id);
+        } else {
+            await categoryService.moveCategoryDown(category.id);
+        }
+
+        refreshTable();
+        snackbar.showMessage("Urutan kategori berhasil diubah", "success");
+    } catch (error: any) {
+        console.error("Gagal mengubah urutan kategori", error);
+        snackbar.showMessage(
+            error.response?.data?.message || "Gagal mengubah urutan kategori",
+            "error",
+        );
+    } finally {
+        reorderingCategory.value = null;
+    }
 };
 
 const confirmDelete = async (category: Category) => {
@@ -153,4 +245,6 @@ const confirmDelete = async (category: Category) => {
         }
     }
 };
+
+onMounted(refreshCategoryCount);
 </script>

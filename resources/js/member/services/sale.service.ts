@@ -90,6 +90,18 @@ const shipOrder = async (
     return response.data;
 };
 
+const confirmArrival = async (
+    id: number | string,
+): Promise<SingleResponse<SaleOrderDetail>> => {
+    const response = await api.post(`/member/sales/orders/${id}/confirm-arrival`);
+    return response.data;
+};
+
+const getShipmentCouriers = async (id: number | string): Promise<SingleResponse<any>> => {
+    const response = await api.get(`/member/sales/orders/${id}/couriers`);
+    return response.data;
+};
+
 const getExpressRates = async (payload: ShippingRatePayload): Promise<SingleResponse<any>> => {
     const response = await api.post(`/member/shipping/express/rates`, payload);
     return response.data;
@@ -108,5 +120,7 @@ export default {
     approvePayment,
     rejectPayment,
     shipOrder,
+    confirmArrival,
+    getShipmentCouriers,
     getExpressRates,
 };

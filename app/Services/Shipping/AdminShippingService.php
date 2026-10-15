@@ -163,8 +163,10 @@ class AdminShippingService
     public function expressCouriers(Trx $trx, array $data): array
     {
         $order = Trx::query()->with('shippingExpress')->findOrFail($trx->getKey());
-        if ($order->trx_status !== 'reship_required') {
-            throw new ProcessException('Pilihan kurir ulang hanya tersedia untuk pesanan yang perlu dikirim ulang.');
+        $isInitialTransit = $order->trx_status === 'processing'
+            && $this->preorderChainService->isUplineTransitOrder($order);
+        if ($order->trx_status !== 'reship_required' && ! $isInitialTransit) {
+            throw new ProcessException('Pilihan kurir hanya tersedia untuk pengiriman transit atau kirim ulang.');
         }
         if ($order->trx_shipping_method !== 'courier_express') {
             throw new ProcessException('Pilihan kurir ulang hanya tersedia untuk pengiriman ekspres.');
@@ -193,10 +195,12 @@ class AdminShippingService
         try {
             $this->validateShipmentItems($trx, $items);
             $isReship = $trx->trx_status === 'reship_required';
-            $selectedCourier = $isReship
+            $requiresCourierSelection = $isReship
+                || $this->preorderChainService->isUplineTransitOrder($trx);
+            $selectedCourier = $requiresCourierSelection
                 ? $this->validatedExpressCourier($trx, $courier ?? [], $pickupMethod)
                 : null;
-            $storedCourier = ! $isReship && $this->storedExpressCourierNeedsRepair($trx)
+            $storedCourier = ! $requiresCourierSelection && $this->storedExpressCourierNeedsRepair($trx)
                 ? $this->validatedStoredExpressCourier($trx, $pickupMethod)
                 : null;
             if ($selectedCourier !== null && $trx->shippingExpress) {

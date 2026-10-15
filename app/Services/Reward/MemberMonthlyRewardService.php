@@ -11,6 +11,7 @@ use App\Models\MemberPointTransaction;
 use App\Models\RefBank;
 use App\Models\RewardPointMonthly;
 use App\Support\BusinessConfig;
+use App\Support\PointCalculation;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -317,16 +318,18 @@ class MemberMonthlyRewardService
             'code' => (string) ($member?->level?->member_level_code ?? ''),
             'name' => (string) ($member?->level?->member_level_name ?? ''),
         ];
-        $quantity = (int) MemberPointTransaction::query()
+        $ledgerPoints = MemberPointTransaction::query()
             ->where('member_point_transaction_member_id', $memberId)
             ->whereBetween('member_point_transaction_approved_datetime', [
                 $period->startOfMonth(),
                 $period->endOfMonth(),
             ])
-            ->sum('member_point_transaction_quantity');
+            ->selectRaw('SUM(COALESCE(member_point_transaction_monthly_points, member_point_transaction_quantity)) as total_points')
+            ->value('total_points');
+        $quantity = $ledgerPoints === null ? 0 : PointCalculation::integer($ledgerPoints);
         $source = 'realtime';
 
-        if ($quantity === 0) {
+        if ($ledgerPoints === null) {
             $snapshot = RewardPointMonthly::query()
                 ->where('reward_point_monthly_member_id', $memberId)
                 ->where('reward_point_monthly_year', $year)
@@ -367,7 +370,7 @@ class MemberMonthlyRewardService
             'remaining_points' => max(0, $minimumQuantity - $quantity),
             'is_qualified' => $quantity >= $minimumQuantity,
             'monthly_reward' => $quantity >= $minimumQuantity
-                ? $quantity * $pointValue
+                ? PointCalculation::multiply($quantity, $pointValue)
                 : 0,
             'total_points' => $quantity,
             'source' => $source,

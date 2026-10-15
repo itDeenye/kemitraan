@@ -242,6 +242,37 @@ class MemberMonthlyRewardTest extends TestCase
             ->assertJsonPath('data.summary.is_qualified', false);
     }
 
+    public function test_zero_monthly_points_do_not_fall_back_to_an_older_reward_snapshot(): void
+    {
+        $account = $this->createMemberAccount('distributor');
+        $this->actingAs($account, 'member_api');
+        $memberId = $account->member_account_member_id;
+        RewardPointMonthly::query()->create([
+            'reward_point_monthly_member_id' => $memberId,
+            'reward_point_monthly_member_level_id' => 1,
+            'reward_point_monthly_year' => now()->year,
+            'reward_point_monthly_month' => now()->month,
+            'reward_point_monthly_total_qty' => 100,
+            'reward_point_monthly_bonus_value' => 500000,
+        ]);
+        MemberPointTransaction::query()->create([
+            'member_point_transaction_member_id' => $memberId,
+            'member_point_transaction_trx_id' => 1003,
+            'member_point_transaction_quantity' => 10,
+            'member_point_transaction_monthly_points' => 0,
+            'member_point_transaction_annual_points' => 50,
+            'member_point_transaction_year' => now()->year,
+            'member_point_transaction_month' => now()->month,
+            'member_point_transaction_approved_datetime' => now(),
+        ]);
+
+        $this->getJson('/api/v1/member/rewards/monthly/growth')
+            ->assertOk()
+            ->assertJsonPath('data.summary.total_points', 0)
+            ->assertJsonPath('data.summary.monthly_reward', 0)
+            ->assertJsonPath('data.summary.source', 'realtime');
+    }
+
     public function test_downline_report_uses_period_upline_snapshot_instead_of_current_parent(): void
     {
         $distributorAccount = $this->createMemberAccount('distributor');

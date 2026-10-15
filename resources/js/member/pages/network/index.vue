@@ -1,7 +1,20 @@
 <template>
     <div class="screen-body">
+        <CategorySlider
+            :categories="networkSectionFilters"
+            :model-value="activeSection"
+            :show-all="false"
+            aria-label="Menu jaringan mitra"
+            item-label="menu jaringan"
+            @update:model-value="handleSectionChange"
+        />
+
         <div
-            v-if="context && context.breadcrumbs.length > 1"
+            v-if="
+                activeSection === 'downline' &&
+                context &&
+                context.breadcrumbs.length > 1
+            "
             class="breadcrumbs-row"
         >
             <button
@@ -15,12 +28,12 @@
             </button>
         </div>
 
-        <div class="search-box mb-3">
+        <div v-if="activeSection !== 'form'" class="search-box mb-3">
             <v-icon icon="mdi-magnify" size="small" />
             <input
                 v-model="searchQuery"
                 type="text"
-                placeholder="Cari kode atau nama mitra..."
+                :placeholder="searchPlaceholder"
                 style="
                     background: transparent;
                     border: none;
@@ -31,21 +44,15 @@
             />
         </div>
 
-        <button
-            v-if="context?.can_register"
-            class="primary-button block"
-            style="margin-top: 10px"
-            @click="router.push('/member/network/registrations')"
+        <div
+            v-if="activeSection === 'downline' && loading"
+            class="empty-state"
         >
-            <v-icon icon="mdi-plus" size="14" /> Pendaftaran Mitra
-        </button>
-
-        <div v-if="loading" class="empty-state">
             <v-progress-circular indeterminate color="var(--wine)" size="32" />
             <span class="soft-label mt-2">Memuat jaringan...</span>
         </div>
 
-        <template v-else>
+        <template v-else-if="activeSection === 'downline'">
             <div class="section-heading mt-6">
                 <h3>Daftar Downline</h3>
                 <!-- <span>{{ members.length }} mitra</span> -->
@@ -71,6 +78,11 @@
                     <button
                         class="tree-toggle"
                         type="button"
+                        :aria-expanded="
+                            member.has_downlines
+                                ? expandedIds.includes(member.id)
+                                : undefined
+                        "
                         @click="toggleMember(member)"
                     >
                         <div
@@ -138,16 +150,12 @@
                         <span v-if="member.has_downlines" class="badge green">
                             {{ member.total_direct_downlines }} Downline
                         </span>
-                        <span
+                        <v-icon
                             v-if="member.has_downlines"
-                            class="tree-chevron"
-                            :style="{
-                                transform: expandedIds.includes(member.id)
-                                    ? 'rotate(90deg)'
-                                    : 'none',
-                            }"
-                            >›</span
-                        >
+                            class="navigation-chevron tree-chevron"
+                            icon="mdi-chevron-right"
+                            size="24"
+                        />
                     </button>
 
                     <div
@@ -239,18 +247,19 @@
                                         />
                                     </div>
                                 </div>
-                                <div class="row-side">
+                                <div
+                                    v-if="child.has_downlines"
+                                    class="row-side network-row-side"
+                                >
                                     <span
-                                        v-if="child.has_downlines"
                                         class="badge green"
                                     >
                                         {{ child.total_direct_downlines }}
                                     </span>
                                     <v-icon
-                                        v-if="child.has_downlines"
+                                        class="navigation-chevron"
                                         icon="mdi-chevron-right"
-                                        size="16"
-                                        color="var(--muted)"
+                                        size="24"
                                     />
                                 </div>
                             </div>
@@ -286,14 +295,24 @@
                 </button>
             </div>
         </template>
+
+        <RegistrationModule
+            v-else
+            :embedded="true"
+            :tab="registrationTab"
+            :search-query="searchQuery"
+        />
     </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, watch } from "vue";
-import { useRouter } from "vue-router";
+import { computed, ref, reactive, onMounted, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
+import { useAuthStore } from "@/shared/stores/auth";
 import networkService from "@/member/services/network.service";
 import BaseBadge from "@/shared/components/BaseBadge.vue";
+import CategorySlider from "@/member/components/transactions/CategorySlider.vue";
+import RegistrationModule from "@/member/pages/network/registrations/index.vue";
 import type {
     GenealogyMember,
     GenealogyContext,
@@ -301,7 +320,76 @@ import type {
     DataTablePagination,
 } from "@/member/types/network";
 
+type NetworkSection = "downline" | "form" | "history" | "approval";
+
+const route = useRoute();
 const router = useRouter();
+const authStore = useAuthStore();
+const isDistributor = computed(
+    () => authStore.user?.member?.level?.code === "DST",
+);
+
+function resolveSectionFromQuery(): NetworkSection {
+    const requestedSection = Array.isArray(route.query.tab)
+        ? route.query.tab[0]
+        : route.query.tab;
+
+    if (requestedSection === "form" || requestedSection === "history") {
+        return requestedSection;
+    }
+
+    if (requestedSection === "approval" && isDistributor.value) {
+        return "approval";
+    }
+
+    return "downline";
+}
+
+const activeSection = ref<NetworkSection>(resolveSectionFromQuery());
+const registrationTab = computed<"form" | "list" | "approval">(() =>
+    activeSection.value === "history"
+        ? "list"
+        : activeSection.value === "approval"
+          ? "approval"
+          : "form",
+);
+const registrationCounts = ref<{
+    registrations: number | null;
+    approvals: number | null;
+}>({ registrations: null, approvals: null });
+const networkSectionFilters = computed(() => {
+    const filters: Array<{ id: NetworkSection; name: string }> = [
+        { id: "downline", name: "Downline" },
+    ];
+
+    if (!context.value || context.value.can_register) {
+        filters.push({ id: "form", name: "Form Pendaftaran" });
+    }
+
+    filters.push({
+        id: "history",
+        name: `Riwayat Pendaftaran (${registrationCounts.value.registrations ?? "…"})`,
+    });
+
+    if (isDistributor.value) {
+        filters.push({
+            id: "approval",
+            name: `Approval Pendaftaran (${registrationCounts.value.approvals ?? "…"})`,
+        });
+    }
+
+    return filters;
+});
+const searchPlaceholder = computed(() => {
+    if (activeSection.value === "history") {
+        return "Cari nama atau data pendaftar...";
+    }
+    if (activeSection.value === "approval") {
+        return "Cari pendaftaran yang perlu diapproval...";
+    }
+
+    return "Cari kode atau nama mitra...";
+});
 
 const loading = ref(false);
 const searchQuery = ref("");
@@ -318,11 +406,80 @@ let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 watch(searchQuery, (newVal, oldVal) => {
     if (newVal === oldVal) return;
+    if (activeSection.value !== "downline") return;
     if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
     searchDebounceTimer = setTimeout(() => {
         loadGenealogy(1);
     }, 500);
 });
+
+watch([() => route.query.tab, isDistributor], () => {
+    const nextSection = resolveSectionFromQuery();
+    if (activeSection.value !== nextSection) {
+        activeSection.value = nextSection;
+        searchQuery.value = "";
+    }
+});
+
+watch(isDistributor, (hasDistributorAccess, hadDistributorAccess) => {
+    if (hasDistributorAccess && !hadDistributorAccess) {
+        void loadRegistrationCounts();
+    }
+});
+
+function selectSection(section: NetworkSection) {
+    if (section === "approval" && !isDistributor.value) {
+        return;
+    }
+
+    activeSection.value = section;
+    searchQuery.value = "";
+    void router.replace({
+        query: {
+            ...route.query,
+            tab: section === "downline" ? undefined : section,
+        },
+    });
+}
+
+function handleSectionChange(section: NetworkSection | null) {
+    if (section) {
+        selectSection(section);
+    }
+}
+
+async function loadRegistrationCounts() {
+    const registrationCountRequest = networkService
+        .getRegistrations({ page: 1, limit: 1 })
+        .then((data) => data.pagination.total_data)
+        .catch((error) => {
+            console.error("Failed to load registration count:", error);
+            return null;
+        });
+    const approvalCountRequest = isDistributor.value
+        ? networkService
+              .getRegistrationApprovals({
+                  page: 1,
+                  limit: 1,
+                  "filter[distributor_approval_status]": "pending",
+              })
+              .then((data) => data.pagination.total_data)
+              .catch((error) => {
+                  console.error("Failed to load approval count:", error);
+                  return null;
+              })
+        : Promise.resolve(null);
+
+    const [registrations, approvals] = await Promise.all([
+        registrationCountRequest,
+        approvalCountRequest,
+    ]);
+
+    registrationCounts.value = {
+        registrations,
+        approvals: isDistributor.value ? approvals : 0,
+    };
+}
 
 async function loadGenealogy(page = 1, append = false) {
     if (append) loadingMore.value = true;
@@ -404,6 +561,7 @@ function loadMore() {
 
 onMounted(() => {
     loadGenealogy();
+    void loadRegistrationCounts();
 });
 </script>
 
@@ -425,6 +583,12 @@ onMounted(() => {
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s;
+}
+
+.network-row-side {
+    display: flex;
+    align-items: center;
+    gap: 6px;
 }
 
 .breadcrumb-chip.active {

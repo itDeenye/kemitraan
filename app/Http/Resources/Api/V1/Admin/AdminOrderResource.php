@@ -25,6 +25,10 @@ class AdminOrderResource extends ApiResource
             && ! $hasChildTransaction;
         $fulfillmentTrx = $trx ? $this->fulfillmentTransaction($trx) : null;
         $originTrx = $trx ? $this->originTransaction($trx) : null;
+        $requiresInitialCourierSelection = $status === 'processing'
+            && ! $hasChildTransaction
+            && $shippingMethod === 'courier_express'
+            && $originTrx?->trx_preorder_fulfillment_mode === 'upline_transit';
         $trackingTrx = $trx ? $this->trackingTransaction($trx) : null;
         $trackingShippingMethod = (string) ($trackingTrx?->trx_shipping_method ?? $shippingMethod);
         $trackingStatus = (string) ($trackingTrx?->trx_status ?? $status);
@@ -73,6 +77,7 @@ class AdminOrderResource extends ApiResource
             'seller' => $this->seller($trx, $sellerType, $fulfillmentTrx),
             'buyer' => $this->buyer($trx, $buyerType, $fulfillmentTrx, $originTrx),
             'totals' => $trx ? [
+                ...$trx->pointTotals(),
                 'product_total' => (int) $trx->trx_total_price,
                 'discount_percent' => (int) $trx->trx_discount,
                 'discount_value' => (int) $trx->trx_discount_value,
@@ -87,6 +92,8 @@ class AdminOrderResource extends ApiResource
                 'grand_total' => (int) $trx->trx_grand_total_nett_price,
                 'bill_amount' => (int) $trx->trx_bill_amount,
             ] : [
+                'total_monthly_points' => (int) ($this->resource->total_monthly_points ?? 0),
+                'total_annual_points' => (int) ($this->resource->total_annual_points ?? 0),
                 'product_total' => (int) $this->resource->product_total,
                 'discount_percent' => (int) $this->resource->discount_percent,
                 'discount_value' => (int) $this->resource->discount_value,
@@ -114,9 +121,9 @@ class AdminOrderResource extends ApiResource
                 'can_reject_stock_screening' => $canProcessStockScreening,
                 'can_ship' => $canShip,
                 'can_reship' => $status === 'reship_required' && ! $hasChildTransaction,
-                'requires_courier_selection' => $status === 'reship_required'
+                'requires_courier_selection' => ($status === 'reship_required'
                     && ! $hasChildTransaction
-                    && $shippingMethod === 'courier_express',
+                    && $shippingMethod === 'courier_express') || $requiresInitialCourierSelection,
                 'requires_tracking_number' => $canShip
                     && $shippingMethod === 'courier_manual',
                 'requires_pickup_method' => $canShip
@@ -152,6 +159,8 @@ class AdminOrderResource extends ApiResource
                     'id' => (int) $detail->trx_detail_product_id,
                     'code' => $detail->trx_detail_product_code,
                     'name' => $detail->trx_detail_product_name,
+                    'monthly_points' => (int) $detail->trx_detail_product_monthly_points,
+                    'annual_points' => (int) $detail->trx_detail_product_annual_points,
                     'bpom_number' => $detail->trx_detail_product_bpom_number
                         ?: $detail->product?->product_bpom_number,
                     'image' => MediaUrl::publicUrl($detail->product?->product_image),
@@ -173,7 +182,9 @@ class AdminOrderResource extends ApiResource
                     ? (int) $detail->trx_detail_qty
                     : 0,
                 'subtotal' => (int) $detail->trx_detail_nett_price * (int) $detail->trx_detail_qty,
-                'points' => (int) $detail->trx_detail_qty,
+                'points' => $detail->monthlyPoints(),
+                'monthly_points' => $detail->monthlyPoints(),
+                'annual_points' => $detail->annualPoints(),
             ])->values()),
             'payment' => $this->payment($trx),
             'tracking' => $this->tracking(

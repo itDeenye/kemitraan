@@ -11,6 +11,8 @@ use App\Models\RefCountry;
 use App\Models\RefDistrict;
 use App\Models\RefProvince;
 use App\Models\RefSubdistrict;
+use App\Support\MediaUrl;
+use App\Support\MemberIdentity;
 use App\Support\PhoneNumber;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -81,6 +83,15 @@ class SaveMemberRequest extends FormRequest
             'bank_city' => ['prohibited'],
             'bank_branch' => ['prohibited'],
             'image_url' => ['nullable', 'url:http,https', 'max:2048'],
+            'identity_type' => ['sometimes', 'required', Rule::in(MemberIdentity::TYPES)],
+            'identity_no' => [
+                'sometimes', 'required', 'string', 'max:20',
+                Rule::unique((new Member)->getTable(), 'member_identity_no')
+                    ->ignore($memberId, 'member_id')->where(fn ($query) => $query->where('member_status', '!=', 3)),
+            ],
+            'identity_image_url' => ['nullable', 'string', 'max:255'],
+            'nib' => ['nullable', 'string', 'max:20'],
+            'npwp' => ['nullable', 'string', 'max:30'],
             'instagram' => ['nullable', 'string', 'max:100'],
             'facebook' => ['nullable', 'string', 'max:100'],
             'tiktok' => ['nullable', 'string', 'max:100'],
@@ -119,12 +130,23 @@ class SaveMemberRequest extends FormRequest
             'bank_accounts.*.is_active' => 'status rekening',
             'bank_accounts.*.is_default' => 'status rekening default',
             'image_url' => 'tautan foto',
+            'identity_type' => 'jenis identitas',
+            'identity_no' => 'nomor identitas',
+            'identity_image_url' => 'dokumen identitas',
+            'nib' => 'NIB',
+            'npwp' => 'NPWP',
             'status' => 'status mitra',
         ];
     }
 
     protected function prepareForValidation(): void
     {
+        if (is_string($this->input('identity_type'))) {
+            $this->merge(['identity_type' => strtoupper(trim($this->input('identity_type')))]);
+        }
+        if (is_string($this->input('identity_image_url'))) {
+            $this->merge(['identity_image_url' => MediaUrl::canonicalPrivateUrl($this->input('identity_image_url'))]);
+        }
         if ($this->has('mobile_phone')) {
             $this->merge(['mobile_phone' => PhoneNumber::normalize($this->input('mobile_phone'))]);
         }
@@ -147,6 +169,12 @@ class SaveMemberRequest extends FormRequest
     {
         return [
             function (Validator $validator): void {
+                $member = $this->route('member');
+                if ($member instanceof Member) {
+                    MemberIdentity::validateNumber($validator,
+                        $this->input('identity_type', $member->member_identity_type),
+                        $this->input('identity_no', $member->member_identity_no), $member);
+                }
                 $addresses = is_array($this->input('addresses')) ? $this->input('addresses') : [];
                 $bankAccounts = is_array($this->input('bank_accounts')) ? $this->input('bank_accounts') : [];
 

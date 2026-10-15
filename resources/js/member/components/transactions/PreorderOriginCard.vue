@@ -146,14 +146,18 @@
                     </p>
                     <div
                         class="rounded-lg px-3 py-3"
-                        :class="stepStatusClass(step.transaction.status)"
+                        :class="stepStatusClass(step)"
                         style="margin-top: 16px"
                     >
                         <span class="block text-[10px] opacity-75">
                             Status
                         </span>
                         <strong class="text-[11px]">
-                            {{ step.transaction.status_label }}
+                            {{
+                                isProcessingStage(step)
+                                    ? "Diproses"
+                                    : step.transaction.status_label
+                            }}
                         </strong>
                     </div>
                 </div>
@@ -163,14 +167,25 @@
 </template>
 
 <script setup lang="ts">
-import type { SalePreorder } from "@/member/types/sale";
+import type {
+    SalePreorder,
+    SalePreorderChainItem,
+} from "@/member/types/sale";
 import BaseBadge from "@/shared/components/BaseBadge.vue";
 
 defineProps<{
     preorder: SalePreorder | null | undefined;
 }>();
 
-const stepStatusClass = (status: string) => {
+const isProcessingStage = (step: SalePreorderChainItem) =>
+    step.sequence === 3 &&
+    ["shipped", "received"].includes(step.transaction.status);
+
+const stepStatusClass = (step: SalePreorderChainItem) => {
+    const status = isProcessingStage(step)
+        ? "processing"
+        : step.transaction.status;
+
     if (["completed", "received"].includes(status)) {
         return "bg-[#e5f7ee] text-[#147a4f]";
     }

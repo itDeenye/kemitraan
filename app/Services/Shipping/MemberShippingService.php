@@ -279,17 +279,19 @@ class MemberShippingService
      */
     public function transactionExpressRates(Trx $trx, array $couriers = []): array
     {
-        $trx->loadMissing(['shippingExpress', 'details']);
-        $shipping = $trx->shippingExpress;
+        $trx->loadMissing(['shippingExpress', 'shippingManual', 'details']);
+        $isManual = $trx->trx_shipping_method === 'courier_manual';
+        $shipping = $isManual ? $trx->shippingManual : $trx->shippingExpress;
+        $prefix = $isManual ? 'shipping_courier_manual' : 'shipping_courier_express';
         if (! $shipping) {
             throw new ProcessException('Data pengiriman ekspres tidak ditemukan.');
         }
 
         $origin = $this->locationIds(
-            (int) $shipping->shipping_courier_express_origin_subdistrict_id
+            (int) $shipping->{$prefix.'_origin_subdistrict_id'}
         );
         $destination = $this->locationIds(
-            (int) $shipping->shipping_courier_express_destination_subdistrict_id
+            (int) $shipping->{$prefix.'_destination_subdistrict_id'}
         );
         $payload = $this->stcGateway->expressShippingRates([
             'client_id' => (int) config('services.stc.client_id'),
@@ -299,10 +301,14 @@ class MemberShippingService
             'subdistrict_origin' => $origin['subdistrict_id'],
             'destination' => $destination['district_id'],
             'subdistrict_destination' => $destination['subdistrict_id'],
-            'length' => (int) $shipping->shipping_courier_express_package_length,
-            'height' => (int) $shipping->shipping_courier_express_package_height,
-            'width' => (int) $shipping->shipping_courier_express_package_width,
-            'weight' => (int) $shipping->shipping_courier_express_package_weight,
+            'length' => $isManual ? (int) $trx->details->max('trx_detail_product_length')
+                : (int) $shipping->shipping_courier_express_package_length,
+            'height' => $isManual ? (int) $trx->details->sum(
+                fn ($detail): int => (int) $detail->trx_detail_product_height * (int) $detail->trx_detail_qty,
+            ) : (int) $shipping->shipping_courier_express_package_height,
+            'width' => $isManual ? (int) $trx->details->max('trx_detail_product_width')
+                : (int) $shipping->shipping_courier_express_package_width,
+            'weight' => (int) $shipping->{$prefix.'_package_weight'},
             'courier' => $couriers,
         ]);
         $details = $payload['details'];

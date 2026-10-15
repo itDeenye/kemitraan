@@ -3,8 +3,9 @@
 use App\Http\Controllers\TelescopeAuthController;
 use App\Http\Middleware\AuthenticateTelescope;
 use Illuminate\Support\Facades\Route;
+use Laravel\Telescope\TelescopeServiceProvider;
 
-if (app()->environment(['local', 'testing']) && class_exists(\Laravel\Telescope\TelescopeServiceProvider::class)) {
+if (app()->environment(['local', 'testing']) && class_exists(TelescopeServiceProvider::class)) {
     Route::get('/telescope-login', [TelescopeAuthController::class, 'show'])
         ->name('telescope.login');
     Route::post('/telescope-login', [TelescopeAuthController::class, 'login'])
@@ -27,6 +28,8 @@ if (app()->environment(['local', 'testing']) && class_exists(\Laravel\Telescope\
 | Middleware auth/role akan ditambahkan nanti oleh BE developer.
 |
 */
+
+Route::view('/version', 'version')->name('version');
 
 // Admin SPA — harus didefinisikan secara spesifik
 Route::get('/admin/{any?}', function () {

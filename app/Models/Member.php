@@ -32,6 +32,7 @@ class Member extends Model
         'member_identity_image',
         'member_identity_image_filename',
         'member_nib',
+        'member_npwp',
         'member_image',
         'member_image_filename',
         'member_instagram',
@@ -58,6 +59,13 @@ class Member extends Model
     public function accounts(): HasMany
     {
         return $this->hasMany(MemberAccount::class, 'member_account_member_id', 'member_id');
+    }
+
+    public function approvedRegistration(): HasOne
+    {
+        return $this->hasOne(MemberRegistration::class, 'member_registration_member_id', 'member_id')
+            ->where('member_registration_status', 'approved')
+            ->latestOfMany('member_registration_id');
     }
 
     public function parent(): BelongsTo

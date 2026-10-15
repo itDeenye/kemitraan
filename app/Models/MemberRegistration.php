@@ -2,21 +2,33 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class MemberRegistration extends Model
 {
+    public const ADMIN_READY_APPROVAL_STATUSES = ['not_required', 'approved'];
+
     protected $table = 'member_registration';
 
     protected $primaryKey = 'member_registration_id';
 
     public $timestamps = false;
 
+    protected $attributes = [
+        'member_registration_distributor_member_id' => 0,
+        'member_registration_distributor_approval_status' => 'not_required',
+    ];
+
     protected $fillable = [
         'member_registration_member_level_id',
         'member_registration_upline_member_id',
         'member_registration_submitter_member_id',
+        'member_registration_distributor_member_id',
+        'member_registration_distributor_approval_status',
+        'member_registration_distributor_approval_note',
+        'member_registration_distributor_approval_datetime',
         'member_registration_member_id',
         'member_registration_name',
         'member_registration_email',
@@ -40,6 +52,10 @@ class MemberRegistration extends Model
         'member_registration_identity_image',
         'member_registration_identity_image_filename',
         'member_registration_nib',
+        'member_registration_npwp',
+        'member_registration_image',
+        'member_registration_payment_proof_image',
+        'member_registration_bank_accounts',
         'member_registration_username',
         'member_registration_password',
         'member_registration_status',
@@ -69,6 +85,16 @@ class MemberRegistration extends Model
     public function registeredMember(): BelongsTo
     {
         return $this->belongsTo(Member::class, 'member_registration_member_id', 'member_id');
+    }
+
+    public function approvalDistributor(): BelongsTo
+    {
+        return $this->belongsTo(Member::class, 'member_registration_distributor_member_id', 'member_id');
+    }
+
+    public function scopeReadyForAdmin(Builder $query): Builder
+    {
+        return $query->whereIn('member_registration_distributor_approval_status', self::ADMIN_READY_APPROVAL_STATUSES);
     }
 
     public function statusAdministrator(): BelongsTo
@@ -117,8 +143,10 @@ class MemberRegistration extends Model
     protected function casts(): array
     {
         return [
+            'member_registration_bank_accounts' => 'array',
             'member_registration_birth_date' => 'date',
             'member_registration_status_datetime' => 'datetime',
+            'member_registration_distributor_approval_datetime' => 'datetime',
             'member_registration_datetime' => 'datetime',
         ];
     }

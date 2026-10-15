@@ -16,24 +16,13 @@
             Pesanan Pembelian
         </button>
 
-        <div class="filter-chips">
-            <span
-                v-for="filter in [
-                    'Semua',
-                    'Menunggu Pembayaran',
-                    'Menunggu Verifikasi Pembayaran',
-                    'Dikemas',
-                    'Dikirim',
-                    'Selesai',
-                ]"
-                :key="filter"
-                class="filter-chip"
-                :class="{ active: currentFilter === filter }"
-                @click="currentFilter = filter"
-            >
-                {{ filter }}
-            </span>
-        </div>
+        <CategorySlider
+            :categories="purchaseStatusFilters"
+            :model-value="currentFilterId"
+            aria-label="Filter status pesanan pembelian"
+            item-label="filter status"
+            @update:model-value="selectStatusFilter"
+        />
 
         <div class="search-box">
             <v-icon icon="mdi-magnify" size="small" />
@@ -420,6 +409,7 @@ import purchaseService from "@/member/services/purchase.service";
 import { useFormatter } from "@/shared/composables/useFormatter";
 import BaseBadge from "@/shared/components/BaseBadge.vue";
 import MobileConfirm from "@/member/components/MobileConfirm.vue";
+import CategorySlider from "@/member/components/transactions/CategorySlider.vue";
 import type {
     PurchaseOrder,
     DataTablePagination,
@@ -434,6 +424,25 @@ const snackbar = useSnackbarStore();
 const confirmDialog = ref<InstanceType<typeof MobileConfirm> | null>(null);
 
 const currentFilter = ref("Semua");
+const purchaseStatusFilters = [
+    { id: 1, name: "Menunggu Pembayaran" },
+    { id: 2, name: "Menunggu Verifikasi Pembayaran" },
+    { id: 3, name: "Dikemas" },
+    { id: 4, name: "Dikirim" },
+    { id: 5, name: "Siap Diterima" },
+    { id: 6, name: "Selesai" },
+];
+const currentFilterId = computed(
+    () =>
+        purchaseStatusFilters.find(
+            (filter) => filter.name === currentFilter.value,
+        )?.id ?? null,
+);
+const selectStatusFilter = (filterId: number | null) => {
+    currentFilter.value =
+        purchaseStatusFilters.find((filter) => filter.id === filterId)?.name ??
+        "Semua";
+};
 const searchQuery = ref("");
 const orders = ref<PurchaseOrder[]>([]);
 const isLoading = ref(true);
@@ -476,6 +485,8 @@ const getStatusFilter = () => {
             return "processing";
         case "Dikirim":
             return "shipped";
+        case "Siap Diterima":
+            return "received";
         case "Selesai":
             return "completed";
         default:

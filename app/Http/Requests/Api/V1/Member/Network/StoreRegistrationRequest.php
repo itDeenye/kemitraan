@@ -30,9 +30,6 @@ class StoreRegistrationRequest extends FormRequest
     /** @return array<string, mixed> */
     public function rules(): array
     {
-        $rules = $this->registrationRules();
-        unset($rules['identity_image_url']);
-
         return [
             'level_id' => [
                 'required',
@@ -41,8 +38,15 @@ class StoreRegistrationRequest extends FormRequest
                     ->where('member_level_is_active', 1),
             ],
             'upline_member_id' => ['nullable', 'integer'],
-            ...$rules,
+            ...$this->registrationRules(),
+            'npwp' => ['prohibited'],
         ];
+    }
+
+    /** @return array<string, string> */
+    public function messages(): array
+    {
+        return ['npwp.prohibited' => 'NPWP tidak digunakan pada pendaftaran member.'];
     }
 
     /** @return array<int, callable> */

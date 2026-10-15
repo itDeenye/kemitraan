@@ -2,6 +2,16 @@
     <div class="screen-body">
         <div class="quick-grid stock-actions" style="margin-bottom: 10px">
             <button
+                class="quick-item flow-link"
+                type="button"
+                @click="router.push('/member/stock/mutation')"
+            >
+                <div class="quick-icon">
+                    <v-icon icon="mdi-swap-horizontal" size="20" />
+                </div>
+                Mutasi
+            </button>
+            <button
                 v-if="isAgentOrReseller"
                 class="quick-item flow-link"
                 type="button"
@@ -11,16 +21,6 @@
                     <v-icon icon="mdi-pencil-outline" size="20" />
                 </div>
                 Penyesuaian
-            </button>
-            <button
-                class="quick-item flow-link"
-                type="button"
-                @click="router.push('/member/stock/mutation')"
-            >
-                <div class="quick-icon">
-                    <v-icon icon="mdi-swap-horizontal" size="20" />
-                </div>
-                Mutasi
             </button>
             <button
                 v-if="isDistributor"

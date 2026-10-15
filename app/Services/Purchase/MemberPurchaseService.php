@@ -77,6 +77,8 @@ class MemberPurchaseService
             ->select("{$detailTable}.trx_detail_trx_id")
             ->selectRaw('COUNT(*) AS product_count')
             ->selectRaw("SUM({$detailTable}.trx_detail_qty) AS total_quantity")
+            ->selectRaw("SUM({$detailTable}.trx_detail_qty * {$detailTable}.trx_detail_product_monthly_points) AS total_monthly_points")
+            ->selectRaw("SUM({$detailTable}.trx_detail_qty * {$detailTable}.trx_detail_product_annual_points) AS total_annual_points")
             // Preorder quantity is derived from the transaction flag in the
             // resource; the detail subquery must remain independent so it can
             // be reused by the list query without an outer-table reference.
@@ -154,6 +156,8 @@ class MemberPurchaseService
             "{$trxTable}.trx_datetime as ordered_at",
             'detail_summary.product_count as product_count',
             'detail_summary.total_quantity as total_quantity',
+            DB::raw("COALESCE({$trxTable}.trx_total_monthly_points, detail_summary.total_monthly_points, 0) as total_monthly_points"),
+            DB::raw("COALESCE({$trxTable}.trx_total_annual_points, detail_summary.total_annual_points, 0) as total_annual_points"),
             'detail_summary.preorder_quantity as preorder_quantity',
             'preview_detail.trx_detail_product_id as preview_product_id',
             'preview_detail.trx_detail_product_code as preview_product_code',
@@ -287,12 +291,28 @@ class MemberPurchaseService
             ->toBase()
             ->selectRaw('COUNT(*) as total')
             ->selectRaw("COUNT(CASE WHEN trx_status = 'waiting_stock_screening' THEN 1 END) as waiting_stock_screening")
-            ->selectRaw("COUNT(CASE WHEN trx_status = 'waiting_payment'
+            ->selectRaw("COUNT(CASE WHEN (trx_status = 'waiting_payment'
                 AND (trx_parent_trx_id = 0 OR EXISTS (
                     SELECT 1 FROM trx_payment_transfer previous_payment
                     WHERE previous_payment.payment_transfer_trx_id = trx_parent_trx_id
                         AND previous_payment.payment_transfer_approval_status = 'approved'
-                )) THEN 1 END) as action_required")
+                ))) OR (
+                    trx_parent_trx_id = 0 AND trx_shipping_method = 'pickup'
+                    AND ((trx_preorder_fulfillment_mode = 'upline_transit' AND trx_status = 'ready_to_pickup')
+                        OR (trx_preorder_fulfillment_mode <> 'upline_transit' AND trx_status = 'processing'))
+                    AND EXISTS (
+                        SELECT 1 FROM shipping_pickup actionable_pickup
+                        WHERE actionable_pickup.shipping_pickup_ref_type = 'trx'
+                            AND actionable_pickup.shipping_pickup_ref_id = trx.trx_id
+                            AND NULLIF(TRIM(actionable_pickup.shipping_pickup_pin), '') IS NOT NULL
+                            AND COALESCE((SELECT actionable_status.shipping_pickup_status_value
+                                FROM shipping_pickup_status actionable_status
+                                WHERE actionable_status.shipping_pickup_status_shipping_pickup_id
+                                    = actionable_pickup.shipping_pickup_id
+                                ORDER BY actionable_status.shipping_pickup_status_id DESC LIMIT 1), '')
+                                NOT IN ('picked_up', 'completed')
+                    )
+                ) THEN 1 END) as action_required")
             ->selectRaw("COUNT(CASE WHEN trx_status = 'waiting_payment' THEN 1 END) as waiting_payment")
             ->selectRaw("COUNT(CASE WHEN trx_status = 'waiting_payment_approval' THEN 1 END) as waiting_payment_approval")
             ->selectRaw("COUNT(CASE WHEN trx_status = 'processing' THEN 1 END) as processing")
@@ -395,6 +415,10 @@ class MemberPurchaseService
         $seller = $member->level?->member_level_code === 'DST'
             ? $this->warehouseSellerData($warehouse)
             : $this->memberSellerData($member->parent);
+        $pickupLocation = $member->level?->member_level_code !== 'DST'
+            && $member->parent?->defaultAddress
+                ? $this->memberAddressDestinationData($member->parent->defaultAddress)
+                : ($seller['origin'] ?? null);
         if ($items !== []) {
             $seller['origin'] = $this->shippingService->purchaseOrigin($account, $items);
         }
@@ -405,12 +429,14 @@ class MemberPurchaseService
                 'code' => $member->member_code,
                 'name' => $member->member_name,
                 'level' => $member->level?->member_level_name,
+                'phone' => $member->member_mobilephone,
                 'minimum_order' => (int) ($member->level?->member_level_min_order ?? 0),
                 'destination' => $defaultAddress
                     ? $this->memberAddressDestinationData($defaultAddress)
                     : null,
             ],
             'seller' => $seller,
+            'pickup_location' => $pickupLocation,
             'addresses' => $addresses
                 ->map(fn (MemberAddress $address): array => [
                     'id' => (int) $address->getKey(),
@@ -556,6 +582,8 @@ class MemberPurchaseService
                     'trx_detail_product_name' => $product->product_name,
                     'trx_detail_product_bpom_number' => $product->product_bpom_number,
                     'trx_detail_product_price' => $price,
+                    'trx_detail_product_monthly_points' => $product->product_monthly_points,
+                    'trx_detail_product_annual_points' => $product->product_annual_points,
                     'trx_detail_product_weight' => $product->product_weight,
                     'trx_detail_product_length' => $product->product_length,
                     'trx_detail_product_height' => $product->product_height,
@@ -579,6 +607,13 @@ class MemberPurchaseService
             if ($hasPreorder) {
                 $terminalSeller = $this->preorderChainService->terminalSeller($items, $seller);
             }
+            $preorderFulfillmentMode = $hasPreorder
+                && $data['shipping_method'] === 'pickup'
+                && $terminalSeller !== null
+                && ($terminalSeller['type'] !== $seller['type']
+                    || (int) $terminalSeller['id'] !== (int) $seller['id'])
+                    ? 'upline_transit'
+                    : 'direct';
             $shippingSeller = $terminalSeller ?? $seller;
             $this->ensureShippingMethodAllowed(
                 $shippingSeller['type'],
@@ -639,6 +674,7 @@ class MemberPurchaseService
                 'trx_code' => $this->transactionCodeService->next($seller['type'], $buyerType),
                 'trx_parent_trx_id' => 0,
                 'trx_is_preorder' => $hasPreorder,
+                'trx_preorder_fulfillment_mode' => $preorderFulfillmentMode,
                 'trx_seller_type' => $seller['type'],
                 'trx_seller_id' => $seller['id'],
                 'trx_buyer_type' => $buyerType,
@@ -668,6 +704,7 @@ class MemberPurchaseService
 
             $trx->details()->createMany($detailAttributes);
             $trx->load('details');
+            $trx->recalculatePointTotals();
             $this->stockAllocationService->reserve($trx);
             if ($hasPreorder && $seller['type'] !== 'warehouse') {
                 $this->preorderChainService->reserveTerminalStock($items, $trx, $terminalSeller);
@@ -1070,7 +1107,9 @@ class MemberPurchaseService
         array $data,
         ?array $shippingSeller = null,
     ): void {
-        $origin = $this->originSnapshot($shippingSeller ?? $seller);
+        $origin = $this->originSnapshot(
+            $data['shipping_method'] === 'pickup' ? $seller : ($shippingSeller ?? $seller),
+        );
 
         if ($data['shipping_method'] === 'pickup') {
             $pickup = ShippingPickup::query()->create([
@@ -1299,6 +1338,15 @@ class MemberPurchaseService
             ]);
         }
 
+        $address = MemberAddress::query()
+            ->where('member_address_member_id', $model->getKey())
+            ->orderByDesc('member_address_is_default')
+            ->orderBy('member_address_id')
+            ->first();
+        if ($address) {
+            return $this->destinationSnapshot($address);
+        }
+
         return $this->locationSnapshot([
             'name' => $model->member_name,
             'phone' => $model->member_mobilephone,
@@ -1419,6 +1467,7 @@ class MemberPurchaseService
             'id' => (int) $seller->getKey(),
             'code' => $seller->member_code,
             'name' => $seller->member_name,
+            'phone' => $seller->member_mobilephone,
             'address' => $seller->member_address,
             'origin' => [
                 'name' => $seller->member_name,
@@ -1451,6 +1500,7 @@ class MemberPurchaseService
             'code' => null,
             'name' => $warehouse->warehouse_name,
             'address' => $warehouse->warehouse_address,
+            'phone' => $warehouse->warehouse_phone,
             'origin' => $this->warehouseOriginData($warehouse),
         ];
     }

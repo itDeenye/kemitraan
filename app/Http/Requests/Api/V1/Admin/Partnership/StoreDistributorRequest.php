@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Api\V1\Admin\Partnership;
 
+use App\Http\Requests\Api\V1\Concerns\HasOnboardingContacts;
 use App\Models\Member;
 use App\Models\RefBank;
 use App\Models\RefCity;
@@ -9,6 +10,7 @@ use App\Models\RefCountry;
 use App\Models\RefDistrict;
 use App\Models\RefProvince;
 use App\Models\RefSubdistrict;
+use App\Support\MemberIdentity;
 use App\Support\PhoneNumber;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -16,6 +18,8 @@ use Illuminate\Validation\Validator;
 
 class StoreDistributorRequest extends FormRequest
 {
+    use HasOnboardingContacts;
+
     public function authorize(): bool
     {
         return true;
@@ -32,6 +36,7 @@ class StoreDistributorRequest extends FormRequest
             'mobile_phone' => ['required', 'string', 'regex:/^\+62[0-9]{8,13}$/'],
             'gender' => ['required', 'in:Laki-laki,Perempuan'],
             'birth_date' => ['required', 'date', 'before:today'],
+            ...$this->onboardingContactRules(),
             'address' => ['required', 'string', 'max:255'],
             'domicile_address' => ['required', 'string', 'max:255'],
             'province_id' => [
@@ -63,6 +68,7 @@ class StoreDistributorRequest extends FormRequest
                 Rule::exists((new RefCountry)->getTable(), 'country_id')
                     ->where('country_is_active', '1'),
             ],
+            ...$this->domicileRegionRules(),
             'bank_id' => [
                 'nullable',
                 'integer',
@@ -73,9 +79,12 @@ class StoreDistributorRequest extends FormRequest
             'bank_account_number' => ['nullable', 'required_with:bank_id', 'string', 'max:50'],
             'bank_city' => ['nullable', 'string', 'max:50'],
             'bank_branch' => ['nullable', 'string', 'max:50'],
-            'identity_type' => ['required', 'in:KTP,SIM,PASPOR'],
+            'identity_type' => ['required', Rule::in(MemberIdentity::TYPES)],
             'identity_no' => ['required', 'string', 'max:20'],
             'identity_image_url' => ['nullable', 'string', 'max:255'], // Optional kalau admin input manual bisa nyusul
+            'nib' => ['nullable', 'string', 'max:20'],
+            'npwp' => ['nullable', 'string', 'max:30'],
+            'image_url' => ['nullable', 'string', 'max:255'],
             'status' => ['required', 'integer', 'in:1,2'], // 1: Aktif, 2: Non-aktif
             'instagram' => ['nullable', 'string', 'max:100'],
             'facebook' => ['nullable', 'string', 'max:100'],
@@ -92,14 +101,18 @@ class StoreDistributorRequest extends FormRequest
     {
         return [
             function (Validator $validator): void {
+                MemberIdentity::validateNumber($validator, $this->input('identity_type'), $this->input('identity_no'));
                 $this->validateRegion($validator);
+                $this->validateRegion($validator, 'domicile_');
                 $this->validateUniqueApplicant($validator);
+                $this->validateOnboardingContacts($validator);
             },
         ];
     }
 
     protected function prepareForValidation(): void
     {
+        $this->prepareOnboardingContacts();
         if ($this->has('mobile_phone')) {
             $this->merge(['mobile_phone' => PhoneNumber::normalize($this->input('mobile_phone'))]);
         }
@@ -120,6 +133,11 @@ class StoreDistributorRequest extends FormRequest
             'district_id' => 'kecamatan',
             'subdistrict_id' => 'kelurahan/desa',
             'country_id' => 'negara',
+            'domicile_province_id' => 'provinsi domisili',
+            'domicile_city_id' => 'kota/kabupaten domisili',
+            'domicile_district_id' => 'kecamatan domisili',
+            'domicile_subdistrict_id' => 'kelurahan/desa domisili',
+            'domicile_country_id' => 'negara domisili',
             'bank_id' => 'bank',
             'bank_account_name' => 'nama pemilik rekening',
             'bank_account_number' => 'nomor rekening',
@@ -128,6 +146,11 @@ class StoreDistributorRequest extends FormRequest
             'identity_type' => 'jenis identitas',
             'identity_no' => 'nomor identitas',
             'identity_image_url' => 'dokumen identitas',
+            'nib' => 'NIB',
+            'npwp' => 'NPWP',
+            'image_url' => 'foto profil',
+            'addresses' => 'daftar alamat',
+            'bank_accounts' => 'daftar rekening',
             'status' => 'status',
             'instagram' => 'instagram',
             'facebook' => 'facebook',
@@ -137,12 +160,29 @@ class StoreDistributorRequest extends FormRequest
         ];
     }
 
-    private function validateRegion(Validator $validator): void
+    /** @return array<string, mixed> */
+    private function domicileRegionRules(): array
     {
-        $provinceId = $this->input('province_id');
-        $cityId = $this->input('city_id');
-        $districtId = $this->input('district_id');
-        $subdistrictId = $this->input('subdistrict_id');
+        $required = Rule::requiredIf(fn (): bool => $this->hasAny([
+            'domicile_province_id', 'domicile_city_id', 'domicile_district_id',
+            'domicile_subdistrict_id', 'domicile_country_id',
+        ]));
+
+        return [
+            'domicile_province_id' => [$required, 'string', 'max:2', Rule::exists((new RefProvince)->getTable(), 'province_id')],
+            'domicile_city_id' => [$required, 'string', 'max:4', Rule::exists((new RefCity)->getTable(), 'city_id')],
+            'domicile_district_id' => [$required, 'string', 'max:6', Rule::exists((new RefDistrict)->getTable(), 'district_id')],
+            'domicile_subdistrict_id' => [$required, 'integer', Rule::exists((new RefSubdistrict)->getTable(), 'subdistrict_id')],
+            'domicile_country_id' => ['sometimes', 'integer', Rule::exists((new RefCountry)->getTable(), 'country_id')->where('country_is_active', '1')],
+        ];
+    }
+
+    private function validateRegion(Validator $validator, string $prefix = ''): void
+    {
+        $provinceId = $this->input($prefix.'province_id');
+        $cityId = $this->input($prefix.'city_id');
+        $districtId = $this->input($prefix.'district_id');
+        $subdistrictId = $this->input($prefix.'subdistrict_id');
 
         if (! is_string($provinceId) || ! is_string($cityId) || ! is_string($districtId)
             || ! is_numeric($subdistrictId)) {
@@ -164,7 +204,7 @@ class StoreDistributorRequest extends FormRequest
 
         if (! $valid) {
             $validator->errors()->add(
-                'province_id',
+                $prefix.'province_id',
                 'Wilayah provinsi, kota, kecamatan, dan kelurahan tidak saling sesuai.'
             );
         }

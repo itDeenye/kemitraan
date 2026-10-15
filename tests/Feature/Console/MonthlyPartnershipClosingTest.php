@@ -2,9 +2,14 @@
 
 namespace Tests\Feature\Console;
 
+use App\Exceptions\ProcessException;
 use App\Models\Member;
 use App\Models\MemberLevel;
+use App\Models\MemberPointTransaction;
 use App\Models\Trx;
+use App\Models\TrxDetail;
+use App\Services\Partnership\MonthlyPartnershipClosingService;
+use App\Services\Reward\MemberPointService;
 use App\Support\BusinessConfig;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -155,6 +160,113 @@ class MonthlyPartnershipClosingTest extends TestCase
             'trx_spread_payment_percentage' => 2,
             'trx_spread_payment_amount' => 100_000,
         ]);
+    }
+
+    public function test_monthly_closing_uses_product_point_snapshots_instead_of_item_quantity(): void
+    {
+        Carbon::setTestNow('2026-08-01 00:05:00');
+        [$distributorLevel, $agentLevel, $resellerLevel] = $this->levels();
+        $distributor = $this->member(1, 'DST-001', $distributorLevel);
+        $agent = $this->member(2, 'AGT-001', $agentLevel, $distributor);
+        $reseller = $this->member(3, 'RSL-001', $resellerLevel, $agent);
+        $this->purchase($reseller, $agent, 10, '2026-07-10', 'POINT-SNAPSHOT');
+        $trx = Trx::query()->where('trx_code', 'POINT-SNAPSHOT')->sole();
+        $trx->details()->update([
+            'trx_detail_product_monthly_points' => 3,
+            'trx_detail_product_annual_points' => 7,
+        ]);
+
+        $this->assertSame(0, Artisan::call('rewards:close-month', ['--period' => '2026-07']));
+        $this->assertDatabaseHas('member_achievement', [
+            'member_achievement_member_id' => $reseller->getKey(),
+            'member_achievement_point' => 30,
+        ]);
+        $this->assertDatabaseHas('reward_point_monthly', [
+            'reward_point_monthly_member_id' => $reseller->getKey(),
+            'reward_point_monthly_total_qty' => 30,
+            'reward_point_monthly_bonus_value' => 90_000,
+        ]);
+    }
+
+    public function test_approved_ledger_records_separate_points_and_cancellation_reverses_annual_snapshot(): void
+    {
+        Carbon::setTestNow('2026-07-10 12:00:00');
+        [$distributorLevel, $agentLevel, $resellerLevel] = $this->levels();
+        $distributor = $this->member(1, 'DST-001', $distributorLevel);
+        $agent = $this->member(2, 'AGT-001', $agentLevel, $distributor);
+        $reseller = $this->member(3, 'RSL-001', $resellerLevel, $agent);
+        $this->purchase($reseller, $agent, 10, '2026-07-10', 'POINT-LEDGER');
+        $trx = Trx::query()->where('trx_code', 'POINT-LEDGER')->sole();
+        $trx->details()->update([
+            'trx_detail_product_monthly_points' => 3,
+            'trx_detail_product_annual_points' => 7,
+        ]);
+        $service = app(MemberPointService::class);
+        $service->recordForApprovedPayment($trx);
+        $service->recordForApprovedPayment($trx);
+
+        $this->assertDatabaseCount('member_point_transaction', 1);
+        $this->assertDatabaseHas('member_point_transaction', [
+            'member_point_transaction_trx_id' => $trx->getKey(),
+            'member_point_transaction_quantity' => 10,
+            'member_point_transaction_monthly_points' => 30,
+            'member_point_transaction_annual_points' => 70,
+        ]);
+        $this->assertDatabaseHas('reward_point_annual', [
+            'reward_point_annual_member_id' => $reseller->getKey(),
+            'reward_point_annual_total_points' => 70,
+        ]);
+        Carbon::setTestNow('2026-08-01 00:05:00');
+        $this->assertSame(0, Artisan::call('rewards:close-month', ['--period' => '2026-07']));
+        $this->assertDatabaseHas('reward_point_monthly', [
+            'reward_point_monthly_member_id' => $reseller->getKey(),
+            'reward_point_monthly_total_qty' => 30,
+        ]);
+        $trx->details()->update(['trx_detail_product_annual_points' => 99]);
+        $service->reverseForCancelledTransaction($trx);
+        $service->reverseForCancelledTransaction($trx);
+        $this->assertDatabaseHas('reward_point_annual', [
+            'reward_point_annual_member_id' => $reseller->getKey(),
+            'reward_point_annual_total_points' => 0,
+        ]);
+        $this->assertDatabaseHas('reward_point_annual_log', [
+            'reward_point_annual_log_trx_id' => $trx->getKey(),
+            'reward_point_annual_log_type' => 'out',
+            'reward_point_annual_log_points' => 70,
+        ]);
+    }
+
+    public function test_monthly_closing_rejects_rewards_beyond_exact_api_number_capacity(): void
+    {
+        Carbon::setTestNow('2026-08-01 00:05:00');
+        [$distributorLevel] = $this->levels();
+        $distributor = $this->member(1, 'DST-001', $distributorLevel);
+        MemberPointTransaction::query()->create([
+            'member_point_transaction_member_id' => $distributor->getKey(),
+            'member_point_transaction_trx_id' => 100,
+            'member_point_transaction_quantity' => 10,
+            'member_point_transaction_monthly_points' => 2_000_000_000_000,
+            'member_point_transaction_annual_points' => 10,
+            'member_point_transaction_year' => 2026,
+            'member_point_transaction_month' => 7,
+            'member_point_transaction_approved_datetime' => '2026-07-10 12:00:00',
+        ]);
+
+        $this->expectException(ProcessException::class);
+        app(MonthlyPartnershipClosingService::class)->close(Carbon::parse('2026-07-01'));
+    }
+
+    public function test_transaction_points_reject_aggregate_values_that_javascript_cannot_represent_exactly(): void
+    {
+        $trx = new Trx;
+        $trx->setRelation('details', collect(range(1, 23))->map(fn (): TrxDetail => new TrxDetail([
+            'trx_detail_qty' => 99999,
+            'trx_detail_product_monthly_points' => 4294967295,
+            'trx_detail_product_annual_points' => 1,
+        ])));
+
+        $this->expectException(ProcessException::class);
+        $trx->pointTotals();
     }
 
     /** @return array{MemberLevel, MemberLevel, MemberLevel} */

@@ -210,6 +210,26 @@
                                         ></template
                                     >
                                 </v-list-item>
+                                <v-divider class="border-opacity-50" />
+                                <v-list-item min-height="36">
+                                    <template #prepend>
+                                        <v-icon color="grey-darken-1" size="18" class="mr-3">mdi-calendar-month-outline</v-icon>
+                                    </template>
+                                    <v-list-item-title class="text-body-2 text-medium-emphasis">Poin Bulanan</v-list-item-title>
+                                    <template #append>
+                                        <span class="font-weight-medium text-body-2">{{ formatPrice(product.monthly_points ?? 1) }}</span>
+                                    </template>
+                                </v-list-item>
+                                <v-divider class="border-opacity-50" />
+                                <v-list-item min-height="36">
+                                    <template #prepend>
+                                        <v-icon color="grey-darken-1" size="18" class="mr-3">mdi-calendar-outline</v-icon>
+                                    </template>
+                                    <v-list-item-title class="text-body-2 text-medium-emphasis">Poin Tahunan</v-list-item-title>
+                                    <template #append>
+                                        <span class="font-weight-medium text-body-2">{{ formatPrice(product.annual_points ?? 1) }}</span>
+                                    </template>
+                                </v-list-item>
                             </v-list>
                         </v-card>
                         <h4

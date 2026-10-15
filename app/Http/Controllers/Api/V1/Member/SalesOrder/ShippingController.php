@@ -28,6 +28,16 @@ class ShippingController extends Controller
         ]);
     }
 
+    /** @return array<string, mixed> */
+    public function couriers(Request $request, Trx $trx): array
+    {
+        return [
+            'success' => true,
+            'message' => 'Pilihan kurir pengiriman manual berhasil dimuat.',
+            'data' => $this->salesService->shipmentCouriers($this->memberAccount($request), $trx),
+        ];
+    }
+
     private function memberAccount(Request $request): MemberAccount
     {
         $account = $request->user();

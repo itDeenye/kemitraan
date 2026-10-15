@@ -17,6 +17,8 @@ class MemberPointTransaction extends Model
         'member_point_transaction_member_id',
         'member_point_transaction_trx_id',
         'member_point_transaction_quantity',
+        'member_point_transaction_monthly_points',
+        'member_point_transaction_annual_points',
         'member_point_transaction_year',
         'member_point_transaction_month',
         'member_point_transaction_approved_datetime',
@@ -36,6 +38,8 @@ class MemberPointTransaction extends Model
     {
         return [
             'member_point_transaction_quantity' => 'integer',
+            'member_point_transaction_monthly_points' => 'integer',
+            'member_point_transaction_annual_points' => 'integer',
             'member_point_transaction_year' => 'integer',
             'member_point_transaction_month' => 'integer',
             'member_point_transaction_approved_datetime' => 'datetime',

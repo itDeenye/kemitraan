@@ -50,6 +50,35 @@ class MediaUploadTest extends TestCase
         $this->postJson('/api/v1/admin/media/uploads', [])->assertUnauthorized();
     }
 
+    public function test_member_and_admin_can_upload_identity_profile_and_registration_proof_separately(): void
+    {
+        config(['media.chunk_size' => 128]);
+        $image = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jHxoAAAAASUVORK5CYII=');
+        foreach (['member' => $this->createMemberAccount(), 'admin' => $this->createAdministrator()] as $audience => $account) {
+            $this->actingAs($account, $audience.'_api');
+            foreach (['general' => 'identity', 'profile' => 'profile', 'payment_proof' => 'proof'] as $collection => $name) {
+                $base = "/api/v1/{$audience}/media/uploads";
+                $id = $this->postJson($base, [
+                    'collection' => $collection, 'filename' => $name.'.png', 'mime_type' => 'image/png',
+                    'size' => strlen($image), 'checksum' => hash('sha256', $image),
+                ])->assertCreated()->assertJsonPath('data.total_chunks', 1)->json('data.id');
+                $this->post("{$base}/{$id}/chunks/1", [
+                    'chunk' => UploadedFile::fake()->createWithContent($name.'.png', $image),
+                ], ['Accept' => 'application/json'])->assertOk();
+                $url = $this->postJson("{$base}/{$id}/complete")
+                    ->assertOk()->assertJsonPath('data.status', Media::STATUS_READY)
+                    ->assertJsonPath('data.collection', $collection)->json('data.url');
+                if ($collection === 'profile') {
+                    $this->assertStringContainsString('/api/v1/media/public/', $url);
+                    $this->assertStringNotContainsString('signature=', $url);
+                } else {
+                    $this->assertStringContainsString('signature=', $url);
+                }
+                $this->get($url)->assertOk();
+            }
+        }
+    }
+
     public function test_administrator_can_upload_and_process_media_in_chunks(): void
     {
         $this->actingAs($this->createAdministrator(), 'admin_api');

@@ -17,23 +17,10 @@
                 />
             </div>
 
-            <div class="filter-chips">
-                <span
-                    class="filter-chip"
-                    :class="{ active: currentCategory === null }"
-                    @click="currentCategory = null"
-                    >Semua</span
-                >
-                <span
-                    v-for="cat in categories"
-                    :key="cat.id"
-                    class="filter-chip"
-                    :class="{ active: currentCategory === cat.id }"
-                    @click="currentCategory = cat.id"
-                >
-                    {{ cat.name }}
-                </span>
-            </div>
+            <CategorySlider
+                v-model="currentCategory"
+                :categories="categories"
+            />
 
             <div
                 v-if="isLoadingCatalog"
@@ -158,7 +145,8 @@
                                     v-for="mp in product.member_prices"
                                     :key="mp.id ?? mp.member_level_id"
                                 >
-                                    Harga {{ mp.level || mp.member_level_name }}: Rp{{
+                                    Harga
+                                    {{ mp.level || mp.member_level_name }}: Rp{{
                                         formatPrice(mp.price)
                                     }}
                                 </div>
@@ -381,7 +369,7 @@
                                 color: #9a5a00;
                             "
                         >
-                            Pesanan PO (inden)
+                            Pre Order
                         </strong>
                         <span
                             style="
@@ -397,6 +385,12 @@
                     </div>
                 </div>
             </div>
+            <OrderPartyInfo title="Data Pembeli" icon="mdi-account-outline" :party="checkoutOptions.buyer" />
+            <OrderSellerInfo
+                :seller="checkoutOptions.seller"
+                :phone="checkoutOptions.pickup_location?.phone"
+                :address="sellerAddress"
+            />
             <div class="section-heading mb-2 mt-3">
                 <h3>Rincian Produk</h3>
             </div>
@@ -495,9 +489,8 @@
                                 v-for="mp in item.product.member_prices"
                                 :key="mp.id ?? mp.member_level_id"
                             >
-                                Harga {{ mp.level || mp.member_level_name }}: Rp{{
-                                    formatPrice(mp.price)
-                                }}
+                                Harga {{ mp.level || mp.member_level_name }}:
+                                Rp{{ formatPrice(mp.price) }}
                             </div>
                         </div>
                         <div
@@ -552,7 +545,7 @@
             </div>
 
             <div class="section-heading mb-2 mt-4">
-                <h3>Opsi Pengiriman</h3>
+                <h3>Informasi Pengiriman</h3>
             </div>
             <div
                 style="
@@ -655,6 +648,13 @@
 
                 <div class="section-heading mb-2 mt-4">
                     <h3>Alamat Pengiriman</h3>
+                    <button
+                        type="button"
+                        class="section-link"
+                        @click="router.push('/member/profile/address')"
+                    >
+                        Ubah Alamat
+                    </button>
                 </div>
                 <div
                     class="mb-3"
@@ -800,6 +800,17 @@
                 >
                     <div class="section-heading mb-2 mt-4">
                         <h3>Kurir Pengiriman</h3>
+                    </div>
+                    <div
+                        v-if="usesEstimatedShippingCost"
+                        class="shipping-estimate-notice"
+                    >
+                        <v-icon icon="mdi-information-outline" size="18" />
+                        <p>
+                            Ongkos kirim yang ditampilkan merupakan estimasi.
+                            Biaya aktual dapat berbeda sesuai ekspedisi dan
+                            lokasi agen pengiriman yang digunakan penjual.
+                        </p>
                     </div>
                     <div
                         v-if="isLoadingRates"
@@ -1106,7 +1117,11 @@
                     <strong>Rp{{ formatPrice(subtotal) }}</strong>
                 </div>
                 <div class="summary-line">
-                    <span>Ongkos Kirim</span>
+                    <span>{{
+                        usesEstimatedShippingCost
+                            ? "Estimasi Ongkos Kirim"
+                            : "Ongkos Kirim"
+                    }}</span>
                     <strong
                         >Rp{{
                             formatPrice(
@@ -1168,6 +1183,9 @@ import { ref, computed, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import purchaseService from "@/member/services/purchase.service";
 import ProductDetailModal from "@/member/components/transactions/ProductDetailModal.vue";
+import CategorySlider from "@/member/components/transactions/CategorySlider.vue";
+import OrderSellerInfo from "@/member/components/transactions/OrderSellerInfo.vue";
+import OrderPartyInfo from "@/member/components/transactions/OrderPartyInfo.vue";
 import shippingService from "@/member/services/shipping.service";
 import type {
     ShippingRateLocation,
@@ -1222,7 +1240,22 @@ const openProductDetail = (productId: number) => {
 };
 
 const checkoutOptions = ref<PurchaseCheckoutOptions | null>(null);
+const sellerAddress = computed(() => {
+    const address = formatLocation(checkoutOptions.value?.pickup_location);
+
+    return address !== "-"
+        ? address
+        : checkoutOptions.value?.seller.address || "-";
+});
 const shippingCost = ref(0);
+
+const usesEstimatedShippingCost = computed(() => {
+    const buyerLevel = checkoutOptions.value?.buyer.level
+        ?.trim()
+        .toLocaleLowerCase("id-ID");
+
+    return buyerLevel === "agen utama" || buyerLevel === "reseller";
+});
 
 const isLoadingRates = ref(false);
 const availableRates = ref<ShippingRateResult[]>([]);
@@ -1557,7 +1590,7 @@ const calculateShipping = async () => {
     try {
         const payload = {
             address_id: form.value.address_id,
-            couriers: ["jne", "jnt", "sicepat"],
+            couriers: [],
             items: cartProducts.value.map((item) => ({
                 product_id: item.product.id,
                 quantity: item.quantity,
@@ -1606,6 +1639,13 @@ const calculateShipping = async () => {
 };
 
 const effectiveOriginName = computed(() => {
+    if (form.value.shipping_method === "pickup") {
+        return (
+            checkoutOptions.value?.pickup_location?.name ||
+            checkoutOptions.value?.seller.name ||
+            "Upline"
+        );
+    }
     return (
         shippingOrigin.value?.name ||
         checkoutOptions.value?.seller.origin?.name ||
@@ -1615,7 +1655,9 @@ const effectiveOriginName = computed(() => {
 });
 
 const effectiveOriginAddress = computed(() => {
-    const origin = shippingOrigin.value || checkoutOptions.value?.seller.origin;
+    const origin = form.value.shipping_method === "pickup"
+        ? checkoutOptions.value?.pickup_location
+        : shippingOrigin.value || checkoutOptions.value?.seller.origin;
     if (origin) {
         return formatLocation(origin);
     }
@@ -1718,3 +1760,29 @@ onMounted(() => {
     loadCatalog();
 });
 </script>
+
+<style scoped>
+.shipping-estimate-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin: 0 0 12px;
+    padding: 10px 12px;
+    border: 1px solid #bfdbfe;
+    border-radius: 10px;
+    color: #1e40af;
+    background: #eff6ff;
+}
+
+.shipping-estimate-notice :deep(.v-icon) {
+    flex: 0 0 auto;
+    margin-top: 1px;
+    color: #2563eb;
+}
+
+.shipping-estimate-notice p {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.5;
+}
+</style>

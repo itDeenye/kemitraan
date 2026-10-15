@@ -29,6 +29,8 @@ export interface SingleResponse<T> {
 export interface SaleSummary {
     product_count: number;
     total_quantity: number;
+    total_monthly_points: number;
+    total_annual_points: number;
     product_total?: number;
     total_discount?: number;
     voucher_discount?: number;
@@ -65,6 +67,19 @@ export interface SaleActions {
     requires_pickup_method: boolean;
     requires_pickup_schedule: boolean;
     requires_pickup_pin: boolean;
+    can_confirm_arrival?: boolean;
+    can_handover_pickup?: boolean;
+    requires_manual_courier?: boolean;
+    requires_shipment_items?: boolean;
+    allows_delivery_note_number?: boolean;
+}
+
+export interface SalePreorderFulfillment {
+    mode: "direct" | "upline_transit";
+    status: string;
+    pickup_point: SalePreorderParty;
+    stock_source: SalePreorderParty;
+    source_shipping_method: string;
 }
 
 export interface SaleOrderType {
@@ -135,6 +150,7 @@ export interface SaleOrder {
     is_preorder: boolean;
     order_type: SaleOrderType;
     preorder?: SalePreorder | null;
+    preorder_fulfillment?: SalePreorderFulfillment | null;
     seller: any;
     buyer: any;
     customer: SaleCustomer;
@@ -158,6 +174,8 @@ export interface SaleItem {
         name: string;
         bpom_number: string | null;
         image: string | null;
+        monthly_points: number;
+        annual_points: number;
     };
     price: number;
     discount_percent: number;
@@ -167,6 +185,8 @@ export interface SaleItem {
     preorder_quantity: number;
     subtotal: number;
     points: number;
+    monthly_points: number;
+    annual_points: number;
 }
 
 export interface SaleShipping {
@@ -213,6 +233,8 @@ export interface ProductCatalog {
     image: string | null;
     price: number;
     customer_price: number;
+    monthly_points: number;
+    annual_points: number;
     available_stock: number;
     weight_grams: number;
     unit: string;
@@ -314,7 +336,13 @@ export interface SaleShipPayload {
     pickup_pin?: string;
     pickup_method?: "PICKUP" | "DROP-OFF";
     pickup_schedule?: string;
-    items: {
+    courier?: {
+        name: string;
+        service: string;
+        service_type: string;
+        cost: number;
+    };
+    items?: {
         product_id: number;
         quantity: number;
         batch_number: string;

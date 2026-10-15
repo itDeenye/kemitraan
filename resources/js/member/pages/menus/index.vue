@@ -20,7 +20,9 @@
                     <strong>Kemitraan</strong
                     ><span>Data level dan status kemitraan</span>
                 </div>
-                <div class="row-side">&rsaquo;</div>
+                <div class="row-side">
+                    <v-icon class="navigation-chevron" icon="mdi-chevron-right" size="24" />
+                </div>
             </div>
             <div
                 v-if="isDistributorOrAgent"
@@ -34,7 +36,9 @@
                     <strong>Jaringan Mitra</strong
                     ><span>Downline Agen Utama dan Reseller bertingkat</span>
                 </div>
-                <div class="row-side">&rsaquo;</div>
+                <div class="row-side">
+                    <v-icon class="navigation-chevron" icon="mdi-chevron-right" size="24" />
+                </div>
             </div>
         </div>
 
@@ -51,7 +55,9 @@
                     <strong>Pesanan Pembelian</strong
                     ><span>Buat dan pantau pembelian</span>
                 </div>
-                <div class="row-side">&rsaquo;</div>
+                <div class="row-side">
+                    <v-icon class="navigation-chevron" icon="mdi-chevron-right" size="24" />
+                </div>
             </div>
             <div
                 class="list-row flow-link"
@@ -64,7 +70,9 @@
                     <strong>Penerimaan Barang</strong
                     ><span>Daftar berdasarkan kode penerimaan</span>
                 </div>
-                <div class="row-side">&rsaquo;</div>
+                <div class="row-side">
+                    <v-icon class="navigation-chevron" icon="mdi-chevron-right" size="24" />
+                </div>
             </div>
             <div
                 v-if="isDistributorOrAgent"
@@ -78,7 +86,9 @@
                     <strong>Pesanan Penjualan</strong
                     ><span>Verifikasi bayar dan pengiriman</span>
                 </div>
-                <div class="row-side">&rsaquo;</div>
+                <div class="row-side">
+                    <v-icon class="navigation-chevron" icon="mdi-chevron-right" size="24" />
+                </div>
             </div>
             <div
                 class="list-row flow-link"
@@ -90,7 +100,9 @@
                 <div class="row-main">
                     <strong>POS</strong><span>Penjualan kepada customer</span>
                 </div>
-                <div class="row-side">&rsaquo;</div>
+                <div class="row-side">
+                    <v-icon class="navigation-chevron" icon="mdi-chevron-right" size="24" />
+                </div>
             </div>
         </div>
 
@@ -107,7 +119,9 @@
                     <strong>Daftar Stok</strong
                     ><span>Stok terkini per produk</span>
                 </div>
-                <div class="row-side">&rsaquo;</div>
+                <div class="row-side">
+                    <v-icon class="navigation-chevron" icon="mdi-chevron-right" size="24" />
+                </div>
             </div>
             <div
                 class="list-row flow-link"
@@ -120,7 +134,9 @@
                     <strong>Mutasi Stok</strong
                     ><span>Riwayat stok masuk dan keluar</span>
                 </div>
-                <div class="row-side">&rsaquo;</div>
+                <div class="row-side">
+                    <v-icon class="navigation-chevron" icon="mdi-chevron-right" size="24" />
+                </div>
             </div>
             <div
                 v-if="isAgentOrReseller"
@@ -134,7 +150,9 @@
                     <strong>Penyesuaian Stok</strong
                     ><span>Pengurangan stok dengan alasan</span>
                 </div>
-                <div class="row-side">&rsaquo;</div>
+                <div class="row-side">
+                    <v-icon class="navigation-chevron" icon="mdi-chevron-right" size="24" />
+                </div>
             </div>
             <div
                 v-if="isDistributor"
@@ -152,7 +170,11 @@
                     <span v-if="returnActionCount > 0" class="badge red">
                         {{ returnActionCount > 99 ? "99+" : returnActionCount }}
                     </span>
-                    &rsaquo;
+                    <v-icon
+                        class="navigation-chevron"
+                        icon="mdi-chevron-right"
+                        size="24"
+                    />
                 </div>
             </div>
         </div>
@@ -170,7 +192,9 @@
                     <strong>Reward Bulanan</strong
                     ><span>Poin dan jumlah bonus</span>
                 </div>
-                <div class="row-side">&rsaquo;</div>
+                <div class="row-side">
+                    <v-icon class="navigation-chevron" icon="mdi-chevron-right" size="24" />
+                </div>
             </div>
             <div
                 class="list-row flow-link"
@@ -183,7 +207,9 @@
                     <strong>Reward Tahunan</strong
                     ><span>Akumulasi poin tahunan</span>
                 </div>
-                <div class="row-side">&rsaquo;</div>
+                <div class="row-side">
+                    <v-icon class="navigation-chevron" icon="mdi-chevron-right" size="24" />
+                </div>
             </div>
             <div
                 v-if="isDistributorOrAgent"
@@ -197,7 +223,9 @@
                     <strong>Reward Stokis</strong
                     ><span>Pembelanjaan dan voucher</span>
                 </div>
-                <div class="row-side">&rsaquo;</div>
+                <div class="row-side">
+                    <v-icon class="navigation-chevron" icon="mdi-chevron-right" size="24" />
+                </div>
             </div>
             <div
                 v-if="isDistributorOrAgent"
@@ -211,7 +239,9 @@
                     <strong>Sharing Profit</strong
                     ><span>Komisi per transaksi jaringan</span>
                 </div>
-                <div class="row-side">&rsaquo;</div>
+                <div class="row-side">
+                    <v-icon class="navigation-chevron" icon="mdi-chevron-right" size="24" />
+                </div>
             </div>
         </div>
 
@@ -228,7 +258,9 @@
                     <strong>Profil</strong
                     ><span>Informasi akun dan kemitraan</span>
                 </div>
-                <div class="row-side">&rsaquo;</div>
+                <div class="row-side">
+                    <v-icon class="navigation-chevron" icon="mdi-chevron-right" size="24" />
+                </div>
             </div>
             <div
                 class="list-row flow-link"
@@ -241,7 +273,9 @@
                     <strong>Alamat</strong
                     ><span>Alamat pengiriman tersimpan</span>
                 </div>
-                <div class="row-side">&rsaquo;</div>
+                <div class="row-side">
+                    <v-icon class="navigation-chevron" icon="mdi-chevron-right" size="24" />
+                </div>
             </div>
             <div
                 class="list-row flow-link"
@@ -254,7 +288,9 @@
                     <strong>Rekening</strong
                     ><span>Rekening pencairan komisi</span>
                 </div>
-                <div class="row-side">&rsaquo;</div>
+                <div class="row-side">
+                    <v-icon class="navigation-chevron" icon="mdi-chevron-right" size="24" />
+                </div>
             </div>
             <div
                 class="list-row flow-link"
@@ -267,7 +303,9 @@
                     <strong>Keamanan Akun</strong
                     ><span>Ubah kata sandi dan perangkat</span>
                 </div>
-                <div class="row-side">&rsaquo;</div>
+                <div class="row-side">
+                    <v-icon class="navigation-chevron" icon="mdi-chevron-right" size="24" />
+                </div>
             </div>
         </div>
     </div>

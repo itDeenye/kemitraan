@@ -15,6 +15,7 @@ use App\Models\SiteAdministrator;
 use App\Models\SiteAdministratorGroup;
 use App\Models\Trx;
 use App\Models\TrxPaymentTransfer;
+use App\Services\Report\AdminMemberBatchStockReportService;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -219,12 +220,289 @@ class PreorderChainWorkflowTest extends TestCase
             ->assertJsonPath('data.seller.id', $upgradedDistributor->getKey());
     }
 
+    public function test_pickup_preorder_uses_direct_upline_as_pickup_point_and_warehouse_as_physical_sender(): void
+    {
+        [$distributor] = $this->createMember(1, 1, 0, 'DST', 'Distributor');
+        [$agent] = $this->createMember(2, 2, 1, 'AGT', 'Agent');
+        [$reseller, $resellerAccount] = $this->createMember(3, 3, 2, 'RSL', 'Reseller');
+        $product = $this->createReferences([$distributor, $agent, $reseller]);
+
+        $this->actingAs($resellerAccount, 'member_api');
+        $this->getJson('/api/v1/member/purchases/options?'.http_build_query([
+            'items' => [['product_id' => $product->getKey(), 'quantity' => 2]],
+        ]))->assertOk()
+            ->assertJsonPath('data.seller.origin.name', 'Warehouse Utama DNY')
+            ->assertJsonPath('data.pickup_location.name', $agent->member_name)
+            ->assertJsonPath('data.pickup_location.address', "Jalan {$agent->member_name}");
+        $response = $this->postJson('/api/v1/member/purchases/orders', [
+            'bank_account_id' => $this->bankAccountId($agent),
+            'shipping_method' => 'pickup',
+            'items' => [['product_id' => $product->getKey(), 'quantity' => 2]],
+        ])->assertOk()
+            ->assertJsonPath('data.preorder_fulfillment.mode', 'upline_transit')
+            ->assertJsonPath('data.preorder_fulfillment.pickup_point.id', $agent->getKey())
+            ->assertJsonPath('data.seller.phone', $agent->member_mobilephone)
+            ->assertJsonPath('data.buyer.phone', $reseller->member_mobilephone)
+            ->assertJsonPath('data.pickup_location.name', $agent->member_name)
+            ->assertJsonPath('data.pickup_location.address', "Jalan {$agent->member_name}")
+            ->assertJsonPath('data.preorder_fulfillment.stock_source.type', 'warehouse');
+
+        $rootId = (int) $response->json('data.id');
+        $agentOrder = Trx::query()->where('trx_parent_trx_id', $rootId)->sole();
+        $companyOrder = Trx::query()->where('trx_parent_trx_id', $agentOrder->getKey())->sole();
+
+        $this->assertDatabaseHas('trx', [
+            'trx_id' => $rootId,
+            'trx_preorder_fulfillment_mode' => 'upline_transit',
+            'trx_shipping_method' => 'pickup',
+        ]);
+        $this->assertSame('courier_express', $companyOrder->trx_shipping_method);
+        $this->assertDatabaseHas('shipping_courier_express', [
+            'shipping_courier_express_ref_type' => 'trx',
+            'shipping_courier_express_ref_id' => $companyOrder->getKey(),
+            'shipping_courier_express_destination_name' => $agent->member_name,
+            'shipping_courier_express_destination_address' => "Jalan {$agent->member_name}",
+        ]);
+        $this->assertDatabaseCount('shipping_pickup', 1);
+    }
+
+    public function test_member_source_sends_pickup_preorder_to_direct_upline_without_transit_stock(): void
+    {
+        [$distributor, $distributorAccount] = $this->createMember(1, 1, 0, 'DST', 'Distributor');
+        [$agent, $agentAccount] = $this->createMember(2, 2, 1, 'AGT', 'Agent');
+        [$reseller, $resellerAccount] = $this->createMember(3, 3, 2, 'RSL', 'Reseller');
+        $product = $this->createReferences([$distributor, $agent, $reseller]);
+        DB::table('member_stock')
+            ->where('member_stock_member_id', $distributor->getKey())
+            ->where('member_stock_product_id', $product->getKey())
+            ->update(['member_stock_balance' => 5]);
+        $receiveId = DB::table('goods_receive')->insertGetId([
+            'goods_receive_number' => 'GRN-SOURCE-TRANSIT',
+            'goods_receive_trx_id' => 0,
+            'goods_receive_buyer_type' => 'distributor',
+            'goods_receive_buyer_id' => $distributor->getKey(),
+            'goods_receive_seller_type' => 'warehouse',
+            'goods_receive_seller_id' => 1,
+            'goods_receive_status' => 'completed',
+            'goods_receive_created_datetime' => now(),
+        ]);
+        DB::table('goods_receive_detail')->insert([[
+            'goods_receive_detail_receive_id' => $receiveId,
+            'goods_receive_detail_product_id' => $product->getKey(),
+            'goods_receive_detail_batch_number' => 'BATCH-SOURCE-001',
+            'goods_receive_detail_expire_date' => now()->addMonth()->toDateString(),
+            'goods_receive_detail_qty' => 1,
+            'goods_receive_detail_created_datetime' => now(),
+        ], [
+            'goods_receive_detail_receive_id' => $receiveId,
+            'goods_receive_detail_product_id' => $product->getKey(),
+            'goods_receive_detail_batch_number' => 'BATCH-SOURCE-002',
+            'goods_receive_detail_expire_date' => now()->addYear()->toDateString(),
+            'goods_receive_detail_qty' => 4,
+            'goods_receive_detail_created_datetime' => now(),
+        ]]);
+        config([
+            'services.stc.base_url' => 'https://stc.example.test',
+            'services.stc.token' => 'stc-token',
+            'services.stc.client_id' => 9,
+        ]);
+        Http::fake([
+            'https://stc.example.test/api/shipping/price-express' => Http::response([
+                'status' => true,
+                'details' => [],
+                'results' => [[
+                    'service' => 'jne',
+                    'service_name' => 'JNE Express Reguler',
+                    'service_type' => 'REG23',
+                    'cost' => 25_000,
+                    'etd' => '2-3',
+                    'drop' => true,
+                    'force_insurance' => false,
+                    'insurance' => 0,
+                    'logo' => null,
+                ]],
+            ]),
+        ]);
+
+        $this->actingAs($resellerAccount, 'member_api');
+        $rootResponse = $this->postJson('/api/v1/member/purchases/orders', [
+            'bank_account_id' => $this->bankAccountId($agent),
+            'shipping_method' => 'pickup',
+            'items' => [['product_id' => $product->getKey(), 'quantity' => 2]],
+        ])->assertOk()
+            ->assertJsonPath('data.pickup_location.name', $agent->member_name)
+            ->assertJsonPath('data.pickup_location.address', "Jalan {$agent->member_name}");
+        $rootId = (int) $rootResponse->json('data.id');
+        $terminal = Trx::query()->where('trx_parent_trx_id', $rootId)->sole();
+        $pickupPin = (string) DB::table('shipping_pickup')
+            ->where('shipping_pickup_ref_type', 'trx')
+            ->where('shipping_pickup_ref_id', $rootId)
+            ->value('shipping_pickup_pin');
+
+        $this->assertSame('courier_manual', $terminal->trx_shipping_method);
+        $this->assertDatabaseHas('shipping_courier_manual', [
+            'shipping_courier_manual_ref_type' => 'trx',
+            'shipping_courier_manual_ref_id' => $terminal->getKey(),
+            'shipping_courier_manual_destination_name' => $agent->member_name,
+            'shipping_courier_manual_destination_address' => "Jalan {$agent->member_name}",
+        ]);
+
+        $this->submitPayment($resellerAccount, $rootId, 'transit-root');
+        $this->verifyPayment($agentAccount, $rootId);
+        $this->submitPayment($agentAccount, $terminal->getKey(), 'transit-source');
+        $this->verifyPayment($distributorAccount, $terminal->getKey());
+
+        $this->actingAs($distributorAccount, 'member_api');
+        $this->getJson("/api/v1/member/sales/orders/{$terminal->getKey()}")
+            ->assertOk()
+            ->assertJsonPath('data.seller.phone', $distributor->member_mobilephone)
+            ->assertJsonPath('data.buyer.code', $agent->member_code)
+            ->assertJsonPath('data.buyer.phone', $agent->member_mobilephone)
+            ->assertJsonPath('data.buyer.destination.phone', $agent->member_mobilephone)
+            ->assertJsonPath('data.actions.requires_shipment_items', false)
+            ->assertJsonPath('data.actions.allows_delivery_note_number', false);
+        $this->getJson("/api/v1/member/sales/orders/{$terminal->getKey()}/couriers")
+            ->assertOk()
+            ->assertJsonPath('data.results.0.courier_code', 'jne');
+        DB::table('goods_receive_detail')->where('goods_receive_detail_receive_id', $receiveId)
+            ->update(['goods_receive_detail_expire_date' => now()->subDay()->toDateString()]);
+        $this->postJson("/api/v1/member/sales/orders/{$terminal->getKey()}/ship", [
+            'tracking_number' => 'MANUAL-TRANSIT-001',
+            'courier' => ['name' => 'jne', 'service' => 'JNE Express Reguler', 'service_type' => 'REG23', 'cost' => 25_000],
+        ])->assertUnprocessable()
+            ->assertJsonPath('message', 'Stok batch yang belum kedaluwarsa tidak mencukupi untuk pengiriman.');
+        $this->assertStock($distributor, $product, 3, 0, 2);
+        DB::table('goods_receive_detail')->where('goods_receive_detail_receive_id', $receiveId)
+            ->where('goods_receive_detail_batch_number', 'BATCH-SOURCE-001')
+            ->update(['goods_receive_detail_expire_date' => now()->addMonth()->toDateString()]);
+        DB::table('goods_receive_detail')->where('goods_receive_detail_receive_id', $receiveId)
+            ->where('goods_receive_detail_batch_number', 'BATCH-SOURCE-002')
+            ->update(['goods_receive_detail_expire_date' => now()->addYear()->toDateString()]);
+        $this->postJson("/api/v1/member/sales/orders/{$terminal->getKey()}/ship", [
+            'tracking_number' => 'MANUAL-OVERFLOW-001',
+            'courier' => [
+                'name' => 'Kurir Lokal',
+                'service' => 'Same Day',
+                'service_type' => 'MANUAL',
+                'cost' => 4_294_967_296,
+            ],
+        ])->assertUnprocessable()->assertJsonValidationErrors('courier.cost');
+        $this->postJson("/api/v1/member/sales/orders/{$terminal->getKey()}/ship", [
+            'tracking_number' => 'MANUAL-TRANSIT-001',
+            'courier' => [
+                'name' => 'Kurir Lokal',
+                'service' => 'Same Day',
+                'service_type' => 'MANUAL',
+                'cost' => 18_000,
+            ],
+        ])->assertOk()
+            ->assertJsonPath('data.status.code', 'shipped')
+            ->assertJsonPath('data.shipping.courier', 'Kurir Lokal')
+            ->assertJsonPath('data.shipping.service', 'Same Day')
+            ->assertJsonPath('data.shipping.cost', 18_000)
+            ->assertJsonPath('data.shipping.delivery_note_number', null)
+            ->assertJsonPath('data.shipping.items.0.batch_number', 'BATCH-SOURCE-001')
+            ->assertJsonPath('data.shipping.items.0.quantity', 1)
+            ->assertJsonPath('data.shipping.items.1.batch_number', 'BATCH-SOURCE-002')
+            ->assertJsonPath('data.shipping.items.1.quantity', 1);
+        $this->assertDatabaseHas('shipping_courier_manual', [
+            'shipping_courier_manual_ref_id' => $terminal->getKey(),
+            'shipping_courier_manual_type' => 'MANUAL',
+            'shipping_courier_manual_price' => 18_000,
+        ]);
+        Http::assertSentCount(1);
+        $this->actingAs($resellerAccount, 'member_api');
+        $this->getJson("/api/v1/member/sales/orders/{$terminal->getKey()}/couriers")
+            ->assertNotFound();
+
+        $this->assertStock($distributor, $product, 3, 0, 0);
+        $this->assertStock($agent, $product, 0, 0, 0);
+        $this->assertDatabaseHas('trx', ['trx_id' => $rootId, 'trx_status' => 'processing']);
+
+        $this->actingAs($agentAccount, 'member_api');
+        $this->postJson("/api/v1/member/sales/orders/{$rootId}/confirm-arrival")
+            ->assertOk()
+            ->assertJsonPath('data.status.code', 'ready_to_pickup')
+            ->assertJsonPath('data.actions.can_handover_pickup', true);
+        $this->postJson("/api/v1/member/sales/orders/{$rootId}/confirm-arrival")
+            ->assertOk()
+            ->assertJsonPath('data.status.code', 'ready_to_pickup');
+        $this->assertStock($agent, $product, 0, 0, 0);
+
+        $this->postJson("/api/v1/member/sales/orders/{$rootId}/ship", [
+            'pickup_pin' => $pickupPin,
+        ])->assertOk()
+            ->assertJsonPath('data.status.code', 'received')
+            ->assertJsonPath('data.shipping.verification_status', 'picked_up');
+        $this->assertStock($agent, $product, 0, 0, 0);
+
+        $this->actingAs($resellerAccount, 'member_api');
+        $this->getJson("/api/v1/member/purchases/goods-receipts/{$rootId}")
+            ->assertOk()
+            ->assertJsonPath('data.seller.type', 'agent')
+            ->assertJsonPath('data.shipping_method', 'pickup')
+            ->assertJsonPath('data.actions.requires_delivery_note_number', false);
+        $this->postJson("/api/v1/member/purchases/goods-receipts/{$rootId}/confirm", [])
+            ->assertOk()
+            ->assertJsonPath('data.status.code', 'completed');
+        $this->assertDatabaseHas('goods_receive', [
+            'goods_receive_trx_id' => $rootId,
+            'goods_receive_seller_type' => 'agent',
+            'goods_receive_seller_id' => $agent->getKey(),
+            'goods_receive_delivery_note_number' => null,
+        ]);
+        $this->assertStock($reseller, $product, 2, 0, 0);
+    }
+
     public function test_pickup_preorder_chain_copies_shipping_to_the_next_seller(): void
     {
         [$distributor, $distributorAccount] = $this->createMember(1, 1, 0, 'DST', 'Distributor');
         [$agent, $agentAccount] = $this->createMember(2, 2, 1, 'AGT', 'Agent');
         [$reseller, $resellerAccount] = $this->createMember(3, 3, 2, 'RSL', 'Reseller');
         $product = $this->createReferences([$distributor, $agent, $reseller]);
+        config([
+            'services.stc.base_url' => 'https://stc.example.test',
+            'services.stc.token' => 'stc-token',
+            'services.stc.client_id' => 9,
+        ]);
+        Http::fake([
+            'https://stc.example.test/api/shipping/price-express' => Http::response([
+                'status' => true,
+                'details' => [],
+                'results' => [[
+                    'service' => 'jne',
+                    'service_name' => 'JNE Express Reguler',
+                    'service_type' => 'REG23',
+                    'cost' => 20_000,
+                    'etd' => '2-3',
+                    'drop' => true,
+                    'force_insurance' => false,
+                    'insurance' => 0,
+                    'logo' => null,
+                ]],
+            ]),
+            'https://stc.example.test/api/shipping/pickup-express' => Http::response([
+                'status' => true,
+                'pickup_number' => 'PICKUP-TRANSIT-001',
+                'details' => [[
+                    'order_id' => 'STC-TRANSIT-001',
+                    'awb' => 'AWB-TRANSIT-001',
+                ]],
+            ]),
+            'https://stc.example.test/api/shipping/tracking-express' => Http::response([
+                'message' => 'Paket telah diterima di lokasi pengambilan.',
+                'error' => '',
+                'data' => ['results' => [
+                    'method' => 'shTracking',
+                    'details' => [
+                        'awb' => 'AWB-TRANSIT-001',
+                        'order_id' => 'STC-TRANSIT-001',
+                        'delivered' => true,
+                    ],
+                    'histories' => [],
+                ]],
+            ]),
+        ]);
 
         $this->actingAs($resellerAccount, 'member_api');
         $this->getJson('/api/v1/member/purchases/options?'.http_build_query([
@@ -248,7 +526,8 @@ class PreorderChainWorkflowTest extends TestCase
 
         $this->getJson("/api/v1/member/purchases/orders/{$rootId}")
             ->assertOk()
-            ->assertJsonPath('data.shipping.code', $rootPickupPin);
+            ->assertJsonPath('data.shipping.code', null)
+            ->assertJsonPath('data.actions.can_show_pickup_code', false);
         $this->actingAs($agentAccount, 'member_api');
         $this->getJson("/api/v1/member/purchases/orders/{$agentOrder->getKey()}")
             ->assertOk()
@@ -261,25 +540,13 @@ class PreorderChainWorkflowTest extends TestCase
             ->assertJsonPath('data.actions.can_show_pickup_code', false);
         $this->actingAs($resellerAccount, 'member_api');
 
-        $this->assertSame('pickup', $companyOrder->trx_shipping_method);
-        $this->assertDatabaseMissing('shipping_courier_express', [
+        $this->assertSame('courier_express', $companyOrder->trx_shipping_method);
+        $this->assertDatabaseHas('shipping_courier_express', [
             'shipping_courier_express_ref_type' => 'trx',
             'shipping_courier_express_ref_id' => $companyOrder->getKey(),
+            'shipping_courier_express_destination_name' => $agent->member_name,
         ]);
-        $this->assertSame(
-            [$rootPickupPin],
-            DB::table('shipping_pickup')
-                ->where('shipping_pickup_ref_type', 'trx')
-                ->whereIn('shipping_pickup_ref_id', [
-                    $rootId,
-                    $agentOrder->getKey(),
-                    $companyOrder->getKey(),
-                ])
-                ->pluck('shipping_pickup_pin')
-                ->unique()
-                ->values()
-                ->all(),
-        );
+        $this->assertDatabaseCount('shipping_pickup', 1);
 
         $this->submitPayment($resellerAccount, $rootId, 'pickup-root');
         $this->verifyPayment($agentAccount, $rootId);
@@ -287,29 +554,23 @@ class PreorderChainWorkflowTest extends TestCase
         $this->actingAs($resellerAccount, 'member_api');
         $this->getJson("/api/v1/member/purchases/orders/{$rootId}")
             ->assertOk()
-            ->assertJsonPath('data.shipping.code', $rootPickupPin)
-            ->assertJsonPath('data.actions.can_show_pickup_code', true);
+            ->assertJsonPath('data.shipping.code', null)
+            ->assertJsonPath('data.actions.can_show_pickup_code', false);
 
-        $this->assertDatabaseHas('shipping_pickup', [
+        $this->assertDatabaseMissing('shipping_pickup', [
             'shipping_pickup_ref_type' => 'trx',
             'shipping_pickup_ref_id' => $agentOrder->getKey(),
-            'shipping_pickup_seller_name' => $distributor->member_name,
-        ]);
-        $this->assertDatabaseHas('shipping_pickup_status', [
-            'shipping_pickup_status_ref_type' => 'trx',
-            'shipping_pickup_status_ref_id' => $agentOrder->getKey(),
-            'shipping_pickup_status_value' => 'pending',
         ]);
         $this->assertStock($agent, $product, 0, 0, 0);
         $this->assertStock($distributor, $product, 0, 0, 0);
         $this->assertDatabaseCount('trx', 3);
-        $this->assertDatabaseCount('shipping_pickup', 3);
+        $this->assertDatabaseCount('shipping_pickup', 1);
 
         $this->actingAs($agentAccount, 'member_api');
         $this->getJson("/api/v1/member/sales/orders/{$rootId}")
             ->assertOk()
-            ->assertJsonPath('data.shipping.method', 'pickup')
-            ->assertJsonPath('data.shipping.location', 'Warehouse Utama DNY')
+            ->assertJsonPath('data.shipping.method', 'courier_express')
+            ->assertJsonPath('data.shipping.destination', "Jalan {$agent->member_name}")
             ->assertJsonPath('data.actions.can_ship', false);
 
         $this->submitPayment($agentAccount, $agentOrder->getKey(), 'pickup-agent');
@@ -337,13 +598,30 @@ class PreorderChainWorkflowTest extends TestCase
             ->assertJsonPath('data.payment.status', 'approved');
         $this->getJson("/api/v1/admin/inventory/shipments/{$companyOrder->getKey()}")
             ->assertOk()
-            ->assertJsonPath('data.shipping_method', 'pickup')
+            ->assertJsonPath('data.shipping_method', 'courier_express')
             ->assertJsonPath('data.actions.can_ship', true)
-            ->assertJsonPath('data.actions.requires_pickup_pin', true);
+            ->assertJsonPath('data.actions.requires_courier_selection', true);
+
+        $this->postJson("/api/v1/admin/inventory/shipments/{$companyOrder->getKey()}/couriers", [
+            'couriers' => ['jne'],
+        ])->assertOk()
+            ->assertJsonPath('data.results.0.courier_code', 'jne');
 
         $this->postJson("/api/v1/admin/inventory/shipments/{$companyOrder->getKey()}/ship", [
             'delivery_note_number' => 'SJ-PO-PICKUP-001',
-            'pickup_pin' => $rootPickupPin,
+            'pickup_method' => 'PICKUP',
+            'pickup_schedule' => now()->addDay()->toDateTimeString(),
+            'courier' => [
+                'courier_code' => 'jne',
+                'courier_name' => 'JNE Express Reguler',
+                'service_type' => 'REG23',
+                'cost' => 20_000,
+                'etd' => '2-3',
+                'drop_off_available' => true,
+                'force_insurance' => false,
+                'insurance' => 0,
+                'logo_url' => null,
+            ],
             'items' => [[
                 'product_id' => $product->getKey(),
                 'quantity' => 2,
@@ -351,14 +629,23 @@ class PreorderChainWorkflowTest extends TestCase
                 'expiry_date' => now()->addYear()->toDateString(),
             ]],
         ])->assertOk()
-            ->assertJsonPath('data.status', 'received')
-            ->assertJsonPath('data.shipping.method', 'pickup')
-            ->assertJsonPath('data.shipping.verification_status', 'picked_up');
+            ->assertJsonPath('data.status', 'shipped')
+            ->assertJsonPath('data.shipping.method', 'courier_express');
 
-        $this->assertSame(3, Trx::query()
-            ->whereIn('trx_id', [$rootId, $agentOrder->getKey(), $companyOrder->getKey()])
-            ->where('trx_status', 'received')
-            ->count());
+        $this->postJson('/api/v1/callbacks/stc/shipping', [
+            'method' => 'finished_packages',
+            'data' => [[
+                'order_id' => 'STC-TRANSIT-001',
+                'awb' => 'AWB-TRANSIT-001',
+                'finished_at' => now()->toDateTimeString(),
+            ]],
+        ])->assertOk();
+        $this->assertDatabaseHas('trx', ['trx_id' => $rootId, 'trx_status' => 'processing']);
+
+        $this->actingAs($agentAccount, 'member_api');
+        $this->postJson("/api/v1/member/sales/orders/{$rootId}/confirm-arrival")
+            ->assertOk()
+            ->assertJsonPath('data.status.code', 'ready_to_pickup');
         $this->assertDatabaseHas('shipping_pickup', [
             'shipping_pickup_ref_type' => 'trx',
             'shipping_pickup_ref_id' => $rootId,
@@ -375,20 +662,43 @@ class PreorderChainWorkflowTest extends TestCase
         $this->getJson("/api/v1/member/purchases/orders/{$rootId}")
             ->assertOk()
             ->assertJsonPath('data.shipping.method', 'pickup')
+            ->assertJsonPath('data.shipping.code', $rootPickupPin)
+            ->assertJsonPath('data.pickup_location.name', $agent->member_name)
+            ->assertJsonPath('data.pickup_location.address', "Jalan {$agent->member_name}")
+            ->assertJsonPath('data.shipping.verification_status', 'ready_to_pickup')
+            ->assertJsonPath('data.actions.can_receive', false);
+
+        $this->actingAs($agentAccount, 'member_api');
+        $this->postJson("/api/v1/member/sales/orders/{$rootId}/ship", [
+            'pickup_pin' => $rootPickupPin,
+        ])->assertOk()
+            ->assertJsonPath('data.status.code', 'received');
+
+        $this->actingAs($resellerAccount, 'member_api');
+        $this->getJson("/api/v1/member/purchases/orders/{$rootId}")
+            ->assertOk()
             ->assertJsonPath('data.shipping.verification_status', 'picked_up')
             ->assertJsonPath('data.actions.can_receive', true);
         $this->getJson("/api/v1/member/purchases/goods-receipts/{$rootId}")
             ->assertOk()
-            ->assertJsonPath('data.seller.type', 'warehouse')
-            ->assertJsonPath('data.actions.requires_delivery_note_number', true)
+            ->assertJsonPath('data.seller.type', 'agent')
+            ->assertJsonPath('data.shipping_method', 'pickup')
+            ->assertJsonPath('data.actions.requires_delivery_note_number', false)
             ->assertJsonPath('data.shipment_items.0.batch_number', 'BATCH-PO-PICKUP-001');
-        $this->postJson("/api/v1/member/purchases/goods-receipts/{$rootId}/confirm", [
-            'delivery_note_number' => 'SJ-PO-PICKUP-001',
-        ])
+        $this->getJson('/api/v1/member/purchases/goods-receipts')
+            ->assertOk()
+            ->assertJsonPath('data.results.0.seller.type', 'agent')
+            ->assertJsonPath('data.results.0.shipping_method', 'pickup')
+            ->assertJsonPath('data.results.0.actions.requires_delivery_note_number', false);
+        $this->postJson("/api/v1/member/purchases/goods-receipts/{$rootId}/confirm", [])
             ->assertOk()
             ->assertJsonPath('data.status.code', 'completed');
+        $this->assertDatabaseHas('goods_receive', [
+            'goods_receive_trx_id' => $rootId,
+            'goods_receive_delivery_note_number' => 'SJ-PO-PICKUP-001',
+        ]);
         $this->assertStock($reseller, $product, 2, 0, 0);
-        $this->assertSame(3, Trx::query()->where('trx_status', 'completed')->count());
+        $this->assertDatabaseHas('trx', ['trx_id' => $rootId, 'trx_status' => 'completed']);
     }
 
     public function test_manual_courier_preorder_between_members_is_fulfilled_by_terminal_upline(): void
@@ -584,6 +894,7 @@ class PreorderChainWorkflowTest extends TestCase
         [$agent, $agentAccount] = $this->createMember(2, 2, 1, 'AGT', 'Agent');
         [$reseller, $resellerAccount] = $this->createMember(3, 3, 2, 'RSL', 'Reseller');
         $product = $this->createReferences([$distributor, $agent, $reseller]);
+        $product->update(['product_monthly_points' => 2, 'product_annual_points' => 5]);
         DB::table('member_stock')
             ->where('member_stock_member_id', $distributor->getKey())
             ->where('member_stock_product_id', $product->getKey())
@@ -595,10 +906,27 @@ class PreorderChainWorkflowTest extends TestCase
             'shipping_method' => 'pickup',
             'items' => [['product_id' => $product->getKey(), 'quantity' => 2]],
         ])->assertOk()
-            ->assertJsonPath('data.is_preorder', true);
+            ->assertJsonPath('data.is_preorder', true)
+            ->assertJsonPath('data.items.0.product.monthly_points', 2)
+            ->assertJsonPath('data.items.0.product.annual_points', 5)
+            ->assertJsonPath('data.items.0.monthly_points', 4)
+            ->assertJsonPath('data.items.0.annual_points', 10)
+            ->assertJsonPath('data.summary.total_monthly_points', 4)
+            ->assertJsonPath('data.summary.total_annual_points', 10);
         $rootId = (int) $rootResponse->json('data.id');
         $rootCode = (string) $rootResponse->json('data.code');
         $agentOrder = Trx::query()->where('trx_parent_trx_id', $rootId)->sole();
+
+        $this->assertDatabaseHas('trx', [
+            'trx_id' => $agentOrder->getKey(),
+            'trx_total_monthly_points' => 4,
+            'trx_total_annual_points' => 10,
+        ]);
+        $this->getJson('/api/v1/member/purchases/orders')
+            ->assertOk()
+            ->assertJsonPath('data.results.0.summary.total_monthly_points', 4)
+            ->assertJsonPath('data.results.0.summary.total_annual_points', 10);
+        $product->update(['product_monthly_points' => 99, 'product_annual_points' => 100]);
 
         $this->assertDatabaseCount('trx', 2);
         $this->assertStock($distributor, $product, 3, 0, 2);
@@ -614,7 +942,13 @@ class PreorderChainWorkflowTest extends TestCase
         $this->actingAs($agentAccount, 'member_api');
         $this->getJson("/api/v1/member/sales/orders/{$rootId}")
             ->assertOk()
-            ->assertJsonPath('data.actions.can_cancel', false);
+            ->assertJsonPath('data.actions.can_cancel', false)
+            ->assertJsonPath('data.summary.total_monthly_points', 4)
+            ->assertJsonPath('data.items.0.annual_points', 10);
+        $this->getJson('/api/v1/member/sales/orders')
+            ->assertOk()
+            ->assertJsonPath('data.results.0.summary.total_monthly_points', 4)
+            ->assertJsonPath('data.results.0.summary.total_annual_points', 10);
         $this->postJson("/api/v1/member/sales/orders/{$rootId}/cancel")
             ->assertUnprocessable()
             ->assertJsonPath('message', 'Rantai PO hanya dapat dibatalkan oleh penjual PO terakhir.');
@@ -637,6 +971,19 @@ class PreorderChainWorkflowTest extends TestCase
 
         $this->assertSame(2, Trx::query()->where('trx_status', 'processing')->count());
         $this->assertDatabaseCount('member_point_transaction', 2);
+
+        foreach ([$reseller, $agent] as $buyer) {
+            $this->assertDatabaseHas('member_point_transaction', [
+                'member_point_transaction_member_id' => $buyer->getKey(),
+                'member_point_transaction_quantity' => 2,
+                'member_point_transaction_monthly_points' => 4,
+                'member_point_transaction_annual_points' => 10,
+            ]);
+            $this->assertDatabaseHas('reward_point_annual', [
+                'reward_point_annual_member_id' => $buyer->getKey(),
+                'reward_point_annual_total_points' => 10,
+            ]);
+        }
 
         $this->actingAs($distributorAccount, 'member_api');
         $this->getJson("/api/v1/member/sales/orders/{$agentOrder->getKey()}")
@@ -901,9 +1248,11 @@ class PreorderChainWorkflowTest extends TestCase
             ->assertJsonPath('data.preorder.chain.1.seller.id', $distributor->getKey())
             ->assertJsonCount(2, 'data.preorder.chain')
             ->assertJsonPath('data.actions.can_ship', true)
-            ->assertJsonPath('data.actions.allows_delivery_note_number', true)
+            ->assertJsonPath('data.actions.allows_delivery_note_number', false)
             ->assertJsonPath('data.actions.requires_delivery_note_number', false)
-            ->assertJsonPath('data.actions.requires_pickup_pin', true);
+            ->assertJsonPath('data.actions.requires_tracking_number', true)
+            ->assertJsonPath('data.actions.requires_manual_courier', true)
+            ->assertJsonPath('data.actions.requires_pickup_pin', false);
         $this->getJson('/api/v1/member/sales/orders?filter[action]=ship')
             ->assertOk()
             ->assertJsonPath('data.pagination.total_data', 1)
@@ -917,9 +1266,17 @@ class PreorderChainWorkflowTest extends TestCase
 
         $pickupPin = (string) DB::table('shipping_pickup')
             ->where('shipping_pickup_ref_type', 'trx')
-            ->where('shipping_pickup_ref_id', $agentOrder->getKey())
+            ->where('shipping_pickup_ref_id', $rootId)
             ->value('shipping_pickup_pin');
         $shippingPayload = [
+            'delivery_note_number' => 'SJ-PO-PICKUP-DST-001',
+            'tracking_number' => 'AWB-PO-PICKUP-DST-001',
+            'courier' => [
+                'name' => 'Kurir Distributor',
+                'service' => 'Same Day',
+                'service_type' => 'manual',
+                'cost' => 25_000,
+            ],
             'items' => [[
                 'product_id' => $product->getKey(),
                 'quantity' => 2,
@@ -929,32 +1286,46 @@ class PreorderChainWorkflowTest extends TestCase
         ];
 
         $this->actingAs($distributorAccount, 'member_api');
-        $this->postJson("/api/v1/member/sales/orders/{$agentOrder->getKey()}/ship", $shippingPayload)
+        $this->postJson(
+            "/api/v1/member/sales/orders/{$agentOrder->getKey()}/ship",
+            collect($shippingPayload)->except('tracking_number')->all(),
+        )
             ->assertUnprocessable()
             ->assertJsonPath('error_code', 'validation')
-            ->assertJsonPath('errors.pickup_pin.0', 'Kode pengambilan wajib diisi untuk metode ambil di tempat.');
+            ->assertJsonValidationErrors('tracking_number');
 
-        $this->postJson("/api/v1/member/sales/orders/{$agentOrder->getKey()}/ship", [
-            ...$shippingPayload,
+        $this->postJson("/api/v1/member/sales/orders/{$agentOrder->getKey()}/ship", collect($shippingPayload)->except('items')->all())
+            ->assertOk()
+            ->assertJsonPath('data.status.code', 'shipped')
+            ->assertJsonPath('data.shipping.items.0.batch_number', '')
+            ->assertJsonPath('data.shipping.items.0.expiry_date', null)
+            ->assertJsonPath('data.shipping.tracking_number', 'AWB-PO-PICKUP-DST-001');
+
+        $this->assertDatabaseHas('trx', ['trx_id' => $rootId, 'trx_status' => 'processing']);
+        $this->assertDatabaseHas('trx', ['trx_id' => $agentOrder->getKey(), 'trx_status' => 'shipped']);
+        $this->assertStock($distributor, $product, 3, 0, 0);
+        $this->assertSame(3, (int) app(AdminMemberBatchStockReportService::class)
+            ->batchBalances($distributor->getKey(), [$product->getKey()])->sum('balance'));
+
+        $this->actingAs($agentAccount, 'member_api');
+        $this->getJson('/api/v1/member/sales/orders?filter[action]=ship')
+            ->assertOk()
+            ->assertJsonPath('data.pagination.total_data', 1)
+            ->assertJsonPath('data.results.0.id', $rootId)
+            ->assertJsonPath('data.results.0.actions.can_confirm_arrival', true);
+        $this->getJson('/api/v1/member/sales/orders/summary')
+            ->assertOk()
+            ->assertJsonPath('data.action_required', 1);
+        $this->postJson("/api/v1/member/sales/orders/{$rootId}/confirm-arrival")
+            ->assertOk()
+            ->assertJsonPath('data.status.code', 'ready_to_pickup')
+            ->assertJsonPath('data.actions.can_handover_pickup', true);
+        $this->postJson("/api/v1/member/sales/orders/{$rootId}/ship", [
             'pickup_pin' => $pickupPin,
         ])->assertOk()
             ->assertJsonPath('data.status.code', 'received')
-            ->assertJsonPath('data.status.label', 'Siap Diterima')
             ->assertJsonPath('data.shipping.verification_status', 'picked_up');
-
-        $this->assertDatabaseHas('trx', ['trx_id' => $rootId, 'trx_status' => 'received']);
-        $this->assertDatabaseHas('trx', ['trx_id' => $agentOrder->getKey(), 'trx_status' => 'received']);
-        $this->assertDatabaseHas('shipping_pickup_status', [
-            'shipping_pickup_status_ref_type' => 'trx',
-            'shipping_pickup_status_ref_id' => $agentOrder->getKey(),
-            'shipping_pickup_status_value' => 'picked_up',
-        ]);
-        $this->assertDatabaseHas('shipping_pickup', [
-            'shipping_pickup_ref_type' => 'trx',
-            'shipping_pickup_ref_id' => $agentOrder->getKey(),
-            'shipping_pickup_delivery_note_number' => null,
-        ]);
-        $this->assertStock($distributor, $product, 3, 0, 0);
+        $this->assertStock($agent, $product, 0, 0, 0);
     }
 
     public function test_preorder_uses_terminal_seller_origin_when_direct_seller_stock_is_reserved(): void
@@ -1493,13 +1864,15 @@ class PreorderChainWorkflowTest extends TestCase
             ->assertJsonPath('data.results.0.purchase_order_id', $rootId)
             ->assertJsonPath('data.results.0.seller.type', 'warehouse')
             ->assertJsonPath('data.results.0.actions.can_receive', true)
-            ->assertJsonPath('data.results.0.actions.requires_delivery_note_number', true);
+            ->assertJsonPath('data.results.0.actions.requires_delivery_note_number', false);
         $this->getJson('/api/v1/member/purchases/orders/summary')
             ->assertOk()
             ->assertJsonPath('data.goods_receipts.ready_to_receive', 1);
-        $this->postJson("/api/v1/member/purchases/goods-receipts/{$rootId}/confirm", [
-            'delivery_note_number' => 'SJ-PO-CHAIN-001',
-        ])->assertOk()
+        $this->getJson("/api/v1/member/purchases/goods-receipts/{$rootId}")
+            ->assertOk()
+            ->assertJsonPath('data.actions.requires_delivery_note_number', false);
+        $this->postJson("/api/v1/member/purchases/goods-receipts/{$rootId}/confirm", [])
+            ->assertOk()
             ->assertJsonPath('data.status.code', 'completed');
         $this->assertDatabaseHas('goods_receive', [
             'goods_receive_trx_id' => $rootId,

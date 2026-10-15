@@ -21,6 +21,7 @@ class ProductCategory extends Model
         'product_category_name',
         'product_category_description',
         'product_category_is_active',
+        'product_category_sort_order',
     ];
 
     public function products(): HasMany
@@ -37,6 +38,19 @@ class ProductCategory extends Model
     {
         return [
             'product_category_is_active' => 'boolean',
+            'product_category_sort_order' => 'integer',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        static::creating(function (ProductCategory $category): void {
+            if ((int) $category->product_category_sort_order > 0) {
+                return;
+            }
+
+            $category->product_category_sort_order = ((int) static::query()
+                ->max('product_category_sort_order')) + 1;
+        });
     }
 }
