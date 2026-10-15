@@ -852,7 +852,6 @@ const open = async (item: any) => {
         session === dialogSession &&
         order.value?.shipping_method === "courier_express"
     ) {
-        fetchSchedules();
         fetchCouriers(item.id);
     }
 };

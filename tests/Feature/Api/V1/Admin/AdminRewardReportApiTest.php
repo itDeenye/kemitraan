@@ -61,6 +61,39 @@ class AdminRewardReportApiTest extends TestCase
             ->assertJsonPath('data.results.0.payment.amount', 50000000);
     }
 
+    public function test_stockist_status_filters_match_list_and_detail_including_expired_vouchers(): void
+    {
+        $this->travelTo(now()->setDate(2026, 10, 15)->setTime(14, 0));
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $this->createData();
+        foreach ([
+            2 => [0, 0, '2026-10-16'],
+            3 => [0, 0, '2026-10-14'],
+            4 => [1000, 0, '2026-10-14'],
+            5 => [500, 0, '2026-10-15'],
+        ] as $id => [$used, $trxId, $expiry]) {
+            RewardStockist::query()->create([
+                'reward_stockist_id' => $id, 'reward_stockist_member_id' => 1,
+                'reward_stockist_year' => 2026, 'reward_stockist_month' => $id,
+                'reward_stockist_bonus_value' => 1000, 'reward_stockist_used_value' => $used,
+                'reward_stockist_used_trx_id' => $trxId, 'reward_stockist_expiry_date' => $expiry,
+                'reward_stockist_created_datetime' => now(),
+            ]);
+        }
+        foreach (['available' => [5, 2], 'used' => [4, 1], 'expired' => [3]] as $status => $ids) {
+            $response = $this->getJson('/api/v1/admin/rewards/stockists?'.http_build_query([
+                'filter' => ['status' => $status], 'sort' => '-id',
+            ]))->assertOk()->assertJsonCount(count($ids), 'data.results')
+                ->assertJsonPath('data.pagination.total_data', count($ids));
+            $this->assertSame($ids, array_column($response->json('data.results'), 'id'));
+            foreach ($ids as $index => $id) {
+                $response->assertJsonPath("data.results.{$index}.status", $status);
+                $this->getJson('/api/v1/admin/rewards/stockists/'.$id)->assertOk()->assertJsonPath('data.status', $status);
+            }
+        }
+        $this->getJson('/api/v1/admin/rewards/stockists?filter[status]=unknown')->assertUnprocessable();
+    }
+
     private function createData(): void
     {
         DB::table('warehouse')->insert(['warehouse_id' => 1, 'warehouse_name' => 'Pusat', 'warehouse_legal_name' => 'PT DNY']);

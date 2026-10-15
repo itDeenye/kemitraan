@@ -32,6 +32,7 @@ class AdminInventoryService
         ])->from('warehouse_stock')->leftJoin('warehouse', 'warehouse.warehouse_id = warehouse_stock.warehouse_stock_warehouse_id')
             ->leftJoin('product', 'product.product_id = warehouse_stock.warehouse_stock_product_id')
             ->leftJoin('product_category', 'product_category.product_category_id = product.product_product_category_id')
+            ->aliases(['code' => 'product_code', 'name' => 'product_name'])
             ->where('product.product_is_deleted', 0)->search(['warehouse_name', 'product_code', 'product_name', 'category_name'])
             ->defaultSort('-id')->get($params);
     }

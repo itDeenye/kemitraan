@@ -1,5 +1,8 @@
 <template>
-    <section class="order-shipping-info" :class="{ card: !embedded, 'order-shipping-info--embedded': embedded }">
+    <section
+        class="order-shipping-info"
+        :class="{ card: !embedded, 'order-shipping-info--embedded': embedded }"
+    >
         <header class="order-shipping-info__header">
             <h3 class="order-shipping-info__title">
                 <v-icon icon="mdi-truck-outline" size="18" />
@@ -8,7 +11,7 @@
         </header>
         <div class="order-shipping-info__body">
             <div v-if="method" class="order-shipping-info__row">
-                <span>Metode</span>
+                <span>Metode Pengiriman</span>
                 <strong>{{ methodLabel }}</strong>
             </div>
             <template v-if="method === 'pickup'">
@@ -16,13 +19,15 @@
                     v-if="transit && origin?.name"
                     title="Asal Barang"
                     :party="origin"
-                    embedded compact
+                    embedded
+                    compact
                 />
                 <OrderPartyInfo
                     title="Lokasi Pengambilan"
                     :party="pickupLocation"
                     :address="formatLocation(pickupLocation)"
-                    embedded compact
+                    embedded
+                    compact
                 />
             </template>
             <template v-else>
@@ -31,28 +36,39 @@
                     title="Asal Barang"
                     :party="origin"
                     :address="formatLocation(origin)"
-                    embedded compact
+                    embedded
+                    compact
                 />
                 <OrderPartyInfo
                     v-if="destination"
                     title="Tujuan"
                     :party="destination"
                     :address="formatLocation(destination)"
-                    embedded compact
+                    embedded
+                    compact
                 />
             </template>
-            <div v-if="method !== 'pickup' && courierLabel" class="order-shipping-info__row">
+            <div
+                v-if="method !== 'pickup' && courierLabel"
+                class="order-shipping-info__row"
+            >
                 <span>Kurir</span>
                 <strong>{{ courierLabel }}</strong>
             </div>
-            <div v-if="shipping?.delivery_note_number" class="order-shipping-info__row">
+            <div
+                v-if="shipping?.delivery_note_number"
+                class="order-shipping-info__row"
+            >
                 <span>Nomor Surat Jalan</span>
                 <div class="order-shipping-info__value">
                     <strong>{{ shipping.delivery_note_number }}</strong>
                     <slot name="delivery-note-action" />
                 </div>
             </div>
-            <div v-if="shipping?.tracking_number" class="order-shipping-info__row">
+            <div
+                v-if="shipping?.tracking_number"
+                class="order-shipping-info__row"
+            >
                 <span>Nomor Resi</span>
                 <div class="order-shipping-info__value">
                     <strong>{{ shipping.tracking_number }}</strong>
@@ -92,11 +108,18 @@ const methodLabels: Record<string, string> = {
     courier_express: "Kurir Ekspres",
     courier_instant: "Kurir Instan",
 };
-const methodLabel = computed(() => methodLabels[props.method || ""] || props.method);
-const courierLabel = computed(() => [props.shipping?.courier, props.shipping?.service]
-    .map(value => value?.trim())
-    .filter(value => value && value !== "-")
-    .join(" - "));
+const methodLabel = computed(
+    () => methodLabels[props.method || ""] || props.method,
+);
+const courierLabel = computed(() =>
+    [
+        props.shipping?.courier?.toLocaleUpperCase("id-ID"),
+        props.shipping?.service,
+    ]
+        .map((value) => value?.trim())
+        .filter((value) => value && value !== "-")
+        .join(" - "),
+);
 </script>
 
 <style scoped>

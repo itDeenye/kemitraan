@@ -90,12 +90,20 @@
                 </div>
             </div>
 
-            <OrderPartyInfo title="Data Pembeli" icon="mdi-account-outline" :party="order.buyer" />
+            <OrderPartyInfo
+                title="Data Pembeli"
+                icon="mdi-account-outline"
+                :party="order.buyer"
+            />
             <OrderSellerInfo :seller="order.seller" />
 
             <OrderShippingInfo
                 v-if="!isIntermediatePickupPreorder"
-                :method="isPickupOrder ? 'pickup' : order.shipping?.method || order.shipping_method"
+                :method="
+                    isPickupOrder
+                        ? 'pickup'
+                        : order.shipping?.method || order.shipping_method
+                "
                 :shipping="order.shipping"
                 :origin="order.seller?.origin"
                 :destination="order.buyer?.destination"
@@ -103,18 +111,30 @@
                 :transit="isUplineTransit"
             >
                 <div
-                    v-if="order.shipping?.code && (!order.is_preorder || !order.parent_transaction_id)"
+                    v-if="
+                        order.shipping?.code &&
+                        (!order.is_preorder || !order.parent_transaction_id)
+                    "
                     class="rounded-lg"
-                    style="padding: 12px 14px; border: 1px solid rgba(var(--v-theme-primary), 0.18); background: rgba(var(--v-theme-primary), 0.06)"
+                    style="
+                        padding: 12px 14px;
+                        border: 1px solid rgba(var(--v-theme-primary), 0.18);
+                        background: rgba(var(--v-theme-primary), 0.06);
+                    "
                 >
-                    <span class="text-[11px] font-semibold text-[var(--muted)] block mb-1">
+                    <span
+                        class="text-[11px] font-semibold text-[var(--muted)] block mb-1"
+                    >
                         Kode Verifikasi Pengambilan
                     </span>
-                    <strong class="text-[22px] tracking-[0.18em] text-[var(--primary)]">
+                    <strong
+                        class="text-[22px] tracking-[0.18em] text-[var(--primary)]"
+                    >
                         {{ order.shipping.code }}
                     </strong>
                     <p class="text-[12px] text-[var(--muted)] m-0 mt-1">
-                        Tunjukkan kode ini kepada petugas di lokasi pengambilan saat barang diambil.
+                        Tunjukkan kode ini kepada petugas di lokasi pengambilan
+                        saat barang diambil.
                     </p>
                 </div>
             </OrderShippingInfo>
@@ -200,18 +220,12 @@
                                 class="text-[13px] text-[var(--text)] line-clamp-2"
                             >
                                 {{ item.product?.name }}
-                                <span
-                                    v-if="item.preorder_quantity > 0"
-                                    class="text-orange-500 font-bold ml-1"
-                                    >(PO {{ item.preorder_quantity }})</span
-                                >
                             </div>
                             <div class="text-[11px] text-[var(--muted)] mt-0.5">
-                                BPOM: {{ item.product.bpom_number || "-" }}
-                            </div>
-                            <div class="text-[11px] text-[var(--muted)] mt-0.5">
-                                Poin Bulanan: {{ formatPrice(item.monthly_points ?? 0) }} ·
-                                Poin Tahunan: {{ formatPrice(item.annual_points ?? 0) }}
+                                Poin Bulanan:
+                                {{ formatPrice(item.monthly_points ?? 0) }} ·
+                                Poin Tahunan:
+                                {{ formatPrice(item.annual_points ?? 0) }}
                             </div>
                             <span class="text-[12px]"
                                 >{{ item.quantity }} x Rp{{
@@ -260,18 +274,21 @@
                     </div>
                     <div class="flex justify-between mb-2">
                         <span class="soft-label">Total Poin Bulanan</span>
-                        <span class="text-[13px]">{{ formatPrice(order.summary?.total_monthly_points ?? 0) }}</span>
+                        <span class="text-[13px]">{{
+                            formatPrice(
+                                order.summary?.total_monthly_points ?? 0,
+                            )
+                        }}</span>
                     </div>
                     <div class="flex justify-between mb-2">
                         <span class="soft-label">Total Poin Tahunan</span>
-                        <span class="text-[13px]">{{ formatPrice(order.summary?.total_annual_points ?? 0) }}</span>
+                        <span class="text-[13px]">{{
+                            formatPrice(order.summary?.total_annual_points ?? 0)
+                        }}</span>
                     </div>
                     <div
                         class="flex justify-between mb-2"
-                        v-if="
-                            order.shipping &&
-                            !isPickupOrder
-                        "
+                        v-if="order.shipping && !isPickupOrder"
                     >
                         <span class="soft-label">Ongkos Kirim</span>
                         <span class="text-[13px]"
@@ -282,10 +299,7 @@
                     </div>
                     <div
                         class="flex justify-between mb-2"
-                        v-if="
-                            order.shipping &&
-                            !isPickupOrder
-                        "
+                        v-if="order.shipping && !isPickupOrder"
                     >
                         <span class="soft-label">Asuransi Pengiriman</span>
                         <span class="text-[13px]"
@@ -763,9 +777,10 @@ const isUplineTransit = computed(
     () => order.value?.preorder_fulfillment?.mode === "upline_transit",
 );
 const isPickupOrder = computed(
-    () => order.value?.shipping?.method === "pickup"
-        || (order.value?.shipping_method === "pickup"
-            && Number(order.value?.parent_transaction_id || 0) === 0),
+    () =>
+        order.value?.shipping?.method === "pickup" ||
+        (order.value?.shipping_method === "pickup" &&
+            Number(order.value?.parent_transaction_id || 0) === 0),
 );
 const pickupLocation = computed(
     () => order.value?.pickup_location || order.value?.seller?.origin,

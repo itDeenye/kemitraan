@@ -113,7 +113,9 @@ import BaseDataTable from "@/shared/components/BaseDataTable.vue";
 import BaseBadge from "@/shared/components/BaseBadge.vue";
 import StockistRewardDialog from "@/admin/components/rewards/StockistRewardDialog.vue";
 import { useDateFilter } from "@/shared/composables/useDateFilter";
+import { useBadge } from "@/shared/composables/useBadge";
 
+const { getBadgeOptions } = useBadge();
 const { formatPrice, formatDateTime } = useFormatter();
 
 const { selectedYear, selectedMonth, years, months, getMonthName } =
@@ -185,11 +187,7 @@ const headers = [
         align: "center",
         sortable: false,
         filter: true,
-        options: [
-            { value: "available", label: "Tersedia" },
-            { value: "used", label: "Terpakai" },
-            { value: "expired", label: "Kadaluarsa" },
-        ],
+        options: getBadgeOptions("stockist_reward_status", ["available", "used", "expired"]),
         placeholder: "Pilih Status",
     },
     {

@@ -26,7 +26,11 @@
                         Pre Order
                     </strong>
                     <span
-                        style="font-size: 12px; color: #805000; line-height: 1.5"
+                        style="
+                            font-size: 12px;
+                            color: #805000;
+                            line-height: 1.5;
+                        "
                     >
                         <template v-if="isIntermediatePickupPreorder">
                             Ini adalah tahap lanjutan PO. Pengambilan barang
@@ -59,7 +63,7 @@
                 />
             </div>
 
-            <div class="invoice-meta">
+            <div class="invoice-meta" style="gap: 0px !important">
                 <div class="invoice-meta-row">
                     <span>Kode Transaksi</span>
                     <strong>{{ order.code }}</strong>
@@ -73,14 +77,23 @@
             </div>
             <div class="invoice-divider"></div>
 
-            <OrderPartyInfo title="Data Pembeli" icon="mdi-account-outline" :party="order.buyer" embedded />
+            <OrderPartyInfo
+                title="Data Pembeli"
+                icon="mdi-account-outline"
+                :party="order.buyer"
+                embedded
+            />
             <div class="invoice-divider"></div>
             <OrderSellerInfo :seller="order.seller" embedded />
             <div class="invoice-divider"></div>
 
             <OrderShippingInfo
                 v-if="!isIntermediatePickupPreorder"
-                :method="isPickupOrder ? 'pickup' : order.shipping?.method || order.shipping_method"
+                :method="
+                    isPickupOrder
+                        ? 'pickup'
+                        : order.shipping?.method || order.shipping_method
+                "
                 :shipping="order.shipping"
                 :origin="order.seller?.origin"
                 :destination="order.buyer?.destination"
@@ -133,22 +146,36 @@
                             style="color: var(--text); font-size: 13px"
                         >
                             {{ item.product?.name }}
-                            <span
-                                v-if="item.preorder_quantity > 0"
-                                class="text-orange-500 font-bold ml-1"
-                                >(PO {{ item.preorder_quantity }})</span
-                            >
                         </div>
                         <div class="text-[11px] text-[var(--muted)] mt-0.5">
-                            BPOM: {{ item.product.bpom_number || "-" }}
+                            Poin Bulanan:
+                            {{ formatPrice(item.monthly_points ?? 0) }} · Poin
+                            Tahunan: {{ formatPrice(item.annual_points ?? 0) }}
                         </div>
-                        <div class="text-[11px] text-[var(--muted)] mt-0.5">
-                            Poin Bulanan: {{ formatPrice(item.monthly_points ?? 0) }} ·
-                            Poin Tahunan: {{ formatPrice(item.annual_points ?? 0) }}
+                        <div
+                            style="
+                                margin-top: 2px;
+                                color: var(--text);
+                                font-size: 12px;
+                            "
+                        >
+                            {{ item.quantity }} x Rp{{
+                                formatPrice(item.price)
+                            }}
                         </div>
                     </div>
-                    <strong style="white-space: nowrap">
-                        {{ item.quantity }} x Rp{{ formatPrice(item.price) }}
+                    <strong
+                        style="
+                            align-self: center;
+                            white-space: nowrap;
+                            font-weight: bold;
+                        "
+                    >
+                        Rp{{
+                            formatPrice(
+                                item.subtotal ?? item.quantity * item.price,
+                            )
+                        }}
                     </strong>
                 </div>
             </div>
@@ -165,24 +192,23 @@
                 </div>
                 <div class="invoice-meta-row">
                     <span>Total Poin Bulanan</span>
-                    <strong>{{ formatPrice(order.summary?.total_monthly_points ?? 0) }}</strong>
+                    <strong>{{
+                        formatPrice(order.summary?.total_monthly_points ?? 0)
+                    }}</strong>
                 </div>
                 <div class="invoice-meta-row">
                     <span>Total Poin Tahunan</span>
-                    <strong>{{ formatPrice(order.summary?.total_annual_points ?? 0) }}</strong>
+                    <strong>{{
+                        formatPrice(order.summary?.total_annual_points ?? 0)
+                    }}</strong>
                 </div>
                 <div
                     class="invoice-meta-row"
                     v-if="order.shipping && !isPickupOrder"
                 >
                     <span>Ongkos Kirim</span>
-                    <strong>
-                        {{
-                            order.shipping?.service
-                                ? `${order.shipping.service}`
-                                : ""
-                        }}
-                        · Rp{{ formatPrice(order.summary?.shipping_cost || 0) }}
+                    <strong
+                        >Rp{{ formatPrice(order.summary?.shipping_cost || 0) }}
                     </strong>
                 </div>
                 <div
@@ -234,9 +260,7 @@
 
                 <div
                     class="invoice-meta-row"
-                    v-if="
-                        !isZeroPayment && order.payment && order.payment.bank
-                    "
+                    v-if="!isZeroPayment && order.payment && order.payment.bank"
                     style="
                         margin-top: 8px;
                         padding-top: 8px;
@@ -404,96 +428,24 @@
             </div>
 
             <template v-else>
-            <div
-                v-if="hasSpreadPayment"
-                style="
-                    font-size: 13px;
-                    font-weight: 700;
-                    color: var(--text);
-                    margin-bottom: 8px;
-                "
-            >
-                Bukti Transfer Bank Pembayaran
-            </div>
-            <button
-                class="upload-proof"
-                type="button"
-                @click="fileInput?.click()"
-            >
                 <div
-                    v-if="previewUrl"
-                    style="
-                        width: 100%;
-                        max-width: 250px;
-                        margin: 0 auto 16px auto;
-                        border-radius: 8px;
-                        overflow: hidden;
-                        border: 1px solid var(--line);
-                    "
-                >
-                    <img
-                        :src="previewUrl"
-                        alt="Preview"
-                        style="width: 100%; height: auto; display: block"
-                    />
-                </div>
-                <v-icon
-                    v-if="!previewUrl"
-                    icon="mdi-cloud-upload-outline"
-                    size="32"
-                    color="primary"
-                    class="mb-2"
-                />
-                <span class="upload-texts" style="display: block">
-                    <strong
-                        style="
-                            display: block;
-                            font-size: 14px;
-                            margin-bottom: 4px;
-                        "
-                        >{{
-                            previewUrl
-                                ? "Ubah Bukti Transfer"
-                                : "Pilih Bukti Transfer"
-                        }}</strong
-                    >
-                    <span
-                        v-if="!selectedFile"
-                        style="font-size: 12px; color: var(--muted)"
-                        >JPG atau PNG · maksimal 5 MB</span
-                    >
-                    <span v-else class="text-primary" style="font-size: 12px">{{
-                        selectedFile.name
-                    }}</span>
-                </span>
-                <input
-                    type="file"
-                    ref="fileInput"
-                    class="d-none"
-                    accept="image/jpeg,image/png"
-                    @change="onFileSelected"
-                />
-            </button>
-
-            <template v-if="hasSpreadPayment">
-                <div
+                    v-if="hasSpreadPayment"
                     style="
                         font-size: 13px;
                         font-weight: 700;
                         color: var(--text);
-                        margin-top: 16px;
                         margin-bottom: 8px;
                     "
                 >
-                    Bukti Transfer Bank Kemitraan
+                    Bukti Transfer Bank Pembayaran
                 </div>
                 <button
                     class="upload-proof"
                     type="button"
-                    @click="spreadFileInput?.click()"
+                    @click="fileInput?.click()"
                 >
                     <div
-                        v-if="spreadPreviewUrl"
+                        v-if="previewUrl"
                         style="
                             width: 100%;
                             max-width: 250px;
@@ -504,13 +456,13 @@
                         "
                     >
                         <img
-                            :src="spreadPreviewUrl"
-                            alt="Preview Kemitraan"
+                            :src="previewUrl"
+                            alt="Preview"
                             style="width: 100%; height: auto; display: block"
                         />
                     </div>
                     <v-icon
-                        v-if="!spreadPreviewUrl"
+                        v-if="!previewUrl"
                         icon="mdi-cloud-upload-outline"
                         size="32"
                         color="primary"
@@ -524,13 +476,13 @@
                                 margin-bottom: 4px;
                             "
                             >{{
-                                spreadPreviewUrl
+                                previewUrl
                                     ? "Ubah Bukti Transfer"
                                     : "Pilih Bukti Transfer"
                             }}</strong
                         >
                         <span
-                            v-if="!spreadSelectedFile"
+                            v-if="!selectedFile"
                             style="font-size: 12px; color: var(--muted)"
                             >JPG atau PNG · maksimal 5 MB</span
                         >
@@ -538,18 +490,97 @@
                             v-else
                             class="text-primary"
                             style="font-size: 12px"
-                            >{{ spreadSelectedFile.name }}</span
+                            >{{ selectedFile.name }}</span
                         >
                     </span>
                     <input
                         type="file"
-                        ref="spreadFileInput"
+                        ref="fileInput"
                         class="d-none"
                         accept="image/jpeg,image/png"
-                        @change="onSpreadFileSelected"
+                        @change="onFileSelected"
                     />
                 </button>
-            </template>
+
+                <template v-if="hasSpreadPayment">
+                    <div
+                        style="
+                            font-size: 13px;
+                            font-weight: 700;
+                            color: var(--text);
+                            margin-top: 16px;
+                            margin-bottom: 8px;
+                        "
+                    >
+                        Bukti Transfer Bank Kemitraan
+                    </div>
+                    <button
+                        class="upload-proof"
+                        type="button"
+                        @click="spreadFileInput?.click()"
+                    >
+                        <div
+                            v-if="spreadPreviewUrl"
+                            style="
+                                width: 100%;
+                                max-width: 250px;
+                                margin: 0 auto 16px auto;
+                                border-radius: 8px;
+                                overflow: hidden;
+                                border: 1px solid var(--line);
+                            "
+                        >
+                            <img
+                                :src="spreadPreviewUrl"
+                                alt="Preview Kemitraan"
+                                style="
+                                    width: 100%;
+                                    height: auto;
+                                    display: block;
+                                "
+                            />
+                        </div>
+                        <v-icon
+                            v-if="!spreadPreviewUrl"
+                            icon="mdi-cloud-upload-outline"
+                            size="32"
+                            color="primary"
+                            class="mb-2"
+                        />
+                        <span class="upload-texts" style="display: block">
+                            <strong
+                                style="
+                                    display: block;
+                                    font-size: 14px;
+                                    margin-bottom: 4px;
+                                "
+                                >{{
+                                    spreadPreviewUrl
+                                        ? "Ubah Bukti Transfer"
+                                        : "Pilih Bukti Transfer"
+                                }}</strong
+                            >
+                            <span
+                                v-if="!spreadSelectedFile"
+                                style="font-size: 12px; color: var(--muted)"
+                                >JPG atau PNG · maksimal 5 MB</span
+                            >
+                            <span
+                                v-else
+                                class="text-primary"
+                                style="font-size: 12px"
+                                >{{ spreadSelectedFile.name }}</span
+                            >
+                        </span>
+                        <input
+                            type="file"
+                            ref="spreadFileInput"
+                            class="d-none"
+                            accept="image/jpeg,image/png"
+                            @change="onSpreadFileSelected"
+                        />
+                    </button>
+                </template>
             </template>
 
             <button
@@ -630,9 +661,10 @@ const orderId = decodeRouteId(route.query.id);
 
 const order = ref<any>(null);
 const isPickupOrder = computed(
-    () => order.value?.shipping?.method === "pickup"
-        || (order.value?.shipping_method === "pickup"
-            && Number(order.value?.parent_transaction_id || 0) === 0),
+    () =>
+        order.value?.shipping?.method === "pickup" ||
+        (order.value?.shipping_method === "pickup" &&
+            Number(order.value?.parent_transaction_id || 0) === 0),
 );
 const pickupLocation = computed(
     () => order.value?.pickup_location || order.value?.seller?.origin,

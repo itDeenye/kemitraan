@@ -916,7 +916,6 @@ const open = async (item: any) => {
             await fetchCouriers();
         }
         if (!dialog.value || session !== dialogSession) return;
-        fetchSchedules();
     }
 };
 

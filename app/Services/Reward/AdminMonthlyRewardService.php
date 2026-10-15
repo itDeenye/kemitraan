@@ -95,7 +95,7 @@ class AdminMonthlyRewardService
         $memberTable = (new Member)->getTable();
         $trxTable = (new Trx)->getTable();
 
-        return DataTable::select([
+        $query = DataTable::select([
             "{$rewardTable}.reward_stockist_id as id",
             "{$rewardTable}.reward_stockist_member_id as member_id",
             "{$memberTable}.member_code as member_code",
@@ -114,8 +114,19 @@ class AdminMonthlyRewardService
             ->leftJoin($memberTable, "{$memberTable}.member_id = {$rewardTable}.reward_stockist_member_id")
             ->leftJoin($trxTable, "{$trxTable}.trx_id = {$rewardTable}.reward_stockist_used_trx_id")
             ->search(['member_code', 'member_name', 'used_trx_code'])
-            ->defaultSort('-year,-month,-id')
-            ->get($params);
+            ->defaultSort('-year,-month,-id');
+
+        if (isset($params['filter']['status'])) {
+            $query->whereRaw("CASE
+                WHEN {$rewardTable}.reward_stockist_used_trx_id > 0
+                    OR ({$rewardTable}.reward_stockist_bonus_value > 0
+                        AND {$rewardTable}.reward_stockist_used_value >= {$rewardTable}.reward_stockist_bonus_value)
+                    THEN 'used'
+                WHEN {$rewardTable}.reward_stockist_expiry_date < ? THEN 'expired'
+                ELSE 'available' END = ?", [now()->toDateString(), $params['filter']['status']]);
+        }
+
+        return $query->get($params);
     }
 
     public function stockistReward(RewardStockist $reward): RewardStockist

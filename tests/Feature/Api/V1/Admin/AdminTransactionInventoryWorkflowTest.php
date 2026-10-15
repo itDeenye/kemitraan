@@ -158,6 +158,143 @@ class AdminTransactionInventoryWorkflowTest extends TestCase
             ->assertJsonPath('data.results.0.code', 'TRX-002');
     }
 
+    public function test_order_and_shipment_buyer_filters_match_frontend_fields_and_pagination_totals(): void
+    {
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $this->createData();
+        Trx::query()->findOrFail(1)->update(['trx_status' => 'processing']);
+        Member::query()->create([
+            'member_id' => 2, 'member_code' => 'DST-002', 'member_member_level_id' => 1,
+            'member_parent_member_id' => 0, 'member_name' => 'Distributor Lain',
+            'member_join_datetime' => now(), 'member_status' => 1,
+        ]);
+        foreach ([2 => 2, 3 => 1] as $orderId => $buyerId) {
+            DB::table('trx')->insert([
+                ...$this->trxPayload(), 'trx_id' => $orderId, 'trx_code' => 'TRX-00'.$orderId,
+                'trx_buyer_id' => $buyerId, 'trx_status' => 'processing',
+            ]);
+        }
+
+        $filters = [
+            ['buyer.code' => ['like' => '%DST-001%']],
+            ['buyer.name' => ['like' => '%Utama%']],
+            ['buyer.code' => 'DST-001', 'buyer.name' => ['like' => '%Utama%']],
+            ['buyer_code' => 'DST-001'],
+            ['buyer_name' => ['like' => '%Utama%']],
+            ['buyer_member_code' => 'DST-001'],
+            ['buyer_member_name' => ['like' => '%Utama%']],
+            ['buyer.code' => 'DST-002', 'buyer_member_code' => 'DST-001'],
+        ];
+        foreach (['/api/v1/admin/transactions/orders', '/api/v1/admin/inventory/shipments'] as $endpoint) {
+            foreach ($filters as $filter) {
+                $params = ['filter' => ['buyer.type' => 'distributor', ...$filter], 'limit' => 1];
+                $this->getJson($endpoint.'?'.http_build_query($params))->assertOk()
+                    ->assertJsonPath('data.pagination.total_data', 2)
+                    ->assertJsonCount(1, 'data.results')
+                    ->assertJsonPath('data.results.0.code', 'TRX-003')
+                    ->assertJsonPath('data.results.0.buyer.code', 'DST-001');
+                $this->getJson($endpoint.'?'.http_build_query([...$params, 'page' => 2]))->assertOk()
+                    ->assertJsonPath('data.pagination.total_data', 2)
+                    ->assertJsonCount(1, 'data.results')
+                    ->assertJsonPath('data.results.0.code', 'TRX-001')
+                    ->assertJsonPath('data.results.0.buyer.code', 'DST-001');
+            }
+            $this->getJson($endpoint.'?'.http_build_query(['filter' => [
+                'buyer.code' => 'DST-001', 'buyer.name' => ['like' => '%Lain%'],
+            ]]))->assertOk()->assertJsonPath('data.pagination.total_data', 0)->assertJsonCount(0, 'data.results');
+        }
+    }
+
+    public function test_payment_and_cash_income_buyer_filters_match_the_displayed_member(): void
+    {
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $this->createData();
+        $this->createPayment();
+        Member::query()->create([
+            'member_id' => 2, 'member_code' => 'DST-002', 'member_member_level_id' => 1,
+            'member_name' => 'Distributor Lain', 'member_join_datetime' => now(), 'member_status' => 1,
+        ]);
+        DB::table('trx')->insert([...$this->trxPayload(), 'trx_id' => 2, 'trx_code' => 'TRX-002', 'trx_buyer_id' => 2]);
+        $payment = (array) DB::table('trx_payment_transfer')->first();
+        DB::table('trx_payment_transfer')->where('payment_transfer_id', 1)->update(['payment_transfer_approval_status' => 'approved']);
+        DB::table('trx_payment_transfer')->insert([
+            ...$payment, 'payment_transfer_id' => 2, 'payment_transfer_trx_id' => 2,
+            'payment_transfer_approval_status' => 'approved',
+        ]);
+
+        foreach (['/api/v1/admin/transactions/payments', '/api/v1/admin/reports/cash-income'] as $endpoint) {
+            foreach ([
+                ['buyer.code' => ['like' => '%DST-001%']],
+                ['buyer.name' => ['like' => '%Utama%']],
+                ['buyer_code' => 'DST-001'],
+                ['buyer_member_code' => 'DST-001', 'buyer.code' => 'DST-002'],
+            ] as $filter) {
+                $this->getJson($endpoint.'?'.http_build_query(['filter' => $filter]))->assertOk()
+                    ->assertJsonPath('data.pagination.total_data', 1)
+                    ->assertJsonCount(1, 'data.results')
+                    ->assertJsonPath('data.results.0.buyer.code', 'DST-001');
+            }
+            $this->getJson($endpoint.'?'.http_build_query(['filter' => ['buyer.name' => ['like' => '%Tidak Ada%']]]))
+                ->assertOk()->assertJsonPath('data.pagination.total_data', 0)->assertJsonCount(0, 'data.results');
+        }
+    }
+
+    public function test_buyer_filters_do_not_confuse_customers_with_members_having_the_same_id(): void
+    {
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $this->createData();
+        $this->createPayment();
+        DB::table('customer')->insert([
+            'customer_id' => 1, 'customer_member_id' => 1, 'customer_name' => 'Pelanggan Terlihat',
+            'customer_created_datetime' => now(),
+        ]);
+        DB::table('trx')->where('trx_id', 1)->update(['trx_buyer_type' => 'customer']);
+        DB::table('trx_payment_transfer')->where('payment_transfer_id', 1)->update(['payment_transfer_approval_status' => 'approved']);
+
+        foreach (['/api/v1/admin/transactions/orders', '/api/v1/admin/transactions/payments', '/api/v1/admin/reports/cash-income'] as $endpoint) {
+            foreach ([
+                ['buyer.name' => ['like' => '%Pelanggan%']],
+                ['buyer_name' => 'Pelanggan Terlihat'],
+                ['buyer_name' => ['in' => ['Pelanggan Terlihat', 'Lain']]],
+            ] as $filter) {
+                $this->getJson($endpoint.'?'.http_build_query(['filter' => $filter]))->assertOk()
+                    ->assertJsonPath('data.pagination.total_data', 1)
+                    ->assertJsonPath('data.results.0.buyer.name', 'Pelanggan Terlihat')
+                    ->assertJsonPath('data.results.0.buyer.code', null);
+            }
+            foreach ([
+                ['buyer.name' => ['like' => '%Distributor Utama%']],
+                ['buyer.code' => ['like' => '%DST-001%']],
+                ['buyer_code' => 'DST-001'],
+            ] as $filter) {
+                $this->getJson($endpoint.'?'.http_build_query(['filter' => $filter]))->assertOk()
+                    ->assertJsonPath('data.pagination.total_data', 0)->assertJsonCount(0, 'data.results');
+            }
+        }
+    }
+
+    public function test_return_transaction_code_filter_matches_the_displayed_transaction(): void
+    {
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $this->createData();
+        DB::table('goods_receive')->insert([
+            'goods_receive_id' => 1, 'goods_receive_trx_id' => 1, 'goods_receive_number' => 'GR-001',
+            'goods_receive_buyer_type' => 'distributor', 'goods_receive_buyer_id' => 1,
+            'goods_receive_seller_type' => 'warehouse', 'goods_receive_seller_id' => 1,
+            'goods_receive_created_datetime' => now(),
+        ]);
+        DB::table('return')->insert([
+            'return_id' => 1, 'return_code' => 'RTR-001', 'return_goods_receive_id' => 1,
+            'return_member_id' => 1, 'return_status' => 'submitted', 'return_created_datetime' => now(),
+        ]);
+        foreach (['transaction.code', 'transaction_code', 'trx_code'] as $field) {
+            foreach (['%TRX-001%' => 1, '%TRX-MISSING%' => 0] as $value => $count) {
+                $this->getJson('/api/v1/admin/transactions/returns?'.http_build_query(['filter' => [$field => ['like' => $value]]]))
+                    ->assertOk()->assertJsonCount($count, 'data.results')->assertJsonPath('data.pagination.total_data', $count);
+            }
+        }
+    }
+
     public function test_payments_can_be_filtered_by_nested_and_legacy_buyer_type_fields(): void
     {
         $this->actingAs($this->createAdministrator(), 'admin_api');

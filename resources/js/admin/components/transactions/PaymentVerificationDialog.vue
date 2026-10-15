@@ -135,31 +135,12 @@
                                     Pembeli
                                 </h3>
                                 <div class="text-body-2 font-weight-medium">
-                                    {{
-                                        payment.buyer?.name || "-"
-                                    }}
+                                    {{ payment.buyer?.name || "-" }}
                                 </div>
                                 <div
                                     class="text-caption text-medium-emphasis mb-1"
                                 >
-                                    {{
-                                        payment.buyer?.code || "-"
-                                    }}
-                                </div>
-                                <div
-                                    v-if="payment.buyer?.destination"
-                                    class="text-caption text-medium-emphasis mt-2 mb-1 d-flex"
-                                >
-                                    <v-icon size="x-small" class="mr-1 mt-1"
-                                        >mdi-map-marker-outline</v-icon
-                                    >
-                                    <div>
-                                        <div>
-                                            Tujuan barang: {{ payment.buyer.destination.name || "-" }}
-                                            <br />
-                                            {{ formatLocation(payment.buyer.destination) }}
-                                        </div>
-                                    </div>
+                                    {{ payment.buyer?.code || "-" }}
                                 </div>
                                 <v-chip
                                     size="x-small"
@@ -169,6 +150,29 @@
                                 >
                                     {{ payment.buyer?.type || "-" }}
                                 </v-chip>
+                                <div
+                                    v-if="payment.buyer?.destination"
+                                    class="text-caption text-medium-emphasis mt-2 mb-1 d-flex"
+                                >
+                                    <v-icon size="x-small" class="mr-1 mt-1"
+                                        >mdi-map-marker-outline</v-icon
+                                    >
+                                    <div>
+                                        <div>
+                                            Tujuan barang:
+                                            {{
+                                                payment.buyer.destination
+                                                    .name || "-"
+                                            }}
+                                            <br />
+                                            {{
+                                                formatLocation(
+                                                    payment.buyer.destination,
+                                                )
+                                            }}
+                                        </div>
+                                    </div>
+                                </div>
                             </v-card>
                         </v-col>
                     </v-row>
@@ -224,9 +228,22 @@
                                             >
                                                 {{ item.product.code }}
                                             </div>
-                                            <div class="text-caption text-medium-emphasis">
-                                                Poin Bulanan: {{ formatPrice(item.monthly_points ?? 0) }} ·
-                                                Poin Tahunan: {{ formatPrice(item.annual_points ?? 0) }}
+                                            <div
+                                                class="text-caption text-medium-emphasis"
+                                            >
+                                                Poin Bulanan:
+                                                {{
+                                                    formatPrice(
+                                                        item.monthly_points ??
+                                                            0,
+                                                    )
+                                                }}
+                                                · Poin Tahunan:
+                                                {{
+                                                    formatPrice(
+                                                        item.annual_points ?? 0,
+                                                    )
+                                                }}
                                             </div>
                                         </td>
                                         <td class="text-right text-body-2">
@@ -245,13 +262,31 @@
                             </v-table>
                             <v-divider v-if="payment.totals" />
                             <div class="pa-4" v-if="payment.totals">
-                                <div class="d-flex justify-space-between mb-2 text-body-2">
-                                    <span class="text-medium-emphasis">Total Poin Bulanan</span>
-                                    <span class="font-weight-medium">{{ formatPrice(payment.totals?.total_monthly_points ?? 0) }}</span>
+                                <div
+                                    class="d-flex justify-space-between mb-2 text-body-2"
+                                >
+                                    <span class="text-medium-emphasis"
+                                        >Total Poin Bulanan</span
+                                    >
+                                    <span class="font-weight-medium">{{
+                                        formatPrice(
+                                            payment.totals
+                                                ?.total_monthly_points ?? 0,
+                                        )
+                                    }}</span>
                                 </div>
-                                <div class="d-flex justify-space-between mb-2 text-body-2">
-                                    <span class="text-medium-emphasis">Total Poin Tahunan</span>
-                                    <span class="font-weight-medium">{{ formatPrice(payment.totals?.total_annual_points ?? 0) }}</span>
+                                <div
+                                    class="d-flex justify-space-between mb-2 text-body-2"
+                                >
+                                    <span class="text-medium-emphasis"
+                                        >Total Poin Tahunan</span
+                                    >
+                                    <span class="font-weight-medium">{{
+                                        formatPrice(
+                                            payment.totals
+                                                ?.total_annual_points ?? 0,
+                                        )
+                                    }}</span>
                                 </div>
                                 <div
                                     class="d-flex justify-space-between mb-2 text-body-2"
@@ -469,9 +504,7 @@
                                 <div
                                     class="d-flex flex-column ga-2 text-body-2"
                                 >
-                                    <template
-                                        v-if="isPickup"
-                                    >
+                                    <template v-if="isPickup">
                                         <div
                                             class="d-flex flex-column ga-1 mt-1"
                                         >
@@ -898,10 +931,10 @@
                 class="pa-4 d-flex align-center justify-space-between border-b"
             >
                 <div class="d-flex align-center ga-2 min-w-0">
-                    <v-icon color="primary" size="22"
-                        >mdi-image-outline</v-icon
+                    <v-icon color="primary" size="22">mdi-image-outline</v-icon>
+                    <span
+                        class="text-subtitle-1 font-weight-bold text-truncate"
                     >
-                    <span class="text-subtitle-1 font-weight-bold text-truncate">
                         Bukti Transfer
                     </span>
                 </div>
@@ -932,10 +965,7 @@
                     </template>
                     <template #error>
                         <div class="payment-receipt-fallback py-12">
-                            <v-icon
-                                icon="mdi-image-broken-variant"
-                                size="48"
-                            />
+                            <v-icon icon="mdi-image-broken-variant" size="48" />
                             <span>Bukti transfer gagal dimuat</span>
                         </div>
                     </template>
@@ -966,7 +996,9 @@ const loading = ref(false);
 const submitting = ref(false);
 const payment = ref<TransactionPayment | null>(null);
 const isPickup = computed(
-    () => (payment.value?.shipping?.method || payment.value?.shipping_method) === "pickup",
+    () =>
+        (payment.value?.shipping?.method || payment.value?.shipping_method) ===
+        "pickup",
 );
 const shippingStatus = computed(
     () =>
@@ -1096,10 +1128,16 @@ const submitAction = async () => {
             });
             snackbar.showMessage("Pembayaran berhasil diverifikasi", "success");
         } else {
-            const response = await transactionPaymentService.reject(payment.value.payment.id, {
-                note: actionNote.value,
-            });
-            snackbar.showMessage(response.message || "Pembayaran ditolak", "warning");
+            const response = await transactionPaymentService.reject(
+                payment.value.payment.id,
+                {
+                    note: actionNote.value,
+                },
+            );
+            snackbar.showMessage(
+                response.message || "Pembayaran ditolak",
+                "warning",
+            );
         }
 
         closeActionDialog();

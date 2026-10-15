@@ -75,12 +75,14 @@
 </template>
 
 <script setup lang="ts">
+import { useBadge } from "@/shared/composables/useBadge";
 import { ref } from "vue";
 import BaseDataTable from "@/shared/components/BaseDataTable.vue";
 import BaseBadge from "@/shared/components/BaseBadge.vue";
 import ReturnDetailDialog from "@/admin/components/transactions/ReturnDetailDialog.vue";
 import { useFormatter } from "@/shared/composables/useFormatter";
 
+const { getBadgeOptions } = useBadge();
 const { formatDateTime } = useFormatter();
 
 const dataTable = ref<InstanceType<typeof BaseDataTable> | null>(null);
@@ -156,33 +158,10 @@ const headers = [
         align: "center",
         sortable: false,
         filter: true,
-        options: [
-            { value: "submitted", label: "Menunggu Keputusan Admin" },
-            { value: "approved", label: "Disetujui" },
-            {
-                value: "waiting_member_shipment",
-                label: "Menunggu Pengiriman Mitra",
-            },
-            { value: "return_in_transit", label: "Dikirim ke Perusahaan" },
-            {
-                value: "return_shipping_failed",
-                label: "Pengiriman ke Perusahaan Gagal",
-            },
-            {
-                value: "received_by_company",
-                label: "Diterima Perusahaan",
-            },
-            {
-                value: "replacement_in_transit",
-                label: "Barang Pengganti Dikirim",
-            },
-            {
-                value: "replacement_shipping_failed",
-                label: "Pengiriman Barang Pengganti Gagal",
-            },
-            { value: "completed", label: "Selesai" },
-            { value: "rejected", label: "Ditolak" },
-        ],
+        options: getBadgeOptions("return_status", [
+            "submitted", "waiting_member_shipment", "return_in_transit", "return_shipping_failed",
+            "received_by_company", "replacement_in_transit", "replacement_shipping_failed", "completed", "rejected",
+        ]),
         placeholder: "Pilih Status",
     },
     {

@@ -93,6 +93,7 @@
 </template>
 
 <script setup lang="ts">
+import { useBadge } from "@/shared/composables/useBadge";
 import { ref } from "vue";
 import BaseDataTable from "@/shared/components/BaseDataTable.vue";
 import BaseBadge from "@/shared/components/BaseBadge.vue";
@@ -100,6 +101,7 @@ import DowngradeForm from "@/admin/components/partnership/DowngradeForm.vue";
 import DowngradeDetailDialog from "@/admin/components/partnership/DowngradeDetailDialog.vue";
 import { useFormatter } from "@/shared/composables/useFormatter";
 
+const { getBadgeOptions } = useBadge();
 const { formatDateTime } = useFormatter();
 
 const search = ref("");
@@ -155,12 +157,9 @@ const headers = [
         type: "select",
         sortable: false,
         filter: true,
-        options: [
-            { value: "requested", label: "Menunggu" },
-            { value: "scheduled", label: "Dijadwalkan" },
-            { value: "approved", label: "Selesai" },
-            { value: "rejected", label: "Dibatalkan" },
-        ],
+        options: getBadgeOptions("upgrade_status", [
+            "requested", "scheduled", "approved", "rejected",
+        ]),
         placeholder: "Pilih Status",
     },
     { title: "Tanggal Berlaku", key: "effective_date", align: "left" },

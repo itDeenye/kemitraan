@@ -1,7 +1,11 @@
 <template>
     <section
         class="order-party-info"
-        :class="{ card: !embedded, 'order-party-info--embedded': embedded, 'order-party-info--compact': compact }"
+        :class="{
+            card: !embedded,
+            'order-party-info--embedded': embedded,
+            'order-party-info--compact': compact,
+        }"
     >
         <header class="order-party-info__header">
             <h3 class="order-party-info__title">
@@ -10,16 +14,28 @@
             </h3>
         </header>
         <div class="order-party-info__body">
-            <strong class="order-party-info__name">{{ party?.name || "-" }}</strong>
-            <p v-if="party?.code" class="order-party-info__meta">{{ party.code }}</p>
-            <p v-if="contactPhone" class="order-party-info__meta">{{ contactPhone }}</p>
+            <strong class="order-party-info__name">{{
+                party?.name || "-"
+            }}</strong>
+            <p v-if="party?.code" class="order-party-info__meta">
+                {{ party.code }}
+            </p>
+            <p v-if="contactPhone" class="order-party-info__meta">
+                {{ contactPhone }}
+            </p>
+            <p
+                v-if="address && address.trim() !== '-'"
+                class="order-party-info__meta"
+            >
+                {{ address }}
+            </p>
             <BaseBadge
                 v-if="showLevel && (party?.type || party?.level)"
                 type="level"
+                size="x-small"
                 :value="party?.type || party?.level || undefined"
                 inline
             />
-            <p v-if="address && address.trim() !== '-'" class="order-party-info__meta">{{ address }}</p>
         </div>
     </section>
 </template>

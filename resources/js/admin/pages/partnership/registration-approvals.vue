@@ -114,6 +114,7 @@
 </template>
 
 <script setup lang="ts">
+import { useBadge } from "@/shared/composables/useBadge";
 import { ref } from "vue";
 import BaseDataTable from "@/shared/components/BaseDataTable.vue";
 import BaseBadge from "@/shared/components/BaseBadge.vue";
@@ -121,6 +122,7 @@ import RegistrationDetailDialog from "@/admin/components/partnership/Registratio
 import ApprovalActionDialog from "@/admin/components/partnership/ApprovalActionDialog.vue";
 import { useFormatter } from "@/shared/composables/useFormatter";
 
+const { getBadgeOptions } = useBadge();
 const { formatDateTime } = useFormatter();
 
 const search = ref("");
@@ -178,11 +180,7 @@ const headers = [
         type: "select",
         sortable: false,
         filter: true,
-        options: [
-            { value: "requested", label: "Menunggu" },
-            { value: "approved", label: "Disetujui" },
-            { value: "rejected", label: "Ditolak" },
-        ],
+        options: getBadgeOptions("registration_status", ["requested", "approved", "rejected"]),
         placeholder: "Pilih Status",
     },
     { title: "Aksi", key: "actions", align: "center", sortable: false },

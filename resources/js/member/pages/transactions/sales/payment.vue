@@ -46,7 +46,11 @@
             <div class="invoice-divider"></div>
             <div class="invoice-total">
                 <span>Total Pembayaran</span>
-                <strong>Rp{{ formatPrice(order.summary?.grand_total || 0) }}</strong>
+                <strong
+                    >Rp{{
+                        formatPrice(order.summary?.grand_total || 0)
+                    }}</strong
+                >
             </div>
         </div>
 
@@ -98,11 +102,9 @@
                             {{ item.product?.name || "Produk" }}
                         </div>
                         <span class="text-[11px] text-[var(--muted)] mt-0.5">
-                            BPOM: {{ item.product?.bpom_number || "-" }}
-                        </span>
-                        <span class="text-[11px] text-[var(--muted)] mt-0.5">
-                            Poin Bulanan: {{ formatPrice(item.monthly_points ?? 0) }} ·
-                            Poin Tahunan: {{ formatPrice(item.annual_points ?? 0) }}
+                            Poin Bulanan:
+                            {{ formatPrice(item.monthly_points ?? 0) }} · Poin
+                            Tahunan: {{ formatPrice(item.annual_points ?? 0) }}
                         </span>
                         <span>
                             {{ item.quantity }} × Rp{{
@@ -133,11 +135,15 @@
                 </div>
                 <div class="detail-row">
                     <span>Total Poin Bulanan</span>
-                    <strong>{{ formatPrice(order.summary?.total_monthly_points ?? 0) }}</strong>
+                    <strong>{{
+                        formatPrice(order.summary?.total_monthly_points ?? 0)
+                    }}</strong>
                 </div>
                 <div class="detail-row">
                     <span>Total Poin Tahunan</span>
-                    <strong>{{ formatPrice(order.summary?.total_annual_points ?? 0) }}</strong>
+                    <strong>{{
+                        formatPrice(order.summary?.total_annual_points ?? 0)
+                    }}</strong>
                 </div>
                 <div
                     v-if="(order.summary?.total_discount || 0) > 0"

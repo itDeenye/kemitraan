@@ -243,7 +243,7 @@
                         color="white"
                         class="mr-2"
                     ></v-progress-circular>
-                    Lanjut ke Checkout · {{ totalQuantity }} pcs
+                    Lanjut Checkout · {{ totalQuantity }} Pcs
                     <v-icon
                         v-if="!isProceedingToCheckout"
                         icon="mdi-arrow-right"

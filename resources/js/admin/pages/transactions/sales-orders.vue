@@ -244,6 +244,7 @@
 </template>
 
 <script setup lang="ts">
+import { useBadge } from "@/shared/composables/useBadge";
 import { ref, computed, onMounted } from "vue";
 import BaseDataTable from "@/shared/components/BaseDataTable.vue";
 import BaseBadge from "@/shared/components/BaseBadge.vue";
@@ -252,6 +253,7 @@ import { useFormatter } from "@/shared/composables/useFormatter";
 import transactionOrderService from "@/admin/services/transaction-order.service";
 import type { TransactionOrderSummary } from "@/admin/types/transaction-order";
 
+const { getBadgeOptions } = useBadge();
 const { formatDateTime, formatPrice } = useFormatter();
 
 const dataTable = ref<InstanceType<typeof BaseDataTable> | null>(null);
@@ -364,10 +366,9 @@ const headers = [
         align: "center",
         sortable: false,
         filter: true,
-        options: [
-            { label: "Kurir Ekspres", value: "courier_express" },
-            { label: "Ambil Sendiri", value: "pickup" },
-        ],
+        options: getBadgeOptions("shipping_method", [
+            "courier_manual", "courier_express", "courier_instant", "pickup",
+        ]),
         placeholder: "Pilih Metode",
     },
     {

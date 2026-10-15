@@ -5,6 +5,7 @@ namespace App\Http\Resources\Api\V1\Admin;
 use App\Http\Resources\ApiResource;
 use App\Models\RewardStockist;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 
 class AdminStockistRewardResource extends ApiResource
 {
@@ -16,6 +17,8 @@ class AdminStockistRewardResource extends ApiResource
         $usedValue = (int) ($reward?->reward_stockist_used_value ?? $this->resource->used_value);
         $usedTransactionId = (int) ($reward?->reward_stockist_used_trx_id ?? $this->resource->used_trx_id);
         $isUsed = $usedTransactionId > 0 || ($usedValue >= $bonusValue && $bonusValue > 0);
+        $expiryDate = $reward ? $reward->reward_stockist_expiry_date?->toDateString() : $this->resource->expiry_date;
+        $isExpired = $expiryDate && Carbon::parse($expiryDate)->endOfDay()->isPast();
 
         return [
             'id' => (int) ($reward?->reward_stockist_id ?? $this->resource->id),
@@ -34,10 +37,8 @@ class AdminStockistRewardResource extends ApiResource
                 'id' => $usedTransactionId,
                 'code' => $reward?->usedTransaction?->trx_code ?? $this->resource->used_trx_code,
             ],
-            'expiry_date' => $reward
-                ? $reward->reward_stockist_expiry_date?->toDateString()
-                : $this->resource->expiry_date,
-            'status' => $isUsed ? 'used' : 'available',
+            'expiry_date' => $expiryDate,
+            'status' => $isUsed ? 'used' : ($isExpired ? 'expired' : 'available'),
         ];
     }
 }

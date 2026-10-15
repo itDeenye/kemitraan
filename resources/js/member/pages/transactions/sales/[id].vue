@@ -80,7 +80,12 @@
                         variant="text"
                         color="primary"
                         class="!min-w-0 !px-1"
-                        @click="copyToClipboard(order.shipping.delivery_note_number, 'Nomor surat jalan')"
+                        @click="
+                            copyToClipboard(
+                                order.shipping.delivery_note_number,
+                                'Nomor surat jalan',
+                            )
+                        "
                     >
                         <v-icon icon="mdi-content-copy" size="small" />
                     </v-btn>
@@ -91,7 +96,12 @@
                         variant="text"
                         color="primary"
                         class="!min-w-0 !px-1"
-                        @click="copyToClipboard(order.shipping.tracking_number, 'Nomor resi')"
+                        @click="
+                            copyToClipboard(
+                                order.shipping.tracking_number,
+                                'Nomor resi',
+                            )
+                        "
                     >
                         <v-icon icon="mdi-content-copy" size="small" />
                     </v-btn>
@@ -179,18 +189,12 @@
                                 class="text-[13px] text-[var(--text)] line-clamp-2 break-words"
                             >
                                 {{ item.product?.name }}
-                                <span
-                                    v-if="item.preorder_quantity > 0"
-                                    class="text-orange-500 font-bold ml-1"
-                                    >(PO {{ item.preorder_quantity }})</span
-                                >
                             </div>
                             <div class="text-[11px] text-[var(--muted)] mt-0.5">
-                                BPOM: {{ item.product.bpom_number || "-" }}
-                            </div>
-                            <div class="text-[11px] text-[var(--muted)] mt-0.5">
-                                Poin Bulanan: {{ formatPrice(item.monthly_points ?? 0) }} ·
-                                Poin Tahunan: {{ formatPrice(item.annual_points ?? 0) }}
+                                Poin Bulanan:
+                                {{ formatPrice(item.monthly_points ?? 0) }} ·
+                                Poin Tahunan:
+                                {{ formatPrice(item.annual_points ?? 0) }}
                             </div>
                             <span class="text-[12px]"
                                 >{{ item.quantity }} x Rp{{
@@ -239,11 +243,17 @@
                     </div>
                     <div class="flex justify-between mb-2">
                         <span class="soft-label">Total Poin Bulanan</span>
-                        <span class="text-[13px]">{{ formatPrice(order.summary?.total_monthly_points ?? 0) }}</span>
+                        <span class="text-[13px]">{{
+                            formatPrice(
+                                order.summary?.total_monthly_points ?? 0,
+                            )
+                        }}</span>
                     </div>
                     <div class="flex justify-between mb-2">
                         <span class="soft-label">Total Poin Tahunan</span>
-                        <span class="text-[13px]">{{ formatPrice(order.summary?.total_annual_points ?? 0) }}</span>
+                        <span class="text-[13px]">{{
+                            formatPrice(order.summary?.total_annual_points ?? 0)
+                        }}</span>
                     </div>
                     <div
                         class="flex justify-between mb-2"
@@ -538,7 +548,8 @@ const confirmArrival = async () => {
         order.value = response.data;
     } catch (error: any) {
         snackbar.showMessage(
-            error.response?.data?.message || "Gagal mengonfirmasi kedatangan barang.",
+            error.response?.data?.message ||
+                "Gagal mengonfirmasi kedatangan barang.",
             "error",
         );
     } finally {

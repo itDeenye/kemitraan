@@ -327,10 +327,10 @@
                     ></v-progress-circular>
                     {{
                         isPreorderCart
-                            ? "Lanjut checkout PO"
-                            : "Lanjut checkout"
+                            ? "Lanjut Checkout PO"
+                            : "Lanjut Checkout"
                     }}
-                    · {{ totalQuantity }} pcs
+                    · {{ totalQuantity }} Pcs
                     <v-icon
                         v-if="!isProceedingToCheckout"
                         icon="mdi-arrow-right"
@@ -385,7 +385,12 @@
                     </div>
                 </div>
             </div>
-            <OrderPartyInfo title="Data Pembeli" icon="mdi-account-outline" :party="checkoutOptions.buyer" />
+            <OrderPartyInfo
+                title="Data Pembeli"
+                icon="mdi-account-outline"
+                :party="checkoutOptions.buyer"
+                show-level
+            />
             <OrderSellerInfo
                 :seller="checkoutOptions.seller"
                 :phone="checkoutOptions.pickup_location?.phone"
@@ -466,50 +471,20 @@
                         </div>
                         <div
                             style="
-                                font-size: 11px;
-                                color: var(--muted);
-                                margin-top: 2px;
-                            "
-                        >
-                            BPOM: {{ item.product.bpom_number || "-" }}
-                        </div>
-                        <div
-                            v-if="
-                                item.product.member_prices &&
-                                item.product.member_prices.length
-                            "
-                            style="
-                                font-size: 11px;
-                                color: var(--muted);
-                                margin-top: 2px;
-                                line-height: 1.4;
-                            "
-                        >
-                            <div
-                                v-for="mp in item.product.member_prices"
-                                :key="mp.id ?? mp.member_level_id"
-                            >
-                                Harga {{ mp.level || mp.member_level_name }}:
-                                Rp{{ formatPrice(mp.price) }}
-                            </div>
-                        </div>
-                        <div
-                            style="
                                 display: flex;
                                 justify-content: space-between;
                                 align-items: flex-end;
                                 margin-top: 4px;
                             "
                         >
-                            <span style="font-size: 12px; color: var(--muted)"
-                                >{{ item.quantity }} × Rp{{
-                                    formatPrice(item.product.price)
-                                }}
-                                <br />
-                                <span style="font-size: 11px"
-                                    >Berat:
-                                    {{ item.product.weight_grams || 0 }}gram
-                                    /pcs</span
+                            <span style="font-size: 11px"
+                                >Berat:
+                                {{ item.product.weight_grams || 0 }}
+                                gram/pcs<br /><span
+                                    style="font-size: 12px; color: var(--muted)"
+                                    >{{ item.quantity }} × Rp{{
+                                        formatPrice(item.product.price)
+                                    }}</span
                                 > </span
                             ><strong style="font-size: 13px"
                                 >Rp{{
@@ -540,7 +515,7 @@
                 <strong style="font-size: 14px">{{
                     totalWeight >= 1000
                         ? (totalWeight / 1000).toFixed(2) + "kg"
-                        : totalWeight + "gram"
+                        : totalWeight + " gram"
                 }}</strong>
             </div>
 
@@ -602,9 +577,29 @@
                                 >{{ effectiveOriginName }}</strong
                             >
                             <span
-                                style="color: var(--muted); font-size: 12px"
+                                v-if="effectiveOriginCode"
+                                style="
+                                    display: block;
+                                    color: var(--muted);
+                                    font-size: 12px;
+                                "
+                                >{{ effectiveOriginCode }}</span
+                            >
+                            <span
+                                style="
+                                    display: block;
+                                    color: var(--muted);
+                                    font-size: 12px;
+                                "
                                 >{{ effectiveOriginAddress }}</span
                             >
+                            <BaseBadge
+                                v-if="effectiveOriginLevel"
+                                type="level"
+                                size="x-small"
+                                :value="effectiveOriginLevel"
+                                inline
+                            />
                         </div>
                     </div>
                 </div>
@@ -639,9 +634,29 @@
                                 >{{ effectiveOriginName }}</strong
                             >
                             <span
-                                style="color: var(--muted); font-size: 12px"
+                                v-if="effectiveOriginCode"
+                                style="
+                                    display: block;
+                                    color: var(--muted);
+                                    font-size: 12px;
+                                "
+                                >{{ effectiveOriginCode }}</span
+                            >
+                            <span
+                                style="
+                                    display: block;
+                                    color: var(--muted);
+                                    font-size: 12px;
+                                "
                                 >{{ effectiveOriginAddress }}</span
                             >
+                            <BaseBadge
+                                v-if="effectiveOriginLevel"
+                                type="level"
+                                size="x-small"
+                                :value="effectiveOriginLevel"
+                                inline
+                            />
                         </div>
                     </div>
                 </div>
@@ -1187,6 +1202,7 @@ import CategorySlider from "@/member/components/transactions/CategorySlider.vue"
 import OrderSellerInfo from "@/member/components/transactions/OrderSellerInfo.vue";
 import OrderPartyInfo from "@/member/components/transactions/OrderPartyInfo.vue";
 import shippingService from "@/member/services/shipping.service";
+import BaseBadge from "@/shared/components/BaseBadge.vue";
 import type {
     ShippingRateLocation,
     ShippingRateResult,
@@ -1654,10 +1670,48 @@ const effectiveOriginName = computed(() => {
     );
 });
 
-const effectiveOriginAddress = computed(() => {
-    const origin = form.value.shipping_method === "pickup"
+const effectiveOrigin = computed(() =>
+    form.value.shipping_method === "pickup"
         ? checkoutOptions.value?.pickup_location
-        : shippingOrigin.value || checkoutOptions.value?.seller.origin;
+        : shippingOrigin.value || checkoutOptions.value?.seller.origin,
+);
+
+const effectiveOriginCode = computed(() => {
+    const seller = checkoutOptions.value?.seller;
+    if (!seller?.code) {
+        return null;
+    }
+
+    if (form.value.shipping_method === "pickup") {
+        return seller.code;
+    }
+
+    const originType =
+        shippingOrigin.value?.source_type || seller.origin?.type;
+    const originId = shippingOrigin.value?.source_id || seller.origin?.id;
+    const isSellerOrigin =
+        (!originType || originType === seller.type) &&
+        (!originId || originId === seller.id);
+
+    return isSellerOrigin ? seller.code : null;
+});
+
+const effectiveOriginLevel = computed(() => {
+    const seller = checkoutOptions.value?.seller;
+    if (form.value.shipping_method === "pickup") {
+        return seller?.type || null;
+    }
+
+    return (
+        shippingOrigin.value?.source_type ||
+        seller?.origin?.type ||
+        seller?.type ||
+        null
+    );
+});
+
+const effectiveOriginAddress = computed(() => {
+    const origin = effectiveOrigin.value;
     if (origin) {
         return formatLocation(origin);
     }

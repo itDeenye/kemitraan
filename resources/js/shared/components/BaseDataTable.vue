@@ -287,6 +287,7 @@ const internalLoading = ref(false);
 const lastOptions = ref<any>(null);
 
 let searchTimeout: any = null;
+let latestRequest = 0;
 
 // --- Computed ---
 
@@ -401,6 +402,7 @@ const onSearchInput = (val: string) => {
 
 const loadServerItems = async (options: any) => {
     if (!props.url) return;
+    const requestId = ++latestRequest;
     lastOptions.value = options;
     const { page, itemsPerPage, sortBy } = options;
 
@@ -473,6 +475,7 @@ const loadServerItems = async (options: any) => {
         }
 
         const { data } = await api.get(props.url, { params });
+        if (requestId !== latestRequest) return;
 
         if (data?.data) {
             serverItems.value = data.data.results || data.data || [];
@@ -485,11 +488,12 @@ const loadServerItems = async (options: any) => {
 
         emit("data-loaded", data);
     } catch (e) {
+        if (requestId !== latestRequest) return;
         console.error("DataTable API Error", e);
         serverItems.value = [];
         totalItems.value = 0;
     } finally {
-        internalLoading.value = false;
+        if (requestId === latestRequest) internalLoading.value = false;
     }
 };
 

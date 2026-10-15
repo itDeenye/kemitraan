@@ -416,7 +416,12 @@ export function useBadge() {
         }
     }
 
+    function getBadgeOptions(type: string, values: string[]) {
+        return values.map(value => ({ value, label: getBadgeData(type, value).label }));
+    }
+
     return {
         getBadgeData,
+        getBadgeOptions,
     };
 }

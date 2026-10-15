@@ -149,19 +149,6 @@
                                 >
                                     {{ order.buyer?.code || "-" }}
                                 </div>
-                                <div
-                                    v-if="order.buyer?.destination?.address"
-                                    class="text-caption text-medium-emphasis mt-2 mb-1 d-flex"
-                                >
-                                    <v-icon size="x-small" class="mr-1 mt-1"
-                                        >mdi-map-marker-outline</v-icon
-                                    >
-                                    <div>
-                                        Tujuan barang: {{ order.buyer?.destination?.name || "-" }}
-                                        <br />
-                                        {{ formatLocation(order.buyer?.destination) }}
-                                    </div>
-                                </div>
                                 <v-chip
                                     size="x-small"
                                     variant="tonal"
@@ -170,6 +157,27 @@
                                 >
                                     {{ order.buyer?.type || "Unknown" }}
                                 </v-chip>
+                                <div
+                                    v-if="order.buyer?.destination?.address"
+                                    class="text-caption text-medium-emphasis mt-2 mb-1 d-flex"
+                                >
+                                    <v-icon size="x-small" class="mr-1 mt-1"
+                                        >mdi-map-marker-outline</v-icon
+                                    >
+                                    <div>
+                                        Tujuan barang:
+                                        {{
+                                            order.buyer?.destination?.name ||
+                                            "-"
+                                        }}
+                                        <br />
+                                        {{
+                                            formatLocation(
+                                                order.buyer?.destination,
+                                            )
+                                        }}
+                                    </div>
+                                </div>
                             </v-card>
                         </v-col>
                     </v-row>
@@ -225,9 +233,22 @@
                                             >
                                                 {{ item.product?.code }}
                                             </div>
-                                            <div class="text-caption text-medium-emphasis">
-                                                Poin Bulanan: {{ formatPrice(item.monthly_points ?? 0) }} ·
-                                                Poin Tahunan: {{ formatPrice(item.annual_points ?? 0) }}
+                                            <div
+                                                class="text-caption text-medium-emphasis"
+                                            >
+                                                Poin Bulanan:
+                                                {{
+                                                    formatPrice(
+                                                        item.monthly_points ??
+                                                            0,
+                                                    )
+                                                }}
+                                                · Poin Tahunan:
+                                                {{
+                                                    formatPrice(
+                                                        item.annual_points ?? 0,
+                                                    )
+                                                }}
                                             </div>
                                         </td>
                                         <td class="text-right text-body-2">
@@ -246,13 +267,31 @@
                             </v-table>
                             <v-divider />
                             <div class="pa-4">
-                                <div class="d-flex justify-space-between mb-2 text-body-2">
-                                    <span class="text-medium-emphasis">Total Poin Bulanan</span>
-                                    <span class="font-weight-medium">{{ formatPrice(order.totals?.total_monthly_points ?? 0) }}</span>
+                                <div
+                                    class="d-flex justify-space-between mb-2 text-body-2"
+                                >
+                                    <span class="text-medium-emphasis"
+                                        >Total Poin Bulanan</span
+                                    >
+                                    <span class="font-weight-medium">{{
+                                        formatPrice(
+                                            order.totals
+                                                ?.total_monthly_points ?? 0,
+                                        )
+                                    }}</span>
                                 </div>
-                                <div class="d-flex justify-space-between mb-2 text-body-2">
-                                    <span class="text-medium-emphasis">Total Poin Tahunan</span>
-                                    <span class="font-weight-medium">{{ formatPrice(order.totals?.total_annual_points ?? 0) }}</span>
+                                <div
+                                    class="d-flex justify-space-between mb-2 text-body-2"
+                                >
+                                    <span class="text-medium-emphasis"
+                                        >Total Poin Tahunan</span
+                                    >
+                                    <span class="font-weight-medium">{{
+                                        formatPrice(
+                                            order.totals?.total_annual_points ??
+                                                0,
+                                        )
+                                    }}</span>
                                 </div>
                                 <div
                                     class="d-flex justify-space-between mb-2 text-body-2"
@@ -457,9 +496,7 @@
                                 <div
                                     class="d-flex flex-column ga-2 text-body-2"
                                 >
-                                    <template
-                                        v-if="isPickup"
-                                    >
+                                    <template v-if="isPickup">
                                         <div
                                             class="d-flex flex-column ga-1 mt-1"
                                         >
@@ -675,7 +712,9 @@ const loading = ref(false);
 const submitting = ref(false);
 const order = ref<any>(null);
 const isPickup = computed(
-    () => (order.value?.shipping?.method || order.value?.shipping_method) === "pickup",
+    () =>
+        (order.value?.shipping?.method || order.value?.shipping_method) ===
+        "pickup",
 );
 
 const actionDialog = ref(false);

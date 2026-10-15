@@ -3,6 +3,7 @@
 namespace App\Libraries;
 
 use Closure;
+use Illuminate\Contracts\Database\Query\Expression;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Database\Query\JoinClause;
 use Illuminate\Support\Collection;
@@ -22,6 +23,9 @@ class DataTable
 
     /** @var array<string, string> */
     private array $selectedFields = [];
+
+    /** @var array<string, string> */
+    private array $aliases = [];
 
     private string $defaultSort = '';
 
@@ -132,6 +136,13 @@ class DataTable
         return $this;
     }
 
+    public function whereFilter(string|Expression $column, mixed $value): self
+    {
+        $this->applyFilterValue($this->query, $column, $value);
+
+        return $this;
+    }
+
     /** @param array<int, mixed> $values */
     public function whereIn(string $column, array $values): self
     {
@@ -217,6 +228,21 @@ class DataTable
         return $this;
     }
 
+    /** @param array<string, string> $aliases */
+    public function aliases(array $aliases): self
+    {
+        foreach ($aliases as $alias => $field) {
+            if (! isset($this->selectedFields[$field])) {
+                throw new InvalidArgumentException("Unknown DataTable field: {$field}");
+            }
+
+            $this->aliases[$alias] = $field;
+            $this->selectedFields[$alias] = $this->selectedFields[$field];
+        }
+
+        return $this;
+    }
+
     /** @return $this */
     public function defaultSort(string $sort): self
     {
@@ -240,6 +266,21 @@ class DataTable
     public function get(array $params): array
     {
         $query = clone $this->query;
+
+        foreach ($this->aliases as $alias => $field) {
+            if (is_array($params['filter'] ?? null) && array_key_exists($alias, $params['filter'])) {
+                if (! array_key_exists($field, $params['filter'])) {
+                    $params['filter'][$field] = $params['filter'][$alias];
+                }
+                unset($params['filter'][$alias]);
+            }
+            if (array_key_exists($alias, $params)) {
+                if (! array_key_exists($field, $params)) {
+                    $params[$field] = $params[$alias];
+                }
+                unset($params[$alias]);
+            }
+        }
 
         $this->applyFilters($query, $params);
         $this->applySearch($query, $params);
@@ -315,7 +356,7 @@ class DataTable
         }
     }
 
-    private function applyFilterValue(Builder $query, string $column, mixed $value): void
+    private function applyFilterValue(Builder $query, string|Expression $column, mixed $value): void
     {
         if (! is_array($value)) {
             $query->where($column, $value);

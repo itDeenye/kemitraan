@@ -37,6 +37,29 @@ class AdminCoreListModulesTest extends TestCase
         }
     }
 
+    public function test_warehouse_stock_filters_and_search_use_the_product_shown_in_the_list(): void
+    {
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $this->createModuleData();
+        foreach ([
+            ['filter' => ['code' => ['like' => '%PRD-001%']]],
+            ['filter' => ['name' => ['like' => '%Serum%']]],
+            ['search' => 'Serum', 'field_search' => 'code,name'],
+            ['filter' => ['product_code' => 'PRD-001']],
+        ] as $params) {
+            $this->getJson('/api/v1/admin/inventory/stocks?'.http_build_query($params))->assertOk()
+                ->assertJsonPath('data.pagination.total_data', 1)->assertJsonPath('data.results.0.product.code', 'PRD-001');
+        }
+        foreach ([
+            ['filter' => ['code' => ['like' => '%MISSING%']]],
+            ['filter' => ['name' => ['like' => '%Toner%']]],
+            ['search' => 'Toner', 'field_search' => 'code,name'],
+        ] as $params) {
+            $this->getJson('/api/v1/admin/inventory/stocks?'.http_build_query($params))->assertOk()
+                ->assertJsonPath('data.pagination.total_data', 0)->assertJsonCount(0, 'data.results');
+        }
+    }
+
     public function test_list_validation_uses_validation_error_code(): void
     {
         $this->actingAs($this->createAdministrator(), 'admin_api');

@@ -89,37 +89,39 @@ class AdminPartnershipSalesService
     /** @param array<string, mixed> $params */
     private function applyPartyFilters(DataTable $query, array &$params): void
     {
-        $buyerName = data_get($params, 'filter.buyer_name.like', data_get($params, 'buyer_name.like'));
-        $buyerCode = data_get($params, 'filter.buyer_code.like', data_get($params, 'buyer_code.like'));
-        $sellerName = data_get($params, 'filter.seller_name.like', data_get($params, 'seller_name.like'));
-        $sellerCode = data_get($params, 'filter.seller_code.like', data_get($params, 'seller_code.like'));
-
-        foreach (['buyer_name', 'buyer_code', 'seller_name', 'seller_code'] as $field) {
+        foreach ([
+            'buyer_name' => 'buyer_member.member_name',
+            'buyer_code' => 'buyer_member.member_code',
+            'seller_name' => 'seller_member.member_name',
+            'seller_code' => 'seller_member.member_code',
+        ] as $field => $column) {
+            $filter = $params['filter'][$field] ?? $params[$field] ?? null;
             unset($params['filter'][$field], $params[$field]);
-        }
 
-        if (is_string($buyerName) && $buyerName !== '') {
-            $query->where(function (Builder $buyerQuery) use ($buyerName): void {
-                $buyerQuery
-                    ->where('buyer_member.member_name', 'like', $this->likePattern($buyerName))
-                    ->orWhere('buyer_customer.customer_name', 'like', $this->likePattern($buyerName));
-            });
-        }
+            foreach (is_array($filter) ? $filter : ['eq' => $filter] as $operator => $value) {
+                if (! in_array($operator, ['eq', 'like'], true) || ! is_string($value) || $value === '') {
+                    continue;
+                }
+                $value = $operator === 'like' ? $this->likePattern($value) : $value;
+                $operator = $operator === 'like' ? 'like' : '=';
 
-        if (is_string($buyerCode) && $buyerCode !== '') {
-            $query->where('buyer_member.member_code', 'like', $this->likePattern($buyerCode));
-        }
-
-        if (is_string($sellerName) && $sellerName !== '') {
-            $query->where(function (Builder $sellerQuery) use ($sellerName): void {
-                $sellerQuery
-                    ->where('seller_member.member_name', 'like', $this->likePattern($sellerName))
-                    ->orWhere('seller_warehouse.warehouse_name', 'like', $this->likePattern($sellerName));
-            });
-        }
-
-        if (is_string($sellerCode) && $sellerCode !== '') {
-            $query->where('seller_member.member_code', 'like', $this->likePattern($sellerCode));
+                if ($field === 'buyer_name') {
+                    $query->where(function (Builder $buyerQuery) use ($column, $operator, $value): void {
+                        $buyerQuery->where(function (Builder $memberQuery) use ($column, $operator, $value): void {
+                            $memberQuery->whereIn('trx.trx_buyer_type', ['distributor', 'agent', 'reseller'])
+                                ->where($column, $operator, $value);
+                        })->orWhere(function (Builder $customerQuery) use ($operator, $value): void {
+                            $customerQuery->where('trx.trx_buyer_type', 'customer')
+                                ->where('buyer_customer.customer_name', $operator, $value);
+                        });
+                    });
+                } else {
+                    if ($field === 'buyer_code') {
+                        $query->whereIn('trx.trx_buyer_type', ['distributor', 'agent', 'reseller']);
+                    }
+                    $query->where($column, $operator, $value);
+                }
+            }
         }
     }
 

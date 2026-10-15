@@ -123,7 +123,9 @@ import BaseBadge from "@/shared/components/BaseBadge.vue";
 import UpgradeDetailDialog from "@/admin/components/partnership/UpgradeDetailDialog.vue";
 import ApprovalActionDialog from "@/admin/components/partnership/ApprovalActionDialog.vue";
 import { useFormatter } from "@/shared/composables/useFormatter";
+import { useBadge } from "@/shared/composables/useBadge";
 
+const { getBadgeOptions } = useBadge();
 const { formatDateTime } = useFormatter();
 
 const search = ref("");
@@ -179,12 +181,9 @@ const headers = [
         type: "select",
         sortable: false,
         filter: true,
-        options: [
-            { value: "requested", label: "Menunggu" },
-            { value: "scheduled", label: "Dijadwalkan" },
-            { value: "approved", label: "Disetujui" },
-            { value: "rejected", label: "Ditolak" },
-        ],
+        options: getBadgeOptions("upgrade_status", [
+            "requested", "scheduled", "approved", "rejected", "applied", "cancelled",
+        ]),
         placeholder: "Pilih Status",
     },
     { title: "Tanggal Berlaku", key: "effective_date", align: "left" },

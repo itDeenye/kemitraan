@@ -22,6 +22,7 @@ class ListStockistRewardsRequest extends FormRequest
             'filter.year' => ['nullable', 'integer', 'between:2020,2100'],
             'filter.month' => ['nullable', 'integer', 'between:1,12'],
             'filter.member_id' => ['nullable', 'integer', 'min:1'],
+            'filter.status' => ['nullable', 'string', 'in:available,used,expired'],
         ];
     }
 }

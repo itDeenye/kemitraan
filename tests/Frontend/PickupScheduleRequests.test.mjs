@@ -51,6 +51,14 @@ function dialog(name, { detailRequest } = {}) {
 }
 
 for (const name of ['ShippingActionDialog', 'ShippingReshipDialog']) {
+    test(`${name}: opening an express shipment does not request schedules`, async () => {
+        const page = dialog(name);
+        await page.open({ id: 42 });
+        assert.equal(page.requests.length, 0);
+        assert.equal(page.loadingSchedules.value, false);
+        assert.deepEqual(page.schedules.value, []);
+    });
+
     test(`${name}: repeated loading shares one pending schedules request`, async () => {
         const page = dialog(name);
         await page.open({ id: 42 });
@@ -66,7 +74,7 @@ for (const name of ['ShippingActionDialog', 'ShippingReshipDialog']) {
         assert.deepEqual(page.messages, []);
     });
 
-    test(`${name}: selecting pickup during initial load does not send another request`, async () => {
+    test(`${name}: selecting pickup requests schedules`, async () => {
         const page = dialog(name);
         await page.open({ id: 42 });
         page.form.pickup_method = 'PICKUP';
@@ -104,6 +112,8 @@ for (const name of ['ShippingActionDialog', 'ShippingReshipDialog']) {
         test(`${name}: stale ${outcome} after close does not change schedules or report errors`, async () => {
             const page = dialog(name);
             await page.open({ id: 42 });
+            page.form.pickup_method = 'PICKUP';
+            page.onPickupMethodChange();
             page.close();
             if (outcome === 'success') page.requests[0].resolve(scheduleResponse('2026-10-15 14:00:00'));
             else page.requests[0].reject(new Error('old request failed'));
@@ -117,8 +127,12 @@ for (const name of ['ShippingActionDialog', 'ShippingReshipDialog']) {
         test(`${name}: stale ${outcome} cannot overwrite a reopened dialog or stop its loading`, async () => {
             const page = dialog(name);
             await page.open({ id: 42 });
+            page.form.pickup_method = 'PICKUP';
+            page.onPickupMethodChange();
             page.close();
             await page.open({ id: 43 });
+            page.form.pickup_method = 'PICKUP';
+            page.onPickupMethodChange();
             assert.equal(page.requests.length, 2);
             if (outcome === 'success') page.requests[0].resolve(scheduleResponse('2026-10-15 14:00:00'));
             else page.requests[0].reject(new Error('old request failed'));
@@ -138,6 +152,8 @@ for (const name of ['ShippingActionDialog', 'ShippingReshipDialog']) {
     test(`${name}: reopening clears previously loaded schedules and selects a fresh schedule`, async () => {
         const page = dialog(name);
         await page.open({ id: 42 });
+        page.form.pickup_method = 'PICKUP';
+        page.onPickupMethodChange();
         page.requests[0].resolve(scheduleResponse('2026-10-15 14:00:00'));
         await flushRequests();
         page.close();

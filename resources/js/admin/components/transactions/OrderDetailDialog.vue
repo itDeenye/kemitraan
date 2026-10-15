@@ -176,6 +176,14 @@
                                 >
                                     {{ order.buyer?.code || "-" }}
                                 </div>
+                                <v-chip
+                                    size="x-small"
+                                    variant="tonal"
+                                    color="info"
+                                    class="mt-1 font-weight-medium text-capitalize"
+                                >
+                                    {{ order.buyer?.type || "Unknown" }}
+                                </v-chip>
                                 <div
                                     v-if="order.buyer?.destination?.address"
                                     class="text-caption text-medium-emphasis mt-2 mb-1 d-flex"
@@ -197,14 +205,6 @@
                                         }}
                                     </div>
                                 </div>
-                                <v-chip
-                                    size="x-small"
-                                    variant="tonal"
-                                    color="info"
-                                    class="mt-1 font-weight-medium text-capitalize"
-                                >
-                                    {{ order.buyer?.type || "Unknown" }}
-                                </v-chip>
                             </v-card>
                         </v-col>
                     </v-row>
@@ -260,9 +260,22 @@
                                             >
                                                 {{ item.product?.code }}
                                             </div>
-                                            <div class="text-caption text-medium-emphasis">
-                                                Poin Bulanan: {{ formatPrice(item.monthly_points ?? 0) }} ·
-                                                Poin Tahunan: {{ formatPrice(item.annual_points ?? 0) }}
+                                            <div
+                                                class="text-caption text-medium-emphasis"
+                                            >
+                                                Poin Bulanan:
+                                                {{
+                                                    formatPrice(
+                                                        item.monthly_points ??
+                                                            0,
+                                                    )
+                                                }}
+                                                · Poin Tahunan:
+                                                {{
+                                                    formatPrice(
+                                                        item.annual_points ?? 0,
+                                                    )
+                                                }}
                                             </div>
                                         </td>
                                         <td class="text-right text-body-2">
@@ -281,13 +294,31 @@
                             </v-table>
                             <v-divider />
                             <div class="pa-4">
-                                <div class="d-flex justify-space-between mb-2 text-body-2">
-                                    <span class="text-medium-emphasis">Total Poin Bulanan</span>
-                                    <span class="font-weight-medium">{{ formatPrice(order.totals?.total_monthly_points ?? 0) }}</span>
+                                <div
+                                    class="d-flex justify-space-between mb-2 text-body-2"
+                                >
+                                    <span class="text-medium-emphasis"
+                                        >Total Poin Bulanan</span
+                                    >
+                                    <span class="font-weight-medium">{{
+                                        formatPrice(
+                                            order.totals
+                                                ?.total_monthly_points ?? 0,
+                                        )
+                                    }}</span>
                                 </div>
-                                <div class="d-flex justify-space-between mb-2 text-body-2">
-                                    <span class="text-medium-emphasis">Total Poin Tahunan</span>
-                                    <span class="font-weight-medium">{{ formatPrice(order.totals?.total_annual_points ?? 0) }}</span>
+                                <div
+                                    class="d-flex justify-space-between mb-2 text-body-2"
+                                >
+                                    <span class="text-medium-emphasis"
+                                        >Total Poin Tahunan</span
+                                    >
+                                    <span class="font-weight-medium">{{
+                                        formatPrice(
+                                            order.totals?.total_annual_points ??
+                                                0,
+                                        )
+                                    }}</span>
                                 </div>
                                 <div
                                     class="d-flex justify-space-between mb-2 text-body-2"
@@ -951,8 +982,14 @@ const printDocument = async (
                                                     batch.batch_number,
                                                 expiry_date: batch.expiry_date,
                                                 quantity: batch.quantity,
-                                                monthly_points: batch.quantity * (item.product.monthly_points ?? 0),
-                                                annual_points: batch.quantity * (item.product.annual_points ?? 0),
+                                                monthly_points:
+                                                    batch.quantity *
+                                                    (item.product
+                                                        .monthly_points ?? 0),
+                                                annual_points:
+                                                    batch.quantity *
+                                                    (item.product
+                                                        .annual_points ?? 0),
                                                 price: item.price,
                                                 discount_percent:
                                                     item.discount_percent || 0,
@@ -973,8 +1010,10 @@ const printDocument = async (
                                                 item.product?.expiry_date ||
                                                 null,
                                             quantity: item.quantity,
-                                            monthly_points: item.monthly_points ?? 0,
-                                            annual_points: item.annual_points ?? 0,
+                                            monthly_points:
+                                                item.monthly_points ?? 0,
+                                            annual_points:
+                                                item.annual_points ?? 0,
                                             price: item.price,
                                             discount_percent:
                                                 item.discount_percent || 0,

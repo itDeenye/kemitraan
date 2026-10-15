@@ -487,8 +487,8 @@ const checkProfileReminder = () => {
         const hasNoBank = authStore.user.has_bank_account === false;
         const hasDefaultPassword = authStore.user.is_default_password === true;
 
-        // Muncul jika has_bank_account false DAN is_default_password true
-        if (hasNoBank && hasDefaultPassword) {
+        // Muncul jika has_bank_account false ATAU is_default_password true
+        if (hasNoBank || hasDefaultPassword) {
             const hasSeenReminder = sessionStorage.getItem(
                 "profile_reminder_seen",
             );

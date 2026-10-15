@@ -231,6 +231,7 @@ class AdminTransactionService
             ->leftJoinSub($paymentSnapshot, 'preorder_parent_payment', 'preorder_parent_payment.payment_transfer_trx_id = preorder_parent.trx_id')
             ->leftJoinSub($paymentSnapshot, 'preorder_root_payment', 'preorder_root_payment.payment_transfer_trx_id = preorder_root.trx_id')
             ->leftJoin($bankTable, "{$bankTable}.bank_id = {$paymentTable}.payment_transfer_bank_id")
+            ->aliases(['buyer_code' => 'buyer_member_code', 'buyer_name' => 'buyer_member_name'])
             ->search([
                 'code', 'seller_member_code', 'seller_member_name', 'seller_warehouse_name',
                 'buyer_member_code', 'buyer_member_name', 'buyer_customer_name',
@@ -259,6 +260,7 @@ class AdminTransactionService
         }
 
         $this->applyDateRange($query, "{$trxTable}.trx_datetime", $params);
+        $this->applyBuyerFilters($query, $params, 'buyer_member');
 
         return $query->get($params);
     }
@@ -422,6 +424,7 @@ class AdminTransactionService
             ->leftJoin($bankTable, "{$bankTable}.bank_id = {$paymentTable}.payment_transfer_bank_id")
             ->leftJoinSub($spreadPayment, $spreadPaymentTable, "{$spreadPaymentTable}.trx_spread_payment_trx_id = {$trxTable}.trx_id")
             ->leftJoin("{$bankTable} as spread_bank", "spread_bank.bank_id = {$spreadPaymentTable}.trx_spread_payment_bank_id")
+            ->aliases(['buyer_code' => 'buyer_member_code', 'buyer_name' => 'buyer_member_name'])
             ->search(['transaction_code', 'trx_code', 'buyer_member_code', 'buyer_member_name', 'buyer_customer_name', 'account_name', 'account_number'])
             ->orderByRaw("CASE WHEN {$paymentTable}.payment_transfer_approval_status = 'submitted'
                 AND {$trxTable}.trx_status = 'waiting_payment_approval'
@@ -432,6 +435,7 @@ class AdminTransactionService
             ->allowUnpaginated();
 
         $this->applyDateRange($query, "{$paymentTable}.payment_transfer_datetime", $params);
+        $this->applyBuyerFilters($query, $params, $memberTable);
 
         return $query->get($params);
     }
@@ -529,6 +533,7 @@ class AdminTransactionService
             )
             ->leftJoin($trxTable, "{$trxTable}.trx_id = {$receiveTable}.goods_receive_trx_id")
             ->leftJoin($memberTable, "{$memberTable}.member_id = {$returnTable}.return_member_id")
+            ->aliases(['transaction_code' => 'trx_code'])
             ->search([
                 'code', 'trx_code', 'goods_receive_number', 'member_code', 'member_name', 'description',
             ])
@@ -669,6 +674,27 @@ class AdminTransactionService
         }
 
         return $snapshots;
+    }
+
+    /** @param array<string, mixed> $params */
+    private function applyBuyerFilters(DataTable $query, array &$params, string $memberAlias): void
+    {
+        $trxTable = (new Trx)->getTable();
+        $customerTable = (new Customer)->getTable();
+        foreach (['buyer_name' => 'buyer_member_name', 'buyer_code' => 'buyer_member_code'] as $alias => $canonical) {
+            $value = $params['filter'][$alias] ?? $params[$alias] ?? null;
+            unset($params['filter'][$alias], $params[$alias]);
+            if ($value === null || $value === ''
+                || array_key_exists($canonical, $params['filter'] ?? []) || array_key_exists($canonical, $params)) {
+                continue;
+            }
+
+            $memberColumn = $alias === 'buyer_name' ? 'member_name' : 'member_code';
+            $customerValue = $alias === 'buyer_name' ? "{$customerTable}.customer_name" : 'NULL';
+            $query->whereFilter(DB::raw("CASE
+                WHEN {$trxTable}.trx_buyer_type = 'customer' THEN {$customerValue}
+                ELSE {$memberAlias}.{$memberColumn} END"), $value);
+        }
     }
 
     /** @param array<string, mixed> $params */

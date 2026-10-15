@@ -202,6 +202,29 @@ class AdminPartnershipSalesReportTest extends TestCase
             ->assertJsonPath('data.results.0.seller.name', 'Distributor Seller');
     }
 
+    public function test_party_filters_only_match_the_party_shown_on_the_transaction(): void
+    {
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $member = $this->createDistributor();
+        $this->createOrder($member);
+        $this->createOrder($this->createCustomer($member));
+
+        foreach ([
+            ['buyer_name' => ['like' => '%Customer 1%']],
+            ['buyer_name' => 'Customer 1'],
+            ['buyer_name' => ['eq' => 'Customer 1']],
+        ] as $filter) {
+            $this->getJson('/api/v1/admin/reports/partnership-sales?'.http_build_query(['filter' => $filter]))
+                ->assertOk()->assertJsonPath('data.pagination.total_data', 1)
+                ->assertJsonPath('data.results.0.buyer.name', 'Customer 1')
+                ->assertJsonPath('data.results.0.buyer.type', 'customer');
+        }
+        foreach (['buyer_name', 'buyer_code', 'seller_name', 'seller_code'] as $field) {
+            $this->getJson('/api/v1/admin/reports/partnership-sales?'.http_build_query(['filter' => [$field => 'NO-MATCH']]))
+                ->assertOk()->assertJsonCount(0, 'data.results')->assertJsonPath('data.pagination.total_data', 0);
+        }
+    }
+
     public function test_legacy_party_filter_format_remains_supported(): void
     {
         $this->actingAs($this->createAdministrator(), 'admin_api');
