@@ -188,9 +188,9 @@ class DataTable
     }
 
     /** @return $this */
-    public function orderByRaw(string $expression): self
+    public function orderByRaw(string $expression, array $bindings = []): self
     {
-        $this->query->orderByRaw($expression);
+        $this->query->orderByRaw($expression, $bindings);
 
         return $this;
     }

@@ -51,6 +51,7 @@ class MemberLevelChangeService
             ->leftJoin('member_level as to_level', 'to_level.member_level_id = member_upgrade_qualified.member_upgrade_qualified_to_level_id')
             ->leftJoin('site_administrator', 'site_administrator.administrator_id = member_upgrade_qualified.member_upgrade_qualified_admin_id')
             ->search(['member_code', 'member_name', 'from_level_name', 'to_level_name'])
+            ->orderByRaw("CASE WHEN member_upgrade_qualified.member_upgrade_qualified_status = 'requested' THEN 1 ELSE 0 END DESC")
             ->defaultSort('-id')
             ->get($params);
     }

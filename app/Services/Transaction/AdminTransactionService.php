@@ -235,6 +235,14 @@ class AdminTransactionService
                 'code', 'seller_member_code', 'seller_member_name', 'seller_warehouse_name',
                 'buyer_member_code', 'buyer_member_name', 'buyer_customer_name',
             ])
+            ->orderByRaw("CASE WHEN {$trxTable}.trx_buyer_type = 'distributor' AND (
+                {$canProcessStockScreening}
+                OR (
+                    {$trxTable}.trx_seller_type = 'warehouse'
+                    AND {$trxTable}.trx_status IN ('processing', 'reship_required')
+                    AND NOT EXISTS (SELECT 1 FROM {$trxTable} AS action_child WHERE action_child.trx_parent_trx_id = {$trxTable}.trx_id)
+                )
+            ) THEN 1 ELSE 0 END DESC")
             ->defaultSort('-id')
             ->allowUnpaginated();
 
@@ -415,6 +423,11 @@ class AdminTransactionService
             ->leftJoinSub($spreadPayment, $spreadPaymentTable, "{$spreadPaymentTable}.trx_spread_payment_trx_id = {$trxTable}.trx_id")
             ->leftJoin("{$bankTable} as spread_bank", "spread_bank.bank_id = {$spreadPaymentTable}.trx_spread_payment_bank_id")
             ->search(['transaction_code', 'trx_code', 'buyer_member_code', 'buyer_member_name', 'buyer_customer_name', 'account_name', 'account_number'])
+            ->orderByRaw("CASE WHEN {$paymentTable}.payment_transfer_approval_status = 'submitted'
+                AND {$trxTable}.trx_status = 'waiting_payment_approval'
+                AND {$trxTable}.trx_seller_type = 'warehouse'
+                AND {$trxTable}.trx_buyer_type = 'distributor'
+                THEN 1 ELSE 0 END DESC")
             ->defaultSort('-id')
             ->allowUnpaginated();
 
@@ -488,6 +501,7 @@ class AdminTransactionService
         $trxTable = (new Trx)->getTable();
         $memberTable = (new Member)->getTable();
         $receiveTable = (new GoodsReceive)->getTable();
+        $actionableReturns = ReturnModel::query()->needsAdminAction()->select('return_id')->toBase();
 
         $query = DataTable::select([
             "{$returnTable}.return_id as id",
@@ -518,6 +532,10 @@ class AdminTransactionService
             ->search([
                 'code', 'trx_code', 'goods_receive_number', 'member_code', 'member_name', 'description',
             ])
+            ->orderByRaw(
+                "CASE WHEN return_id IN ({$actionableReturns->toSql()}) THEN 1 ELSE 0 END DESC",
+                $actionableReturns->getBindings(),
+            )
             ->defaultSort('-id')
             ->allowUnpaginated();
 

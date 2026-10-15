@@ -394,7 +394,8 @@ class MemberRegistrationService
         }
 
         if ($adminOnly) {
-            $query->whereIn("{$registrationTable}.member_registration_distributor_approval_status", MemberRegistration::ADMIN_READY_APPROVAL_STATUSES);
+            $query->whereIn("{$registrationTable}.member_registration_distributor_approval_status", MemberRegistration::ADMIN_READY_APPROVAL_STATUSES)
+                ->orderByRaw("CASE WHEN {$registrationTable}.member_registration_status = 'requested' THEN 1 ELSE 0 END DESC");
         }
         if ($distributorId !== null) {
             $query->where("{$registrationTable}.member_registration_distributor_member_id", $distributorId);

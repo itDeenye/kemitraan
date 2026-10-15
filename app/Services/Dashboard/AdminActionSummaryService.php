@@ -68,6 +68,7 @@ class AdminActionSummaryService
             ->leftJoinSub($paymentSnapshot, 'parent_payment', 'parent_payment.payment_transfer_trx_id', '=', 'parent_trx.trx_id')
             ->leftJoinSub($paymentSnapshot, 'root_payment', 'root_payment.payment_transfer_trx_id', '=', 'root_trx.trx_id')
             ->where('screening_trx.trx_status', 'waiting_stock_screening')
+            ->where('screening_trx.trx_buyer_type', 'distributor')
             ->whereRaw('(
                 screening_trx.trx_is_preorder = 0
                 OR screening_trx.trx_parent_trx_id = 0
