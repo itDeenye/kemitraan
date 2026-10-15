@@ -29,15 +29,11 @@ class PartnershipConfigSeeder extends Seeder
         ]);
         BusinessConfig::put('return', ['return_max_days' => 3]);
         BusinessConfig::put('partnership', [
-            'reward_point_per_item' => 1,
             'spread_payment_percentage' => 1,
         ]);
-        $development = ['frontend_enabled' => true];
         $seededAt = BusinessConfig::get('development.seeded_at');
         if ($seededAt !== null) {
-            $development['seeded_at'] = $seededAt;
+            BusinessConfig::put('development', ['seeded_at' => $seededAt]);
         }
-
-        BusinessConfig::put('development', $development);
     }
 }

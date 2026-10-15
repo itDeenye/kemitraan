@@ -15,7 +15,11 @@ use Illuminate\Support\Collection;
 class AdminSystemService
 {
     /** @var list<string> */
-    private const INTERNAL_SEQUENCE_KEYS = [
+    private const INTERNAL_CONFIG_KEYS = [
+        'development',
+        'development.frontend_enabled',
+        'development.seeded_at',
+        'partnership.reward_point_per_item',
         'partnership.member_code_sequence',
         'transaction.code_sequence',
         'document_code.rtr_sequence',
@@ -42,7 +46,7 @@ class AdminSystemService
         ])
             ->from($configTable)
             ->where("{$configTable}.config_scope", Config::SCOPE_SYSTEM)
-            ->whereNotIn("{$configTable}.config_key", self::INTERNAL_SEQUENCE_KEYS)
+            ->whereNotIn("{$configTable}.config_key", self::INTERNAL_CONFIG_KEYS)
             ->search(['key', 'value'])
             ->defaultSort('key')
             ->get($params);
@@ -76,7 +80,7 @@ class AdminSystemService
     {
         if (
             $config->config_scope !== Config::SCOPE_SYSTEM
-            || in_array($config->config_key, self::INTERNAL_SEQUENCE_KEYS, true)
+            || in_array($config->config_key, self::INTERNAL_CONFIG_KEYS, true)
         ) {
             throw (new ModelNotFoundException)->setModel(Config::class, [$config->getKey()]);
         }

@@ -161,7 +161,6 @@ class DevelopmentSeeder extends Seeder
             ]);
 
             BusinessConfig::put('development', [
-                'frontend_enabled' => true,
                 'seeded_at' => $now->toDateTimeString(),
             ], $now);
         });

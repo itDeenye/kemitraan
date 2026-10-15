@@ -14,6 +14,9 @@ class AdminConfigResource extends ApiResource
     {
         $type = (string) $this->value('type', 'config_type');
         $typedValue = $this->typedValue($this->value('value', 'config_value'), $type);
+        if ($this->value('key', 'config_key') === 'partnership' && is_array($typedValue)) {
+            unset($typedValue['reward_point_per_item']);
+        }
 
         return [
             'id' => $this->value('id', 'config_id'),
@@ -85,10 +88,7 @@ class AdminConfigResource extends ApiResource
             'return' => 'Pengembalian Barang',
             'return_max_days' => 'Batas Hari Pengembalian',
             'partnership' => 'Kemitraan',
-            'reward_point_per_item' => 'Poin per Produk',
             'spread_payment_percentage' => 'Persentase Spread Payment',
-            'development' => 'Pengembangan',
-            'frontend_enabled' => 'Frontend Aktif',
         ];
 
         return $labels[$key] ?? str($key)->replace(['.', '_', '-'], ' ')->title()->toString();

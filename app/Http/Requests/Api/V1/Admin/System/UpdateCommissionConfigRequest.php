@@ -30,8 +30,7 @@ class UpdateCommissionConfigRequest extends FormRequest
                 'value.reward_stockist_percentage_basis_points' => ['required', 'integer', 'between:0,10000'],
             ],
             'partnership' => [
-                'value' => ['required', 'array:reward_point_per_item,spread_payment_percentage'],
-                'value.reward_point_per_item' => ['required', 'integer', 'min:0', 'max:4294967295'],
+                'value' => ['required', 'array:spread_payment_percentage'],
                 'value.spread_payment_percentage' => ['required', 'numeric', 'between:0,100'],
             ],
             default => ['value' => ['required', 'array']],
@@ -48,7 +47,6 @@ class UpdateCommissionConfigRequest extends FormRequest
             'value.reward_monthly_min_qty_reseller' => 'minimum kuantitas Reseller',
             'value.reward_stockist_min_amount' => 'minimum omzet Reward Stokis',
             'value.reward_stockist_percentage_basis_points' => 'persentase Reward Stokis',
-            'value.reward_point_per_item' => 'poin per produk',
             'value.spread_payment_percentage' => 'persentase spread payment',
         ];
     }

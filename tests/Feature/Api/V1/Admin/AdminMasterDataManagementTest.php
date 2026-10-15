@@ -8,6 +8,7 @@ use App\Models\Member;
 use App\Models\MemberLevel;
 use App\Models\SiteAdministrator;
 use App\Models\SiteAdministratorGroup;
+use App\Support\BusinessConfig;
 use Database\Seeders\PartnershipConfigSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -221,9 +222,9 @@ class AdminMasterDataManagementTest extends TestCase
         $this->assertIsArray($monthlyConfig);
         $this->assertIsArray($stockistConfig);
         $this->assertIsArray($partnershipConfig);
-        $this->assertDatabaseCount('config', 6);
+        $this->assertDatabaseCount('config', 5);
         $this->assertSame(3, Config::query()->where('config_scope', Config::SCOPE_COMMISSION)->count());
-        $this->assertSame(3, Config::query()->where('config_scope', Config::SCOPE_SYSTEM)->count());
+        $this->assertSame(2, Config::query()->where('config_scope', Config::SCOPE_SYSTEM)->count());
         $this->assertSame([
             'reward_monthly_min_qty_distributor',
             'reward_monthly_min_qty_agent',
@@ -234,7 +235,6 @@ class AdminMasterDataManagementTest extends TestCase
             'reward_stockist_percentage_basis_points',
         ], array_keys($stockistConfig['value']));
         $this->assertSame([
-            'reward_point_per_item',
             'spread_payment_percentage',
         ], array_keys($partnershipConfig['value']));
 
@@ -263,12 +263,11 @@ class AdminMasterDataManagementTest extends TestCase
 
         $this->putJson('/api/v1/admin/system/commission-configs/'.$partnershipConfig['id'], [
             'value' => [
-                'reward_point_per_item' => 2,
                 'spread_payment_percentage' => 1.5,
             ],
         ])->assertOk()
             ->assertJsonPath('data.key', 'partnership')
-            ->assertJsonPath('data.value.reward_point_per_item', 2)
+            ->assertJsonMissingPath('data.value.reward_point_per_item')
             ->assertJsonPath('data.value.spread_payment_percentage', 1.5);
 
         $this->putJson('/api/v1/admin/system/commission-configs/'.$stockistConfig['id'], [
@@ -293,7 +292,7 @@ class AdminMasterDataManagementTest extends TestCase
 
         $response = $this->getJson('/api/v1/admin/system/configs?limit=100')
             ->assertOk()
-            ->assertJsonCount(3, 'data.results')
+            ->assertJsonCount(2, 'data.results')
             ->assertJsonPath('data.results.0.scope', 'system')
             ->assertJsonPath('data.results.0.type', 'json');
         $configs = collect($response->json('data.results'));
@@ -321,6 +320,47 @@ class AdminMasterDataManagementTest extends TestCase
 
         $this->deleteJson("/api/v1/admin/system/configs/{$configId}")
             ->assertMethodNotAllowed();
+    }
+
+    public function test_obsolete_configuration_is_hidden_and_cannot_be_updated(): void
+    {
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $this->seed(PartnershipConfigSeeder::class);
+        $partnership = BusinessConfig::put('partnership', ['reward_point_per_item' => 9, 'spread_payment_percentage' => 2.5]);
+        $development = BusinessConfig::put('development', ['frontend_enabled' => false, 'seeded_at' => '2026-10-01 09:00:00']);
+
+        $configs = $this->getJson('/api/v1/admin/system/commission-configs')->assertOk()->json('data.results');
+        $partnershipData = collect($configs)->firstWhere('key', 'partnership');
+        $this->assertSame(['spread_payment_percentage' => 2.5], $partnershipData['value']);
+        $this->assertSame(['spread_payment_percentage'], array_column($partnershipData['entries'], 'key'));
+        $this->putJson('/api/v1/admin/system/commission-configs/'.$partnership->getKey(), [
+            'value' => ['reward_point_per_item' => 9, 'spread_payment_percentage' => 2.5],
+        ])->assertUnprocessable();
+        $this->getJson('/api/v1/admin/system/configs?limit=100')->assertOk()->assertJsonCount(2, 'data.results');
+        $this->getJson('/api/v1/admin/system/configs/'.$development->getKey())->assertNotFound();
+        $this->putJson('/api/v1/admin/system/configs/'.$development->getKey(), [
+            'value' => ['frontend_enabled' => true],
+        ])->assertNotFound();
+        $this->assertSame('2026-10-01 09:00:00', BusinessConfig::get('development.seeded_at'));
+    }
+
+    public function test_obsolete_configuration_migration_preserves_other_settings_and_seed_marker(): void
+    {
+        $this->seed(PartnershipConfigSeeder::class);
+        $partnership = BusinessConfig::put('partnership', ['reward_point_per_item' => 9, 'spread_payment_percentage' => 2.5]);
+        $development = BusinessConfig::put('development', ['frontend_enabled' => false, 'seeded_at' => '2026-10-01 09:00:00']);
+        $migration = require database_path('migrations/2026_10_15_150616_remove_obsolete_partnership_config_values.php');
+        $migration->up();
+
+        $this->assertSame(['spread_payment_percentage' => 2.5], json_decode($partnership->refresh()->config_value, true));
+        $this->assertSame(['seeded_at' => '2026-10-01 09:00:00'], json_decode($development->refresh()->config_value, true));
+        $migration->up();
+        $this->seed(PartnershipConfigSeeder::class);
+        $this->assertSame(['seeded_at' => '2026-10-01 09:00:00'], json_decode($development->refresh()->config_value, true));
+        $development->update(['config_value' => json_encode(['frontend_enabled' => true])]);
+        $migration->up();
+        $this->assertModelMissing($development);
+        $this->assertSame(50, BusinessConfig::get('reward_monthly.reward_monthly_min_qty_distributor'));
     }
 
     private function createAdministrator(): SiteAdministrator
