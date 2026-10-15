@@ -473,6 +473,8 @@
         <div v-else class="card mt-3" style="padding: 24px; text-align: center">
             <p>Data penerimaan tidak ditemukan.</p>
         </div>
+
+        <MobileConfirm ref="confirmDialog" />
     </div>
 </template>
 
@@ -483,6 +485,7 @@ import purchaseService from "@/member/services/purchase.service";
 import { useFormatter } from "@/shared/composables/useFormatter";
 import { useSnackbarStore } from "@/shared/stores/snackbar";
 import BaseBadge from "@/shared/components/BaseBadge.vue";
+import MobileConfirm from "@/member/components/MobileConfirm.vue";
 import { decodeRouteId } from "@/shared/utils/route-id";
 
 const route = useRoute();
@@ -495,6 +498,7 @@ const receipt = ref<any>(null);
 const isLoading = ref(true);
 const isSubmitting = ref(false);
 const showReceiveForm = ref(false);
+const confirmDialog = ref<InstanceType<typeof MobileConfirm> | null>(null);
 
 const form = ref({
     delivery_note_number: "",
@@ -568,6 +572,17 @@ const confirmReceipt = async () => {
         snackbar.showMessage("Mohon isi Nomor Surat Jalan.", "error");
         return;
     }
+
+    if (!confirmDialog.value) return;
+    const isConfirmed = await confirmDialog.value.open({
+        title: "Konfirmasi Penerimaan Barang",
+        message:
+            "Pastikan seluruh produk, jumlah, nomor batch, dan tanggal kedaluwarsa sudah sesuai dengan barang yang diterima.",
+        confirmText: "Ya, Konfirmasi",
+        confirmColor: "primary",
+        icon: "mdi-package-variant-closed-check",
+    });
+    if (!isConfirmed) return;
 
     isSubmitting.value = true;
     try {

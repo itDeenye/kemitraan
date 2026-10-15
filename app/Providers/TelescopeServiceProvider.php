@@ -2,9 +2,11 @@
 
 namespace App\Providers;
 
+use App\Models\SiteAdministrator;
 use App\Support\TelescopeEntryFilter;
 use App\Support\TelescopeRequestTags;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Laravel\Telescope\IncomingEntry;
 use Laravel\Telescope\Telescope;
@@ -40,6 +42,13 @@ class TelescopeServiceProvider extends TelescopeApplicationServiceProvider
             'password',
             'password_confirmation',
             'pin',
+            'api_token',
+            'access_token',
+            'refresh_token',
+            'callback_token',
+            'client_secret',
+            'secret',
+            'token',
         ]);
 
         Telescope::hideRequestHeaders([
@@ -47,6 +56,7 @@ class TelescopeServiceProvider extends TelescopeApplicationServiceProvider
             'cookie',
             'x-csrf-token',
             'x-xsrf-token',
+            'x-supply-chain-callback-token',
         ]);
     }
 
@@ -57,6 +67,14 @@ class TelescopeServiceProvider extends TelescopeApplicationServiceProvider
      */
     protected function gate(): void
     {
-        Gate::define('viewTelescope', fn (): bool => false);
+        Gate::define(
+            'viewTelescope',
+            function ($user = null): bool {
+                $administrator = Auth::guard('telescope')->user();
+
+                return $administrator instanceof SiteAdministrator
+                    && (bool) $administrator->administrator_is_active;
+            },
+        );
     }
 }

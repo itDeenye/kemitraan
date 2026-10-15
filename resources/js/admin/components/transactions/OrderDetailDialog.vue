@@ -192,12 +192,31 @@
                                         >mdi-map-marker-outline</v-icon
                                     >
                                     <div>
-                                        Tujuan barang:
-                                        {{
-                                            order.buyer?.destination?.name ||
-                                            "-"
-                                        }}
-                                        <br />
+                                        <div
+                                            class="d-flex align-center flex-wrap ga-2 mb-1"
+                                        >
+                                            <span>
+                                                Tujuan barang:
+                                                {{
+                                                    order.buyer?.destination
+                                                        ?.name || "-"
+                                                }}
+                                            </span>
+                                            <v-chip
+                                                v-if="
+                                                    order.buyer?.destination
+                                                        ?.type
+                                                "
+                                                size="x-small"
+                                                variant="tonal"
+                                                color="info"
+                                                class="font-weight-medium text-capitalize"
+                                            >
+                                                {{
+                                                    order.buyer.destination.type
+                                                }}
+                                            </v-chip>
+                                        </div>
                                         {{
                                             formatLocation(
                                                 order.buyer?.destination,
@@ -550,13 +569,13 @@
                                         </div>
                                     </template>
                                     <template v-else>
-                                        <div
-                                            class="d-flex justify-space-between"
-                                        >
-                                            <span class="text-medium-emphasis"
+                                        <div class="d-flex align-center ga-3">
+                                            <span
+                                                class="text-medium-emphasis flex-shrink-0 text-no-wrap"
                                                 >Metode Kirim</span
                                             >
                                             <BaseBadge
+                                                class="ml-auto"
                                                 type="shipping_method"
                                                 :value="
                                                     order.shipping?.method ||
@@ -566,21 +585,16 @@
                                             />
                                         </div>
                                         <div
-                                            class="d-flex justify-space-between"
+                                            class="d-flex align-start ga-3"
                                             v-if="order.shipping?.courier"
                                         >
-                                            <span class="text-medium-emphasis"
+                                            <span
+                                                class="text-medium-emphasis flex-shrink-0 text-no-wrap"
                                                 >Kurir</span
                                             >
                                             <span
-                                                class="font-weight-medium text-capitalize text-truncate text-right"
-                                                style="max-width: 180px"
-                                                :title="
-                                                    order.shipping.courier +
-                                                    (order.shipping.service
-                                                        ? ` (${order.shipping.service})`
-                                                        : '')
-                                                "
+                                                class="font-weight-medium text-capitalize text-right ml-auto"
+                                                style="overflow-wrap: anywhere"
                                             >
                                                 {{ order.shipping.courier }}
                                                 {{
@@ -591,13 +605,15 @@
                                             </span>
                                         </div>
                                         <div
-                                            class="d-flex justify-space-between"
+                                            class="d-flex align-center ga-3"
                                             v-if="order.shipping?.pickup_method"
                                         >
-                                            <span class="text-medium-emphasis"
+                                            <span
+                                                class="text-medium-emphasis flex-shrink-0 text-no-wrap"
                                                 >Tipe Pickup Kurir</span
                                             >
                                             <BaseBadge
+                                                class="ml-auto"
                                                 type="pickup_method"
                                                 :value="
                                                     order.shipping.pickup_method
@@ -606,17 +622,23 @@
                                             />
                                         </div>
                                         <div
-                                            class="d-flex justify-space-between"
+                                            class="d-flex align-start ga-3"
                                             v-if="
                                                 order.shipping?.tracking_number
                                             "
                                         >
-                                            <span class="text-medium-emphasis"
+                                            <span
+                                                class="text-medium-emphasis flex-shrink-0 text-no-wrap"
                                                 >No. Resi</span
                                             >
-                                            <span class="font-weight-medium">{{
-                                                order.shipping.tracking_number
-                                            }}</span>
+                                            <span
+                                                class="font-weight-medium text-right ml-auto"
+                                                style="overflow-wrap: anywhere"
+                                                >{{
+                                                    order.shipping
+                                                        .tracking_number
+                                                }}</span
+                                            >
                                         </div>
                                     </template>
                                 </div>

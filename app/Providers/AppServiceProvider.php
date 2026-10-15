@@ -22,7 +22,8 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(StcGateway::class, HttpStcGateway::class);
         $this->app->bind(SupplyChainGateway::class, HttpSupplyChainGateway::class);
 
-        if ($this->app->environment('local') && class_exists(\Laravel\Telescope\TelescopeServiceProvider::class)) {
+        if ($this->app->environment(['local', 'production'])
+            && class_exists(\Laravel\Telescope\TelescopeServiceProvider::class)) {
             $this->app->register(\Laravel\Telescope\TelescopeServiceProvider::class);
             $this->app->register(TelescopeServiceProvider::class);
         }

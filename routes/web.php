@@ -5,7 +5,7 @@ use App\Http\Middleware\AuthenticateTelescope;
 use Illuminate\Support\Facades\Route;
 use Laravel\Telescope\TelescopeServiceProvider;
 
-if (app()->environment(['local', 'testing']) && class_exists(TelescopeServiceProvider::class)) {
+if (app()->environment(['local', 'production', 'testing']) && class_exists(TelescopeServiceProvider::class)) {
     Route::get('/telescope-login', [TelescopeAuthController::class, 'show'])
         ->name('telescope.login');
     Route::post('/telescope-login', [TelescopeAuthController::class, 'login'])

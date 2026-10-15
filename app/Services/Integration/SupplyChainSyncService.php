@@ -28,11 +28,6 @@ class SupplyChainSyncService
         return (bool) config('services.supply_chain.enabled', false);
     }
 
-    public function approvalCallbackEnabled(): bool
-    {
-        return (bool) config('services.supply_chain.approval_callback_enabled', false);
-    }
-
     public function syncMember(Member $member): MemberSupplyChainSync
     {
         $sync = MemberSupplyChainSync::query()->firstOrCreate([
@@ -185,47 +180,30 @@ class SupplyChainSyncService
 
             $saleNumber = (string) data_get($responses, 'save.jual_no');
             if ($saleNumber === '') {
-                throw new ProcessException('Nomor penjualan Supply Chain tidak tersedia untuk diposting.');
+                throw new ProcessException('Nomor penjualan Supply Chain tidak tersedia.');
             }
             $this->persistTransactionCode($trx, $saleNumber);
 
-            if ($this->approvalCallbackEnabled()) {
+            // Keep compatibility for jobs that already received approval before this create-only flow.
+            if ($stage === 'approved' && is_array(Arr::get($responses, 'approve'))) {
+                $this->applyApprovalShipping($trx, Arr::get($responses, 'approve'));
                 $sync->update([
-                    'trx_supply_chain_sync_status' => 'awaiting_callback',
-                    'trx_supply_chain_sync_stage' => $stage,
+                    'trx_supply_chain_sync_status' => 'synced',
+                    'trx_supply_chain_sync_stage' => 'approved',
                     'trx_supply_chain_sync_response' => $responses,
                     'trx_supply_chain_sync_error' => null,
-                    'trx_supply_chain_sync_synced_datetime' => null,
+                    'trx_supply_chain_sync_synced_datetime' => now(),
                 ]);
 
                 return $trx->refresh();
             }
 
-            if ($stage === 'saved') {
-                $param = ['jual_no' => $saleNumber];
-                $requestStage = 'posting';
-                $this->persistRequest($sync, 'posting', 'posting', $param);
-                $responses['posting'] = $this->gateway->postSale($saleNumber);
-                $stage = 'posted';
-                $this->persistStage($sync, $stage, $responses);
-            }
-
-            if ($stage === 'posted') {
-                $param = ['jual_no' => $saleNumber];
-                $requestStage = 'approve';
-                $this->persistRequest($sync, 'approve', 'approve', $param);
-                $responses['approve'] = $this->gateway->approveSale($saleNumber);
-                $stage = 'approved';
-                $this->persistStage($sync, $stage, $responses);
-            }
-
-            $this->applyApprovalShipping($trx, Arr::get($responses, 'approve', []));
             $sync->update([
-                'trx_supply_chain_sync_status' => 'synced',
-                'trx_supply_chain_sync_stage' => 'approved',
+                'trx_supply_chain_sync_status' => 'awaiting_callback',
+                'trx_supply_chain_sync_stage' => $stage,
                 'trx_supply_chain_sync_response' => $responses,
                 'trx_supply_chain_sync_error' => null,
-                'trx_supply_chain_sync_synced_datetime' => now(),
+                'trx_supply_chain_sync_synced_datetime' => null,
             ]);
 
             return $trx->refresh();

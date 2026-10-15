@@ -295,12 +295,28 @@
                         v-if="order?.shipping_method === 'courier_express'"
                     >
                         <div class="mb-4">
-                            <label
-                                class="text-caption font-weight-medium mb-2 d-block text-medium-emphasis"
+                            <div
+                                class="d-flex align-center justify-space-between mb-2"
                             >
-                                Pilihan Kurir
-                                <span class="text-error">*</span>
-                            </label>
+                                <label
+                                    class="text-caption font-weight-medium text-medium-emphasis"
+                                >
+                                    Pilihan Kurir
+                                    <span class="text-error">*</span>
+                                </label>
+                                <v-btn
+                                    type="button"
+                                    variant="text"
+                                    color="primary"
+                                    size="small"
+                                    prepend-icon="mdi-refresh"
+                                    :loading="loadingCouriers"
+                                    :disabled="loadingCouriers"
+                                    @click="fetchCouriers(order.id)"
+                                >
+                                    Muat Ulang
+                                </v-btn>
+                            </div>
 
                             <div
                                 v-if="loadingCouriers"
@@ -761,6 +777,8 @@ const fetchSchedules = async () => {
 };
 
 const fetchCouriers = async (id: number) => {
+    if (loadingCouriers.value) return;
+    const selectedCourier = form.selected_courier;
     loadingCouriers.value = true;
     couriers.value = [];
     try {
@@ -769,9 +787,16 @@ const fetchCouriers = async (id: number) => {
         });
         if (res.data?.success && res.data.data?.results) {
             couriers.value = res.data.data.results;
-            if (couriers.value.length > 0) {
-                form.selected_courier = couriers.value[0];
-            }
+            form.selected_courier =
+                couriers.value.find(
+                    (courier: any) =>
+                        courier.courier_code ===
+                            selectedCourier?.courier_code &&
+                        courier.service_type ===
+                            selectedCourier?.service_type,
+                ) ||
+                couriers.value[0] ||
+                null;
         }
     } catch (error) {
         console.error("Gagal mengambil daftar kurir", error);

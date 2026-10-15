@@ -58,10 +58,6 @@ return [
         'base_url' => env('SUPPLY_CHAIN_BASE_URL'),
         'username' => env('SUPPLY_CHAIN_USERNAME'),
         'password' => env('SUPPLY_CHAIN_PASSWORD'),
-        'approval_callback_enabled' => env(
-            'SUPPLY_CHAIN_APPROVAL_CALLBACK_ENABLED',
-            env('APP_ENV') === 'production',
-        ),
         'callback_token' => env('SUPPLY_CHAIN_CALLBACK_TOKEN'),
         'member_prefix' => env('SUPPLY_CHAIN_MEMBER_PREFIX', 'LC01'),
         'testing_product_fallback' => env('SUPPLY_CHAIN_TESTING_PRODUCT_FALLBACK', 'DNY0003'),

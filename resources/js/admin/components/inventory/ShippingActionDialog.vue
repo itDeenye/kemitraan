@@ -347,12 +347,28 @@
                             v-if="order?.actions?.requires_courier_selection"
                             class="mb-4"
                         >
-                            <label
-                                class="text-caption font-weight-medium mb-1 d-block text-medium-emphasis"
+                            <div
+                                class="d-flex align-center justify-space-between mb-1"
                             >
-                                Kurir ke Lokasi Pengambilan
-                                <span class="text-error">*</span>
-                            </label>
+                                <label
+                                    class="text-caption font-weight-medium text-medium-emphasis"
+                                >
+                                    Kurir ke Lokasi Pengambilan
+                                    <span class="text-error">*</span>
+                                </label>
+                                <v-btn
+                                    type="button"
+                                    variant="text"
+                                    color="primary"
+                                    size="small"
+                                    prepend-icon="mdi-refresh"
+                                    :loading="loadingCouriers"
+                                    :disabled="loadingCouriers"
+                                    @click="fetchCouriers"
+                                >
+                                    Muat Ulang
+                                </v-btn>
+                            </div>
 
                             <div
                                 v-if="loadingCouriers"
@@ -818,7 +834,8 @@ const fetchSchedules = async () => {
 };
 
 const fetchCouriers = async () => {
-    if (!order.value) return;
+    if (!order.value || loadingCouriers.value) return;
+    const selectedCourier = form.selected_courier;
     loadingCouriers.value = true;
     try {
         const res = await inventoryService.getReshipCouriers(order.value.id, {
@@ -830,7 +847,14 @@ const fetchCouriers = async () => {
                 display_name: `${courier.courier_name} · Rp${formatPrice(courier.cost)}`,
             }),
         );
-        form.selected_courier = couriers.value[0] || null;
+        form.selected_courier =
+            couriers.value.find(
+                (courier: any) =>
+                    courier.courier_code === selectedCourier?.courier_code &&
+                    courier.service_type === selectedCourier?.service_type,
+            ) ||
+            couriers.value[0] ||
+            null;
     } catch (error) {
         console.error("Gagal mengambil pilihan kurir", error);
         snackbar.showMessage("Gagal memuat pilihan kurir.", "error");

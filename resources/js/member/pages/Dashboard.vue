@@ -62,20 +62,6 @@
 
         <div class="stat-grid stat-grid-two my-4">
             <div class="card stat-box" style="margin-top: 0">
-                <span class="soft-label">Nilai Penjualan Produk</span>
-                <strong
-                    v-if="isLoading"
-                    class="skeleton-text skeleton-stat"
-                ></strong>
-                <strong v-else>
-                    Rp{{
-                        formatPrice(
-                            dashboardData?.summary?.sales?.product_value || 0,
-                        )
-                    }}
-                </strong>
-            </div>
-            <div class="card stat-box" style="margin-top: 0">
                 <span class="soft-label">Nilai Pembelian Produk</span>
                 <strong
                     v-if="isLoading"
@@ -86,6 +72,20 @@
                         formatPrice(
                             dashboardData?.summary?.purchases?.product_value ||
                                 0,
+                        )
+                    }}
+                </strong>
+            </div>
+            <div class="card stat-box" style="margin-top: 0">
+                <span class="soft-label">Nilai Penjualan Produk</span>
+                <strong
+                    v-if="isLoading"
+                    class="skeleton-text skeleton-stat"
+                ></strong>
+                <strong v-else>
+                    Rp{{
+                        formatPrice(
+                            dashboardData?.summary?.sales?.product_value || 0,
                         )
                     }}
                 </strong>

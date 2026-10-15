@@ -150,13 +150,17 @@
                                     v-if="order.product_preview"
                                     class="text-[11px] text-[#757575] mt-0.5 truncate"
                                 >
-                                    {{
-                                        order.product_preview?.code
-                                            ? order.product_preview?.code +
-                                              " · "
-                                            : ""
+                                    {{ order.product_preview?.code }}
+                                </span>
+                                <span
+                                    v-if="order.product_preview"
+                                    class="text-[11px] text-[#757575] mt-0.5"
+                                >
+                                    {{ order.product_preview.quantity }} x Rp{{
+                                        formatPrice(
+                                            order.product_preview.price || 0,
+                                        )
                                     }}
-                                    x{{ order.product_preview?.quantity }}
                                 </span>
                                 <span
                                     v-else
@@ -167,12 +171,13 @@
                                 </span>
                             </div>
                             <div
-                                class="text-[13px] font-semibold text-[var(--ink)] flex items-center shrink-0 whitespace-nowrap"
+                                class="text-[13px] font-semibold text-[var(--ink)] flex items-end shrink-0 whitespace-nowrap"
                             >
                                 Rp{{
                                     formatPrice(
-                                        order.product_preview?.subtotal ||
-                                            order.summary?.grand_total ||
+                                        order.product_preview?.subtotal ??
+                                            order.summary?.product_total ??
+                                            order.summary?.grand_total ??
                                             0,
                                     )
                                 }}

@@ -462,6 +462,8 @@
                 </v-card>
             </v-dialog>
         </div>
+
+        <MobileConfirm ref="confirmDialog" />
     </div>
 </template>
 
@@ -476,6 +478,7 @@ import OrderSellerInfo from "@/member/components/transactions/OrderSellerInfo.vu
 import OrderPartyInfo from "@/member/components/transactions/OrderPartyInfo.vue";
 import OrderShippingInfo from "@/member/components/transactions/OrderShippingInfo.vue";
 import PreorderOriginCard from "@/member/components/transactions/PreorderOriginCard.vue";
+import MobileConfirm from "@/member/components/MobileConfirm.vue";
 import { decodeRouteId } from "@/shared/utils/route-id";
 
 import type { SaleOrderDetail } from "@/member/types/sale";
@@ -499,6 +502,7 @@ const isPaymentDialogOpen = ref(false);
 const imageDialog = ref(false);
 const selectedImage = ref("");
 const confirmingArrival = ref(false);
+const confirmDialog = ref<InstanceType<typeof MobileConfirm> | null>(null);
 
 const fetchDetail = async () => {
     isLoading.value = true;
@@ -541,6 +545,17 @@ const openImage = (url: string) => {
 
 const confirmArrival = async () => {
     if (!order.value) return;
+    if (!confirmDialog.value) return;
+    const isConfirmed = await confirmDialog.value.open({
+        title: "Konfirmasi Barang Sudah Tiba",
+        message:
+            "Pastikan barang dari sumber stok sudah benar-benar tiba dan telah Anda periksa sebelum melanjutkan.",
+        confirmText: "Ya, Konfirmasi",
+        confirmColor: "primary",
+        icon: "mdi-package-variant-closed-check",
+    });
+    if (!isConfirmed) return;
+
     confirmingArrival.value = true;
     try {
         const response = await saleService.confirmArrival(order.value.id);

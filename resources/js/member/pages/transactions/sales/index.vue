@@ -143,13 +143,17 @@
                                     v-if="order.product_preview"
                                     class="text-xs text-[#757575] mt-1 truncate"
                                 >
-                                    {{
-                                        order.product_preview?.code
-                                            ? order.product_preview?.code +
-                                              " · "
-                                            : ""
+                                    {{ order.product_preview?.code }}
+                                </span>
+                                <span
+                                    v-if="order.product_preview"
+                                    class="text-xs text-[#757575] mt-0.5"
+                                >
+                                    {{ order.product_preview.quantity }} x Rp{{
+                                        formatPrice(
+                                            order.product_preview.price || 0,
+                                        )
                                     }}
-                                    x{{ order.product_preview?.quantity }}
                                 </span>
                                 <span
                                     v-else
@@ -160,12 +164,13 @@
                                 </span>
                             </div>
                             <div
-                                class="text-[14px] font-semibold text-[var(--ink)] flex items-center"
+                                class="text-[14px] font-semibold text-[var(--ink)] flex items-end shrink-0 whitespace-nowrap"
                             >
                                 Rp{{
                                     formatPrice(
-                                        order.product_preview?.subtotal ||
-                                            order.summary?.grand_total ||
+                                        order.product_preview?.subtotal ??
+                                            order.summary?.product_total ??
+                                            order.summary?.grand_total ??
                                             0,
                                     )
                                 }}
@@ -396,6 +401,8 @@
                 {{ loadingMore ? "Memuat..." : "Muat lainnya" }}
             </button>
         </div>
+
+        <MobileConfirm ref="confirmDialog" />
     </div>
 </template>
 
@@ -407,12 +414,14 @@ import { useFormatter } from "@/shared/composables/useFormatter";
 import { useSnackbarStore } from "@/shared/stores/snackbar";
 import BaseBadge from "@/shared/components/BaseBadge.vue";
 import CategorySlider from "@/member/components/transactions/CategorySlider.vue";
+import MobileConfirm from "@/member/components/MobileConfirm.vue";
 import type { SaleOrder } from "@/member/types/sale";
 import { encodeRouteId } from "@/shared/utils/route-id";
 
 const router = useRouter();
 const snackbar = useSnackbarStore();
 const { formatPrice, formatDateTime } = useFormatter();
+const confirmDialog = ref<InstanceType<typeof MobileConfirm> | null>(null);
 
 const currentFilter = ref("Semua");
 const saleStatusFilters = [
@@ -521,6 +530,17 @@ const loadMore = () => {
 };
 
 const confirmArrival = async (order: SaleOrder) => {
+    if (!confirmDialog.value) return;
+    const isConfirmed = await confirmDialog.value.open({
+        title: "Konfirmasi Barang Sudah Tiba",
+        message:
+            "Pastikan barang dari sumber stok sudah benar-benar tiba dan telah Anda periksa sebelum melanjutkan.",
+        confirmText: "Ya, Konfirmasi",
+        confirmColor: "primary",
+        icon: "mdi-package-variant-closed-check",
+    });
+    if (!isConfirmed) return;
+
     try {
         const response = await saleService.confirmArrival(order.id);
         snackbar.showMessage(response.message, "success");
@@ -547,7 +567,7 @@ const getOrderNote = (order: any) => {
             : "Pesanan PO sedang diproses.";
     }
     if (order.status?.code === "ready_to_pickup")
-        return "Barang sudah tiba dan siap diserahkan kepada pembeli menggunakan kode pickup.";
+        return "Barang sudah tiba dan siap diserahkan kepada pembeli menggunakan kode verifikasi pengambilan.";
     if (order.status?.code === "shipped")
         return "Pesanan dalam pengiriman kurir.";
     if (order.status?.code === "canceled" || order.status?.code === "rejected")

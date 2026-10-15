@@ -5,13 +5,16 @@ namespace Tests\Feature;
 use App\Http\Middleware\AuthenticateTelescope;
 use App\Models\SiteAdministrator;
 use App\Models\SiteAdministratorGroup;
+use App\Providers\AppServiceProvider;
 use App\Providers\TelescopeServiceProvider;
 use App\Support\TelescopeRequestTags;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
 use Laravel\Telescope\EntryType;
+use Laravel\Telescope\Http\Middleware\Authorize;
 use Laravel\Telescope\IncomingEntry;
 use Laravel\Telescope\Telescope;
 use Laravel\Telescope\Watchers\CommandWatcher;
@@ -28,8 +31,18 @@ class TelescopeAccessTest extends TestCase
     {
         parent::setUp();
 
-        Route::middleware(['web', AuthenticateTelescope::class])
+        Route::middleware(['web', AuthenticateTelescope::class, Authorize::class])
             ->get('/_test/telescope-protected', fn () => 'Telescope protected');
+    }
+
+    public function test_telescope_providers_register_in_production(): void
+    {
+        $this->app['env'] = 'production';
+
+        (new AppServiceProvider($this->app))->register();
+
+        $this->assertNotEmpty($this->app->getProviders(\Laravel\Telescope\TelescopeServiceProvider::class));
+        $this->assertNotEmpty($this->app->getProviders(TelescopeServiceProvider::class));
     }
 
     public function test_telescope_requires_an_administrator_session(): void
@@ -58,6 +71,7 @@ class TelescopeAccessTest extends TestCase
 
     public function test_active_administrator_can_login_to_and_logout_from_telescope(): void
     {
+        $this->registerTelescopeProviders();
         $administrator = $this->createAdministrator();
 
         $this->post('/telescope-login', [
@@ -66,6 +80,8 @@ class TelescopeAccessTest extends TestCase
         ])->assertRedirect('/telescope');
 
         $this->assertAuthenticatedAs($administrator, 'telescope');
+        $this->assertTrue((bool) auth('telescope')->user()?->administrator_is_active);
+        $this->assertTrue(Gate::allows('viewTelescope'));
         $this->get('/_test/telescope-protected')
             ->assertOk()
             ->assertSee('Telescope protected');
@@ -154,5 +170,11 @@ class TelescopeAccessTest extends TestCase
             'administrator_image' => '',
             'administrator_is_active' => 1,
         ]);
+    }
+
+    private function registerTelescopeProviders(): void
+    {
+        $this->app->register(\Laravel\Telescope\TelescopeServiceProvider::class, true);
+        $this->app->register(TelescopeServiceProvider::class, true);
     }
 }

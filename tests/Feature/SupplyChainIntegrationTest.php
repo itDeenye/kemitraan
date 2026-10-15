@@ -163,7 +163,7 @@ class SupplyChainIntegrationTest extends TestCase
         $this->assertSame('10030900', $member->refresh()->member_supply_chain_code);
     }
 
-    public function test_company_sale_uses_response_number_without_adding_duplicate_column_and_prefills_shipping(): void
+    public function test_company_sale_stops_after_create_and_waits_for_internal_approval_callback(): void
     {
         config()->set('services.supply_chain.enabled', true);
         config()->set('services.supply_chain.member_prefix', 'DEV01');
@@ -174,7 +174,6 @@ class SupplyChainIntegrationTest extends TestCase
 
         $service->syncSale($trx);
 
-        $shipping->refresh();
         $memberSync = MemberSupplyChainSync::query()->where(
             'member_supply_chain_sync_member_id',
             $member->getKey(),
@@ -184,8 +183,8 @@ class SupplyChainIntegrationTest extends TestCase
             $trx->getKey(),
         )->firstOrFail();
         $this->assertSame('CUST-001', $memberSync->member_supply_chain_sync_customer_no);
-        $this->assertSame('synced', $trxSync->trx_supply_chain_sync_status);
-        $this->assertSame('approved', $trxSync->trx_supply_chain_sync_stage);
+        $this->assertSame('awaiting_callback', $trxSync->trx_supply_chain_sync_status);
+        $this->assertSame('saved', $trxSync->trx_supply_chain_sync_stage);
         $this->assertSame('EXT-SALE-001', data_get($trxSync->trx_supply_chain_sync_response, 'save.jual_no'));
         $this->assertSame('EXT-SALE-001', $trx->refresh()->trx_supply_chain_code);
         $this->assertSame(
@@ -196,24 +195,17 @@ class SupplyChainIntegrationTest extends TestCase
             'DEV01/TRX/CMP/DST/000001',
             $trxSync->trx_supply_chain_sync_param['save']['jual_ket'],
         );
-        $this->assertSame(
-            ['jual_no' => 'EXT-SALE-001'],
-            $trxSync->trx_supply_chain_sync_param['posting'],
-        );
-        $this->assertSame(
-            'https://supply.test/api/v1/penjualan-supply-chain/approve',
-            $trxSync->trx_supply_chain_sync_url['approve'],
-        );
+        $this->assertArrayNotHasKey('posting', $trxSync->trx_supply_chain_sync_param);
+        $this->assertArrayNotHasKey('approve', $trxSync->trx_supply_chain_sync_param);
+        $this->assertArrayNotHasKey('posting', $trxSync->trx_supply_chain_sync_url);
+        $this->assertArrayNotHasKey('approve', $trxSync->trx_supply_chain_sync_url);
         $this->assertFalse(Schema::hasColumn('trx', 'trx_supply_chain_sale_no'));
         $this->assertFalse(Schema::hasColumn('trx', 'trx_supply_chain_sync_status'));
-        $this->assertSame(['EXT-SALE-001'], $gateway->postedSaleNumbers);
-        $this->assertSame(['EXT-SALE-001'], $gateway->approvedSaleNumbers);
-        $this->assertSame('SJ-2026-001', $shipping->shipping_pickup_delivery_note_number);
+        $this->assertSame([], $gateway->postedSaleNumbers);
+        $this->assertSame([], $gateway->approvedSaleNumbers);
+        $this->assertNull($shipping->refresh()->shipping_pickup_delivery_note_number);
         $this->assertSame('DNY0003', $gateway->salePayloads[0]['produk'][0]['kode_produk']);
-        $detail = ShippingDetail::query()->firstOrFail();
-        $this->assertSame('BATCH-001', $detail->shipping_detail_batch_number);
-        $this->assertSame(2, $detail->shipping_detail_qty);
-        $this->assertSame('2028-12-31', $detail->shipping_detail_expire_date->toDateString());
+        $this->assertDatabaseCount('shipping_detail', 0);
         $this->assertSame('DEV01/TRX/CMP/DST/000001', $gateway->salePayloads[0]['jual_ket']);
         $this->assertSame('TRX/CMP/DST/000001', $trx->refresh()->trx_code);
 
@@ -222,6 +214,30 @@ class SupplyChainIntegrationTest extends TestCase
 
         $this->assertSame('EXT-SALE-001', $trx->refresh()->trx_supply_chain_code);
         $this->assertCount(1, $gateway->salePayloads);
+    }
+
+    public function test_sale_sync_does_not_resume_legacy_posting_or_approval_stages(): void
+    {
+        config()->set('services.supply_chain.enabled', true);
+        [, $trx] = $this->createTransactionData();
+        TrxSupplyChainSync::query()->create([
+            'trx_supply_chain_sync_trx_id' => $trx->getKey(),
+            'trx_supply_chain_sync_status' => 'failed',
+            'trx_supply_chain_sync_stage' => 'posted',
+            'trx_supply_chain_sync_response' => ['save' => ['jual_no' => 'EXT-SALE-001']],
+        ]);
+        $gateway = new FakeSupplyChainGateway;
+
+        (new SupplyChainSyncService($gateway))->syncSale($trx);
+
+        $sync = TrxSupplyChainSync::query()
+            ->where('trx_supply_chain_sync_trx_id', $trx->getKey())
+            ->firstOrFail();
+        $this->assertSame('awaiting_callback', $sync->trx_supply_chain_sync_status);
+        $this->assertSame('posted', $sync->trx_supply_chain_sync_stage);
+        $this->assertSame([], $gateway->salePayloads);
+        $this->assertSame([], $gateway->postedSaleNumbers);
+        $this->assertSame([], $gateway->approvedSaleNumbers);
     }
 
     public function test_company_sale_persists_external_error_response_for_the_failed_stage(): void
@@ -264,7 +280,6 @@ class SupplyChainIntegrationTest extends TestCase
     public function test_live_sale_stops_after_create_and_external_callback_fills_shipping_data(): void
     {
         config()->set('services.supply_chain.enabled', true);
-        config()->set('services.supply_chain.approval_callback_enabled', true);
         config()->set('services.supply_chain.callback_token', 'supply-callback-secret');
         config()->set('services.supply_chain.member_prefix', 'DEV01');
         config()->set('services.supply_chain.base_url', 'https://supply.test');
@@ -374,7 +389,6 @@ class SupplyChainIntegrationTest extends TestCase
     public function test_supply_chain_approval_callback_rejects_incomplete_batch_quantity(): void
     {
         config()->set('services.supply_chain.enabled', true);
-        config()->set('services.supply_chain.approval_callback_enabled', true);
         config()->set('services.supply_chain.callback_token', 'supply-callback-secret');
         config()->set('services.supply_chain.base_url', 'https://supply.test');
         [, $trx, $shipping] = $this->createTransactionData();
