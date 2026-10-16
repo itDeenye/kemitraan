@@ -27,6 +27,7 @@ export interface MemberProfile {
             number: string;
             image: string | null;
         };
+        payment_proof_image_url: string | null;
         nib: string | null;
         social_media: {
             instagram: string | null;
@@ -59,6 +60,7 @@ export interface ProfilePayload {
     birth_date?: string;
     identity_type?: string;
     identity_no?: string;
+    identity_image_url?: string;
     nib?: string;
     instagram?: string;
     facebook?: string;

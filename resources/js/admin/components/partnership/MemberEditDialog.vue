@@ -159,6 +159,152 @@
                             </v-card-text>
                         </v-card>
 
+                        <v-card
+                            class="mb-6 rounded-lg elevation-1"
+                            variant="flat"
+                        >
+                            <v-card-title class="pa-4 border-b">
+                                <span class="text-subtitle-1 font-weight-bold"
+                                    >Identitas, Legalitas & Media</span
+                                >
+                            </v-card-title>
+                            <v-card-text class="pa-4">
+                                <v-row>
+                                    <v-col cols="12" md="6">
+                                        <v-select
+                                            v-model="form.identity_type"
+                                            label="Jenis Identitas"
+                                            :items="identityOptions"
+                                            item-title="title"
+                                            item-value="value"
+                                            variant="outlined"
+                                            density="comfortable"
+                                        />
+                                    </v-col>
+                                    <v-col cols="12" md="6">
+                                        <v-text-field
+                                            v-model="form.identity_no"
+                                            label="Nomor Identitas"
+                                            :maxlength="identitySettings.maxLength"
+                                            :hint="identitySettings.hint"
+                                            persistent-hint
+                                            :inputmode="
+                                                form.identity_type === 'PASPOR'
+                                                    ? 'text'
+                                                    : 'numeric'
+                                            "
+                                            variant="outlined"
+                                            density="comfortable"
+                                            :rules="[validateIdentityNumber]"
+                                        />
+                                    </v-col>
+                                    <v-col cols="12" md="6">
+                                        <v-text-field
+                                            v-model="form.nib"
+                                            label="NIB"
+                                            variant="outlined"
+                                            density="comfortable"
+                                        />
+                                    </v-col>
+                                    <v-col cols="12" md="6">
+                                        <v-text-field
+                                            v-model="form.npwp"
+                                            label="NPWP"
+                                            variant="outlined"
+                                            density="comfortable"
+                                        />
+                                    </v-col>
+                                    <v-col cols="12" md="4">
+                                        <v-text-field
+                                            v-model="form.instagram"
+                                            label="Instagram"
+                                            variant="outlined"
+                                            density="comfortable"
+                                        />
+                                    </v-col>
+                                    <v-col cols="12" md="4">
+                                        <v-text-field
+                                            v-model="form.facebook"
+                                            label="Facebook"
+                                            variant="outlined"
+                                            density="comfortable"
+                                        />
+                                    </v-col>
+                                    <v-col cols="12" md="4">
+                                        <v-text-field
+                                            v-model="form.tiktok"
+                                            label="TikTok"
+                                            variant="outlined"
+                                            density="comfortable"
+                                        />
+                                    </v-col>
+                                </v-row>
+
+                                <div class="text-subtitle-2 font-weight-bold mb-3">
+                                    Foto & Dokumen
+                                </div>
+                                <v-row>
+                                    <v-col cols="12" sm="6" md="4">
+                                        <div class="d-flex align-center ga-3">
+                                            <MediaUpload
+                                                v-model="form.image_url"
+                                                collection="profile"
+                                                :size="92"
+                                                :rounded="false"
+                                                fallback-icon="mdi-account-outline"
+                                                accept="image/jpeg,image/png,image/webp"
+                                                @uploading="mediaUploads.profile = $event"
+                                            />
+                                            <div>
+                                                <div class="font-weight-medium">Foto Profil</div>
+                                                <div class="text-caption text-medium-emphasis">
+                                                    JPG, PNG, atau WEBP
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </v-col>
+                                    <v-col cols="12" sm="6" md="4">
+                                        <div class="d-flex align-center ga-3">
+                                            <MediaUpload
+                                                v-model="form.identity_image_url"
+                                                collection="general"
+                                                :size="92"
+                                                :rounded="false"
+                                                fallback-icon="mdi-card-account-details-outline"
+                                                accept="image/jpeg,image/png,image/webp"
+                                                @uploading="mediaUploads.identity = $event"
+                                            />
+                                            <div>
+                                                <div class="font-weight-medium">Dokumen Identitas</div>
+                                                <div class="text-caption text-medium-emphasis">
+                                                    JPG, PNG, atau WEBP
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </v-col>
+                                    <v-col v-if="canUpdatePaymentProof" cols="12" sm="6" md="4">
+                                        <div class="d-flex align-center ga-3">
+                                            <MediaUpload
+                                                v-model="form.payment_proof_image_url"
+                                                collection="payment_proof"
+                                                :size="92"
+                                                :rounded="false"
+                                                fallback-icon="mdi-receipt-text-check-outline"
+                                                accept="image/jpeg,image/png,image/webp"
+                                                @uploading="mediaUploads.paymentProof = $event"
+                                            />
+                                            <div>
+                                                <div class="font-weight-medium">Bukti Transfer Pendaftaran</div>
+                                                <div class="text-caption text-medium-emphasis">
+                                                    JPG, PNG, atau WEBP
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </v-col>
+                                </v-row>
+                            </v-card-text>
+                        </v-card>
+
                         <!-- Data Alamat -->
                         <v-card
                             class="mb-6 rounded-lg elevation-1"
@@ -501,6 +647,24 @@
                                                         ]"
                                                     ></v-text-field>
                                                 </v-col>
+                                                <v-col cols="12" md="6">
+                                                    <v-text-field
+                                                        v-model="bank.city"
+                                                        label="Kota Bank"
+                                                        variant="outlined"
+                                                        density="compact"
+                                                        maxlength="50"
+                                                    />
+                                                </v-col>
+                                                <v-col cols="12" md="6">
+                                                    <v-text-field
+                                                        v-model="bank.branch"
+                                                        label="Cabang Bank"
+                                                        variant="outlined"
+                                                        density="compact"
+                                                        maxlength="50"
+                                                    />
+                                                </v-col>
                                             </v-row>
                                         </v-card-text>
                                     </v-card>
@@ -530,6 +694,7 @@
                     variant="flat"
                     @click="submit"
                     :loading="submitting"
+                    :disabled="isUploadingMedia"
                     >Simpan Perubahan</v-btn
                 >
             </v-card-actions>
@@ -538,10 +703,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, reactive, ref } from "vue";
 import memberService from "@/admin/services/member.service";
 import referenceService from "@/shared/services/reference.service";
 import { useSnackbarStore } from "@/shared/stores/snackbar";
+import MediaUpload from "@/shared/components/MediaUpload.vue";
+import {
+    identityNumberRule,
+    identityNumberSettings,
+    memberIdentityOptions,
+} from "@/shared/utils/member-identity";
 
 const emit = defineEmits(["updated"]);
 
@@ -552,6 +723,10 @@ const snackbar = useSnackbarStore();
 const loading = ref(true);
 const submitting = ref(false);
 const currentId = ref<number | null>(null);
+const canUpdatePaymentProof = ref(false);
+const mediaUploads = reactive({ profile: false, identity: false, paymentProof: false });
+const originalIdentity = ref({ type: "KTP", number: "" });
+const isUploadingMedia = computed(() => Object.values(mediaUploads).some(Boolean));
 
 const provinces = ref<any[]>([]);
 const banks = ref<any[]>([]);
@@ -563,10 +738,24 @@ const form = ref({
     mobile_phone: "",
     gender: "Laki-laki",
     birth_date: "",
+    identity_type: "KTP",
+    identity_no: "",
+    identity_image_url: "",
+    payment_proof_image_url: "",
+    nib: "",
+    npwp: "",
+    instagram: "",
+    facebook: "",
+    tiktok: "",
+    image_url: "",
     status: 1,
     addresses: [] as any[],
     bank_accounts: [] as any[],
 });
+const identityOptions = memberIdentityOptions();
+const identitySettings = computed(() => identityNumberSettings(form.value.identity_type));
+const validateIdentityNumber = (value: unknown) =>
+    identityNumberRule(form.value.identity_type, value, originalIdentity.value);
 
 const open = async (id: number) => {
     currentId.value = id;
@@ -577,6 +766,7 @@ const open = async (id: number) => {
 const close = () => {
     dialog.value = false;
     currentId.value = null;
+    canUpdatePaymentProof.value = false;
     form.value = {
         username: "",
         name: "",
@@ -584,10 +774,21 @@ const close = () => {
         mobile_phone: "",
         gender: "Laki-laki",
         birth_date: "",
+        identity_type: "KTP",
+        identity_no: "",
+        identity_image_url: "",
+        payment_proof_image_url: "",
+        nib: "",
+        npwp: "",
+        instagram: "",
+        facebook: "",
+        tiktok: "",
+        image_url: "",
         status: 1,
         addresses: [],
         bank_accounts: [],
     };
+    Object.assign(mediaUploads, { profile: false, identity: false, paymentProof: false });
     if (formRef.value) formRef.value.resetValidation();
 };
 
@@ -620,6 +821,21 @@ const loadInitialData = async (id: number) => {
         form.value.birth_date = memberData.birth_date
             ? memberData.birth_date.substring(0, 10)
             : "";
+        form.value.identity_type = memberData.identity?.type || "KTP";
+        form.value.identity_no = memberData.identity?.number || "";
+        originalIdentity.value = {
+            type: form.value.identity_type,
+            number: form.value.identity_no,
+        };
+        form.value.identity_image_url = memberData.identity?.image || "";
+        form.value.payment_proof_image_url = memberData.payment_proof_image_url || "";
+        canUpdatePaymentProof.value = memberData.can_update_payment_proof === true;
+        form.value.nib = memberData.nib || "";
+        form.value.npwp = memberData.npwp || "";
+        form.value.instagram = memberData.social_media?.instagram || "";
+        form.value.facebook = memberData.social_media?.facebook || "";
+        form.value.tiktok = memberData.social_media?.tiktok || "";
+        form.value.image_url = memberData.image || "";
         form.value.status = memberData.status?.code ?? 1;
 
         // Addresses
@@ -659,6 +875,8 @@ const loadInitialData = async (id: number) => {
                     bank_id: b.bank_id,
                     account_name: b.account_name,
                     account_number: b.account_number,
+                    city: b.city || "",
+                    branch: b.branch || "",
                     is_active: b.is_active,
                     is_default: b.is_default,
                 }),
@@ -743,6 +961,8 @@ const addBankAccount = () => {
         bank_id: null,
         account_name: "",
         account_number: "",
+        city: "",
+        branch: "",
         is_active: true,
         is_default: form.value.bank_accounts.length === 0,
     });
@@ -762,6 +982,11 @@ const handleDefaultBank = (index: number) => {
 };
 
 const submit = async () => {
+    if (isUploadingMedia.value) {
+        snackbar.showMessage("Tunggu hingga proses upload selesai.", "info");
+        return;
+    }
+
     if (!formRef.value) return;
     const { valid } = await formRef.value.validate();
     if (!valid) {
@@ -776,8 +1001,14 @@ const submit = async () => {
 
     submitting.value = true;
     try {
+        const { username, identity_type, identity_no, ...memberData } =
+            form.value;
+        const identityNumber = identity_no.trim();
         const payload = {
-            ...form.value,
+            ...memberData,
+            ...(identityNumber
+                ? { identity_type, identity_no: identityNumber }
+                : {}),
             mobile_phone: "+62" + form.value.mobile_phone,
             addresses: form.value.addresses.map((a) => ({
                 id: a.id,
@@ -789,7 +1020,7 @@ const submit = async () => {
                 city_id: String(a.city_id),
                 district_id: String(a.district_id),
                 subdistrict_id: Number(a.subdistrict_id),
-                country_id: 1,
+                country_id: a.country_id || 1,
                 is_default: a.is_default,
             })),
             bank_accounts: form.value.bank_accounts.map((b) => ({
@@ -797,6 +1028,8 @@ const submit = async () => {
                 bank_id: b.bank_id,
                 account_name: b.account_name,
                 account_number: b.account_number,
+                city: b.city,
+                branch: b.branch,
                 is_active: b.is_active,
                 is_default: b.is_default,
             })),

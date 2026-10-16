@@ -21,6 +21,7 @@
                     variant="outlined"
                     prepend-icon="mdi-store-plus"
                     @click="openForm()"
+                    class="rounded-lg text-none px-4"
                     >Tambah Stokis</v-btn
                 >
             </template>

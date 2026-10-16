@@ -13,9 +13,11 @@ const sourceFile = path => new URL(`../../resources/js/${path}`, import.meta.url
 const types = ['KTP', 'KK', 'SIM', 'BPJS', 'BPJS_KETENAGAKERJAAN', 'PASPOR'];
 const paths = [
     'admin/components/partnership/DistributorForm.vue',
+    'admin/components/partnership/MemberEditDialog.vue',
     'member/pages/network/registrations/index.vue',
     'member/pages/profile/edit.vue',
 ];
+const profilePath = 'member/pages/profile/edit.vue';
 
 function identityDependencies() {
     const url = sourceFile('shared/utils/member-identity.ts');
@@ -28,7 +30,7 @@ function identityDependencies() {
     return exports;
 }
 
-function setup(path, identity = { type: 'KTP', number: '' }) {
+function setup(path, identity = { type: 'KTP', number: '' }, overrides = {}) {
     const { descriptor } = parse(readFileSync(sourceFile(path), 'utf8'));
     const source = ts.createSourceFile(path, descriptor.scriptSetup.content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
     const statements = source.statements.filter(statement => !ts.isImportDeclaration(statement));
@@ -49,6 +51,7 @@ function setup(path, identity = { type: 'KTP', number: '' }) {
         useSnackbarStore: () => ({ showMessage: () => {} }), useFormatter: () => ({ formatDate: String }),
         useRegionCascade: () => Object.fromEntries(['provinces', 'cities', 'districts', 'subdistricts'].map(key => [key, Vue.ref([])])),
         profileService: { getProfile: async () => ({ success: true, data: { member: { name: 'Member', identity } } }) },
+        ...overrides,
     };
     const context = new Function(...Object.keys(dependencies), `${code}\nreturn { ${bindings.join(',')} };`)(...Object.values(dependencies));
     if (context.options) context.options.value = {
@@ -60,13 +63,14 @@ function setup(path, identity = { type: 'KTP', number: '' }) {
 
 async function fields({ context, descriptor }) {
     const result = [];
+    if (context.loading?.value !== undefined) context.loading.value = false;
     const renderTemplate = new Function('Vue', compile(descriptor.template.content, { mode: 'function', prefixIdentifiers: true }).code)(Vue);
     const app = Vue.createSSRApp({ render: () => renderTemplate(Vue.proxyRefs(context), []) });
     const tags = new Set([...descriptor.template.content.matchAll(/<([A-Z][\w-]*|v-[\w-]*)/g)].map(match => match[1]));
     for (const tag of tags) app.component(tag, {
         inheritAttrs: false,
         setup: (_, { attrs, slots }) => () => {
-            if (['v-text-field', 'v-select'].includes(tag)) result.push({ ...attrs, tag });
+            if (['v-text-field', 'v-select', 'MediaUpload'].includes(tag)) result.push({ ...attrs, tag });
             return Vue.h('div', null, slots.default?.());
         },
     });
@@ -74,6 +78,7 @@ async function fields({ context, descriptor }) {
     return {
         number: result.find(item => item.tag === 'v-text-field' && /Nomor (Identitas|Paspor)/.test(item.label)),
         type: result.find(item => item.tag === 'v-select' && /Jenis Identitas/.test(item.label)),
+        uploads: result.filter(item => item.tag === 'MediaUpload'),
     };
 }
 
@@ -82,7 +87,8 @@ const isValid = (field, value) => field.rules.every(rule => rule(value) === true
 for (const path of paths) {
     test(`${path}: health insurance enforces 13 numeric digits`, async () => {
         const page = setup(path);
-        const form = page.context.form ?? page.context.formProfile;
+        const form = (page.context.form ?? page.context.formProfile)?.value
+            ?? (page.context.form ?? page.context.formProfile);
         form.identity_type = 'BPJS';
         const { number } = await fields(page);
         assert.equal(isValid(number, '0001234567890'), true);
@@ -94,7 +100,8 @@ for (const path of paths) {
 
     test(`${path}: passport accepts eight alphanumeric characters`, async () => {
         const page = setup(path);
-        const form = page.context.form ?? page.context.formProfile;
+        const form = (page.context.form ?? page.context.formProfile)?.value
+            ?? (page.context.form ?? page.context.formProfile);
         form.identity_type = 'PASPOR';
         const { number } = await fields(page);
         assert.equal(isValid(number, 'A0123456'), true);
@@ -106,7 +113,8 @@ for (const path of paths) {
 
     test(`${path}: employment insurance accepts only 11 or 16 digits`, async () => {
         const page = setup(path);
-        const form = page.context.form ?? page.context.formProfile;
+        const form = (page.context.form ?? page.context.formProfile)?.value
+            ?? (page.context.form ?? page.context.formProfile);
         form.identity_type = 'BPJS_KETENAGAKERJAAN';
         const { number } = await fields(page);
         assert.equal(isValid(number, '00012345678'), true);
@@ -125,7 +133,7 @@ for (const path of paths) {
 }
 
 test('profile permits legacy identity unchanged but validates changed number or type', async () => {
-    const page = setup(paths[2], { type: 'SIM', number: '001234567890' });
+    const page = setup(profilePath, { type: 'SIM', number: '001234567890' });
     await page.context.loadProfile();
     let { number } = await fields(page);
     assert.equal(isValid(number, '001234567890'), true);
@@ -136,4 +144,68 @@ test('profile permits legacy identity unchanged but validates changed number or 
     page.context.formProfile.identity_type = 'KTP';
     ({ number } = await fields(page));
     assert.equal(isValid(number, '001234567890'), false);
+});
+
+test('admin edit keeps all documents and bank details on a text-only save and excludes network fields', async () => {
+    let saved;
+    const member = {
+        id: 7, code: '0001/0001/0001', username: 'member.seven', name: 'Member Seven',
+        image: 'https://example.test/profile.webp',
+        identity: { type: 'SIM', number: '001234567890', image: 'https://example.test/identity.webp' },
+        payment_proof_image_url: 'https://example.test/payment.webp', can_update_payment_proof: true,
+        bank_accounts: [{ id: 9, bank_id: 1, account_name: 'Member Seven', account_number: '001234',
+            city: 'Bandung', branch: 'Dago', is_active: true, is_default: true }],
+    };
+    const page = setup(paths[1], undefined, {
+        referenceService: { getProvinces: async () => [], getBanks: async () => [] },
+        memberService: { getMember: async () => member, updateMember: async (id, payload) => {
+            saved = structuredClone({ id, payload });
+        } },
+    });
+    await page.context.open(7);
+    const rendered = await fields(page);
+    assert.equal(isValid(rendered.number, member.identity.number), true);
+    assert.deepEqual(rendered.uploads.map(upload => upload.collection), ['profile', 'general', 'payment_proof']);
+    page.context.form.value.name = 'Member Seven Updated';
+    page.context.formRef.value = { validate: async () => ({ valid: true }), resetValidation() {} };
+    await page.context.submit();
+    assert.equal(saved.id, 7);
+    assert.equal(saved.payload.image_url, member.image);
+    assert.equal(saved.payload.identity_image_url, member.identity.image);
+    assert.equal(saved.payload.payment_proof_image_url, member.payment_proof_image_url);
+    assert.equal(saved.payload.bank_accounts[0].city, 'Bandung');
+    assert.equal(saved.payload.bank_accounts[0].branch, 'Dago');
+    assert.equal(saved.payload.bank_accounts[0].account_number, '001234');
+    for (const field of ['level', 'upline', 'code', 'username']) assert.equal(field in saved.payload, false);
+});
+
+test('member edits identity document only after upload and waits for uploads before saving', async () => {
+    const saved = [];
+    const page = setup(profilePath, undefined, {
+        profileService: {
+            getProfile: async () => ({ success: true, data: { member: {
+                name: 'Member', identity: { type: 'KTP', number: '', image: 'https://example.test/old-identity.webp' },
+            } } }),
+            updateProfile: async payload => {
+                saved.push(structuredClone(payload));
+                return { success: true };
+            },
+        },
+    });
+    await page.context.loadProfile();
+    assert.equal(page.context.identityImage.value, 'https://example.test/old-identity.webp');
+    const rendered = await fields(page);
+    assert.deepEqual(rendered.uploads.map(upload => upload.collection), ['profile', 'general']);
+    page.context.profileFormRef.value = { validate: async () => ({ valid: true }) };
+    await page.context.saveProfile();
+    assert.equal('identity_image_url' in saved[0], false);
+    assert.equal('payment_proof_image_url' in saved[0], false);
+    page.context.identityImage.value = 'https://example.test/new-identity.webp';
+    page.context.identityImageChanged.value = true;
+    page.context.mediaUploads.identity = true;
+    await page.context.saveProfile();
+    assert.equal(saved.length, 1);
+    page.context.mediaUploads.identity = false;
+    await page.context.saveProfile();
+    assert.equal(saved[1].identity_image_url, 'https://example.test/new-identity.webp');
 });

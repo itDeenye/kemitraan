@@ -8,6 +8,7 @@ use App\Models\MemberAccount;
 use App\Models\MemberAddress;
 use App\Models\MemberBankAccount;
 use App\Models\MemberGroup;
+use App\Models\MemberRegistration;
 use App\Models\MemberStock;
 use App\Models\Product;
 use App\Models\ProductCategory;
@@ -207,6 +208,9 @@ class AdminMemberDirectoryTest extends TestCase
             'identity_image_url' => 'https://example.test/rina-sim.jpg',
             'nib' => '0123456789012',
             'npwp' => '0123456789012345',
+            'instagram' => '@rina.dny',
+            'facebook' => 'Rina DNY',
+            'tiktok' => '@rina.tiktok',
             'image_url' => 'https://example.test/rina.jpg',
             'email' => 'rina@example.test',
             'mobile_phone' => '081234567890',
@@ -268,6 +272,9 @@ class AdminMemberDirectoryTest extends TestCase
             ->assertJsonPath('data.identity.image', 'https://example.test/rina-sim.jpg')
             ->assertJsonPath('data.nib', '0123456789012')
             ->assertJsonPath('data.npwp', '0123456789012345')
+            ->assertJsonPath('data.social_media.instagram', '@rina.dny')
+            ->assertJsonPath('data.social_media.facebook', 'Rina DNY')
+            ->assertJsonPath('data.social_media.tiktok', '@rina.tiktok')
             ->assertJsonPath('data.image', 'https://example.test/rina.jpg')
             ->assertJsonCount(2, 'data.addresses')
             ->assertJsonPath('data.addresses.0.label', 'Gudang')
@@ -287,6 +294,124 @@ class AdminMemberDirectoryTest extends TestCase
         ]);
         $this->assertDatabaseMissing('member_bank_account', [
             'member_bank_account_id' => $obsoleteBank->getKey(),
+        ]);
+    }
+
+    public function test_admin_member_update_preserves_existing_media_when_not_replaced(): void
+    {
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $member = $this->createMember('MEM-MEDIA', 'Mitra Media', 'reseller', 1);
+        $member->update([
+            'member_image' => 'https://cdn.example.test/member/profile.webp',
+            'member_identity_image' => 'https://cdn.example.test/member/identity.webp',
+        ]);
+
+        $this->putJson("/api/v1/admin/partnership/members/{$member->getKey()}", [
+            ...$this->identityUpdatePayload(),
+            'name' => 'Mitra Media Diperbarui',
+            'image_url' => '',
+            'identity_image_url' => '',
+            'payment_proof_image_url' => '',
+        ])->assertOk();
+
+        $this->assertDatabaseHas('member', [
+            'member_id' => $member->getKey(),
+            'member_name' => 'Mitra Media Diperbarui',
+            'member_image' => 'https://cdn.example.test/member/profile.webp',
+            'member_identity_image' => 'https://cdn.example.test/member/identity.webp',
+        ]);
+    }
+
+    #[DataProvider('memberLevels')]
+    public function test_admin_can_replace_all_member_documents_in_the_existing_registration(string $level): void
+    {
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $member = $this->createMember('DOCS-'.$level, 'Documents', $level, 1);
+        $account = $member->accounts()->firstOrFail();
+        $registration = $this->createApprovedRegistration($member);
+
+        $this->putJson("/api/v1/admin/partnership/members/{$member->getKey()}", [
+            ...$this->identityUpdatePayload(),
+            'image_url' => 'https://example.test/new-profile.webp',
+            'identity_image_url' => 'https://example.test/new-identity.webp',
+            'payment_proof_image_url' => 'https://example.test/new-payment.webp',
+            'member_level_id' => 99,
+            'parent_member_id' => 99,
+            'username' => 'must-not-change',
+        ])->assertOk()
+            ->assertJsonPath('data.image', 'https://example.test/new-profile.webp')
+            ->assertJsonPath('data.identity.image', 'https://example.test/new-identity.webp')
+            ->assertJsonPath('data.payment_proof_image_url', 'https://example.test/new-payment.webp');
+
+        $member->refresh();
+        $this->assertSame('new-profile.webp', $member->member_image_filename);
+        $this->assertSame('new-identity.webp', $member->member_identity_image_filename);
+        $this->assertSame(match ($level) {
+            'distributor' => 1, 'agent' => 2, 'reseller' => 3,
+        }, (int) $member->member_member_level_id);
+        $this->assertSame(0, (int) $member->member_parent_member_id);
+        $this->assertSame($account->member_account_username, $account->fresh()->member_account_username);
+        $this->assertDatabaseCount('member_registration', 1);
+        $this->assertSame('https://example.test/new-payment.webp', $registration->fresh()->member_registration_payment_proof_image);
+
+        $this->getJson('/api/v1/admin/partnership/members?search=DOCS-'.$level)
+            ->assertOk()->assertJsonPath('data.results.0.payment_proof_image_url', 'https://example.test/new-payment.webp');
+        $this->actingAs($account, 'member_api');
+        $this->getJson('/api/v1/member/profile')->assertOk()
+            ->assertJsonPath('data.member.payment_proof_image_url', 'https://example.test/new-payment.webp');
+    }
+
+    public static function memberLevels(): array
+    {
+        return [['distributor'], ['agent'], ['reseller']];
+    }
+
+    public function test_admin_can_replace_payment_proof_and_keep_it_when_omitted_or_empty(): void
+    {
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $member = $this->createMember('PROOF', 'Proof', 'agent', 1);
+        $registration = $this->createApprovedRegistration($member);
+        $url = "/api/v1/admin/partnership/members/{$member->getKey()}";
+        $this->getJson($url)->assertOk()
+            ->assertJsonPath('data.payment_proof_image_url', 'https://example.test/original-payment.webp');
+        $this->putJson($url, [
+            ...$this->identityUpdatePayload(),
+            'payment_proof_image_url' => 'https://example.test/corrected-payment.webp',
+        ])->assertOk()->assertJsonPath('data.payment_proof_image_url', 'https://example.test/corrected-payment.webp');
+        $this->assertSame('https://example.test/corrected-payment.webp', $registration->fresh()->member_registration_payment_proof_image);
+        $this->assertSame('approved', $registration->member_registration_status);
+
+        foreach ([[], ['payment_proof_image_url' => null], ['payment_proof_image_url' => '']] as $payload) {
+            $this->putJson($url, [...$this->identityUpdatePayload(), ...$payload])->assertOk()
+                ->assertJsonPath('data.payment_proof_image_url', 'https://example.test/corrected-payment.webp');
+        }
+    }
+
+    public function test_admin_member_update_rejects_payment_proof_without_registration_and_preserves_other_data(): void
+    {
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $member = $this->createMember('MANUAL', 'Manual', 'distributor', 1);
+
+        $this->putJson("/api/v1/admin/partnership/members/{$member->getKey()}", [
+            ...$this->identityUpdatePayload(),
+            'payment_proof_image_url' => 'https://example.test/payment.webp',
+        ])->assertUnprocessable()->assertJsonValidationErrors('payment_proof_image_url');
+
+        $this->assertSame('Manual', $member->fresh()->member_name);
+        $this->assertDatabaseCount('member_registration', 0);
+    }
+
+    private function createApprovedRegistration(Member $member): MemberRegistration
+    {
+        return MemberRegistration::query()->create([
+            'member_registration_member_level_id' => $member->member_member_level_id,
+            'member_registration_member_id' => $member->getKey(),
+            'member_registration_name' => $member->member_name,
+            'member_registration_username' => '',
+            'member_registration_password' => '',
+            'member_registration_status' => 'approved',
+            'member_registration_datetime' => now(),
+            'member_registration_payment_proof_image' => 'https://example.test/original-payment.webp',
         ]);
     }
 

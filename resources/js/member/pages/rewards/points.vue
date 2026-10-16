@@ -1,11 +1,11 @@
 <template>
     <div class="screen-body">
         <div class="point-summary-grid">
-            <div class="card point-summary">
+            <div class="card point-summary" style="margin-top: 0">
                 <div class="point-label">Poin Bulanan</div>
                 <strong>{{ formatPrice(summary.monthly_points) }}</strong>
             </div>
-            <div class="card point-summary">
+            <div class="card point-summary" style="margin-top: 0">
                 <div class="point-label">Poin Tahunan</div>
                 <strong>{{ formatPrice(summary.annual_points) }}</strong>
             </div>

@@ -17,10 +17,8 @@
                 }}</span>
             </v-avatar>
             <h2>{{ profileData?.member?.name || "Memuat..." }}</h2>
-            <p>
-                {{ profileData?.member?.email }} ·
-                {{ profileData?.member?.code }}
-            </p>
+            <p>{{ profileData?.member?.email }}</p>
+            <p>{{ profileData?.member?.code }}</p>
             <span class="badge gold">{{
                 profileData?.member?.level?.name || "Mitra"
             }}</span>
@@ -33,6 +31,71 @@
                 Edit Profil
             </button>
         </div>
+
+        <template v-if="profileData">
+            <div class="menu-group-title">Dokumen Mitra</div>
+            <div class="profile-document-grid">
+                <button
+                    v-for="media in profileDocuments"
+                    :key="media.key"
+                    type="button"
+                    class="profile-document-card"
+                    :class="{
+                        'profile-document-card--clickable': media.url,
+                    }"
+                    :disabled="!media.url"
+                    :aria-label="
+                        media.url
+                            ? `Lihat ${media.title}`
+                            : `${media.title} belum tersedia`
+                    "
+                    @click="openMediaPreview(media)"
+                >
+                    <div class="profile-document-card__preview">
+                        <v-img
+                            v-if="media.url"
+                            :src="media.url"
+                            :alt="media.title"
+                            :cover="false"
+                        >
+                            <template #placeholder>
+                                <div
+                                    class="d-flex fill-height align-center justify-center"
+                                >
+                                    <v-progress-circular
+                                        indeterminate
+                                        color="primary"
+                                        size="22"
+                                        width="2"
+                                    />
+                                </div>
+                            </template>
+                            <template #error>
+                                <div class="profile-document-fallback">
+                                    <v-icon
+                                        icon="mdi-image-broken-variant"
+                                        size="26"
+                                    />
+                                    <span>Gagal dimuat</span>
+                                </div>
+                            </template>
+                        </v-img>
+                        <div v-else class="profile-document-fallback">
+                            <v-icon :icon="media.icon" size="26" />
+                            <span>Belum tersedia</span>
+                        </div>
+                    </div>
+                    <div class="profile-document-card__content">
+                        <strong>{{ media.title }}</strong>
+                        <span>{{ media.description }}</span>
+                        <small v-if="media.url">
+                            <v-icon icon="mdi-magnify-plus-outline" size="13" />
+                            Ketuk untuk melihat
+                        </small>
+                    </div>
+                </button>
+            </div>
+        </template>
 
         <div class="menu-group-title">Digital Card Mitra</div>
         <DigitalMemberCard :member="profileData?.member" />
@@ -171,6 +234,55 @@
         </div>
 
         <MobileConfirm ref="confirmDialogRef" />
+
+        <v-dialog
+            v-model="mediaPreviewDialog"
+            max-width="calc(100vw - 84px)"
+            max-height="92vh"
+        >
+            <div
+                class="profile-image-preview"
+                :class="{
+                    'profile-image-preview--state':
+                        previewImageLoading || previewImageError,
+                    'profile-image-preview--identity':
+                        selectedMedia?.key === 'identity',
+                }"
+            >
+                <img
+                    v-show="!previewImageLoading && !previewImageError"
+                    v-if="selectedMedia?.url"
+                    :src="selectedMedia.url"
+                    :alt="selectedMedia.title"
+                    class="profile-image-preview__image"
+                    @load="previewImageLoading = false"
+                    @error="handlePreviewImageError"
+                />
+                <div
+                    v-if="previewImageLoading"
+                    class="profile-image-preview__state"
+                >
+                    <v-progress-circular indeterminate color="primary" />
+                    <span>Memuat gambar...</span>
+                </div>
+                <div
+                    v-else-if="previewImageError"
+                    class="profile-image-preview__state"
+                >
+                    <v-icon icon="mdi-image-broken-variant" size="42" />
+                    <span>Gambar gagal dimuat</span>
+                </div>
+                <v-btn
+                    icon="mdi-close"
+                    color="white"
+                    variant="text"
+                    density="comfortable"
+                    class="profile-image-preview__close position-absolute"
+                    aria-label="Tutup preview"
+                    @click="mediaPreviewDialog = false"
+                />
+            </div>
+        </v-dialog>
     </div>
 </template>
 
@@ -189,6 +301,37 @@ const authStore = useAuthStore();
 const snackbar = useSnackbarStore();
 const profileData = ref<MemberProfile | null>(null);
 const confirmDialogRef = ref<InstanceType<typeof MobileConfirm> | null>(null);
+const mediaPreviewDialog = ref(false);
+const selectedMedia = ref<ProfileMedia | null>(null);
+const previewImageLoading = ref(false);
+const previewImageError = ref(false);
+
+interface ProfileMedia {
+    key: "identity" | "payment-proof";
+    title: string;
+    description: string;
+    url: string | null;
+    icon: string;
+}
+
+const profileDocuments = computed<ProfileMedia[]>(() => [
+    {
+        key: "identity",
+        title: "Gambar Identitas",
+        description: profileData.value?.member.identity?.type
+            ? `Dokumen ${profileData.value.member.identity.type}`
+            : "Dokumen identitas",
+        url: profileData.value?.member.identity?.image || null,
+        icon: "mdi-card-account-details-outline",
+    },
+    {
+        key: "payment-proof",
+        title: "Bukti Pembayaran",
+        description: "Bukti pembayaran pendaftaran",
+        url: profileData.value?.member.payment_proof_image_url || null,
+        icon: "mdi-receipt-text-check-outline",
+    },
+]);
 
 const isDistributorOrAgent = computed(() => {
     const roleId = authStore.user?.role?.id;
@@ -204,6 +347,20 @@ async function fetchProfile() {
     } catch (error) {
         console.error("Failed to load profile:", error);
     }
+}
+
+function openMediaPreview(media: ProfileMedia) {
+    if (!media.url) return;
+
+    selectedMedia.value = media;
+    previewImageLoading.value = true;
+    previewImageError.value = false;
+    mediaPreviewDialog.value = true;
+}
+
+function handlePreviewImageError() {
+    previewImageLoading.value = false;
+    previewImageError.value = true;
 }
 
 async function handleLogout() {
@@ -235,3 +392,162 @@ onMounted(() => {
     fetchProfile();
 });
 </script>
+
+<style scoped>
+.profile-document-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+}
+
+.profile-document-card {
+    display: grid;
+    grid-template-columns: 96px minmax(0, 1fr);
+    min-width: 0;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid #eadde0;
+    border-radius: 12px;
+    color: inherit;
+    background: #fff;
+    text-align: left;
+}
+
+.profile-document-card:disabled {
+    opacity: 1;
+}
+
+.profile-document-card--clickable {
+    cursor: pointer;
+}
+
+.profile-document-card__preview {
+    display: grid;
+    height: 84px;
+    place-items: center;
+    overflow: hidden;
+    background: #f8edef;
+}
+
+.profile-document-card__preview .v-img {
+    width: 100%;
+    height: 100%;
+}
+
+.profile-document-card__content {
+    display: flex;
+    min-width: 0;
+    justify-content: center;
+    flex-direction: column;
+    gap: 3px;
+    padding: 9px 11px;
+}
+
+.profile-document-card__content strong {
+    overflow-wrap: anywhere;
+    color: var(--ink);
+    font-size: 12px;
+    line-height: 1.3;
+}
+
+.profile-document-card__content span {
+    overflow-wrap: anywhere;
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 1.35;
+}
+
+.profile-document-card__content small {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    margin-top: 2px;
+    color: var(--wine);
+    font-size: 9px;
+    font-weight: 700;
+}
+
+.profile-document-fallback {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 4px;
+    color: var(--muted);
+    font-size: 9px;
+    text-align: center;
+}
+
+.profile-image-preview {
+    position: relative;
+    width: fit-content;
+    max-width: min(92vw, 640px);
+    max-height: 92vh;
+    margin: 0 auto;
+}
+
+.profile-image-preview--state {
+    width: min(260px, 78vw);
+    min-height: 220px;
+    border-radius: 12px;
+    background: #fff;
+}
+
+.profile-image-preview__image {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: min(92vw, 640px);
+    max-height: 86vh;
+    border-radius: 10px;
+    object-fit: contain;
+}
+
+.profile-image-preview__close {
+    top: 8px;
+    right: 8px;
+    z-index: 2;
+    background: rgba(0, 0, 0, 0.42);
+    backdrop-filter: blur(3px);
+}
+
+.profile-image-preview__state {
+    display: flex;
+    width: 100%;
+    min-height: inherit;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 8px;
+    color: var(--muted);
+    font-size: 12px;
+}
+
+@media (min-width: 600px) {
+    .profile-image-preview--identity .profile-image-preview__image {
+        width: min(82vw, 560px);
+    }
+
+    .profile-document-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+    }
+
+    .profile-document-card--clickable {
+        transition:
+            border-color 0.2s ease,
+            box-shadow 0.2s ease,
+            transform 0.2s ease;
+    }
+
+    .profile-document-card--clickable:hover,
+    .profile-document-card--clickable:focus-visible {
+        border-color: #c98898;
+        box-shadow: 0 7px 18px rgba(91, 29, 44, 0.1);
+        outline: none;
+        transform: translateY(-1px);
+    }
+}
+</style>

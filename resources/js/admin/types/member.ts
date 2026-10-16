@@ -64,8 +64,14 @@ export interface Member {
     image_filename?: string | null;
     identity?: MemberIdentity | null;
     payment_proof_image_url?: string | null;
+    can_update_payment_proof?: boolean;
     nib?: string | null;
     npwp?: string | null;
+    social_media?: {
+        instagram: string | null;
+        facebook: string | null;
+        tiktok: string | null;
+    };
     username: string | null;
     parent:
         | {

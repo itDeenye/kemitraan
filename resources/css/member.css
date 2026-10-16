@@ -627,6 +627,39 @@ button.app-title {
     display: none;
 }
 
+.member-price-list {
+    margin-top: 5px;
+    color: var(--muted);
+    font-size: clamp(9px, 2.8vw, 11px);
+    line-height: 1.4;
+}
+
+.member-price-list__title {
+    display: block;
+    margin-bottom: 2px;
+    color: var(--text);
+    font-weight: 600;
+}
+
+.member-price-list__item {
+    display: flex;
+    align-items: baseline;
+    justify-content: flex-start;
+    gap: 3px;
+    white-space: nowrap;
+}
+
+.member-price-list__level,
+.member-price-list__amount {
+    white-space: nowrap;
+}
+
+.member-price-list__amount {
+    margin-left: 0;
+    color: inherit;
+    font-weight: 400;
+}
+
 @media (max-width: 480px) {
     :root {
         --member-app-bar-height: 52px;
@@ -2764,6 +2797,11 @@ textarea.form-control {
     background: transparent;
     padding: 0;
     -moz-appearance: textfield;
+}
+
+.quantity-control .qty-input {
+    width: 42px;
+    min-width: 42px;
 }
 .quantity-control .qty-input::-webkit-outer-spin-button,
 .quantity-control .qty-input::-webkit-inner-spin-button {

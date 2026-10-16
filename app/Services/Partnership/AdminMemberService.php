@@ -110,29 +110,60 @@ class AdminMemberService
         }
 
         DB::transaction(function () use ($member, $data): void {
-            $member->update([
-                ...collect([
-                    'identity_type' => 'member_identity_type',
-                    'identity_no' => 'member_identity_no',
-                    'identity_image_url' => 'member_identity_image',
-                    'nib' => 'member_nib',
-                    'npwp' => 'member_npwp',
-                ])->filter(fn (string $column, string $input): bool => array_key_exists($input, $data))
-                    ->mapWithKeys(fn (string $column, string $input): array => [
-                        $column => $input === 'identity_image_url'
-                            ? MediaUrl::canonicalPrivateUrl($data[$input]) : $data[$input],
-                    ])->all(),
+            $attributes = [
                 'member_name' => $data['name'],
                 'member_email' => $data['email'] ?? '',
                 'member_mobilephone' => $data['mobile_phone'],
                 'member_gender' => $data['gender'],
                 'member_birth_date' => $data['birth_date'] ?? null,
-                'member_image' => $data['image_url'] ?? null,
-                'member_instagram' => $data['instagram'] ?? null,
-                'member_facebook' => $data['facebook'] ?? null,
-                'member_tiktok' => $data['tiktok'] ?? null,
                 'member_status' => $data['status'],
-            ]);
+            ];
+
+            foreach ([
+                'identity_type' => 'member_identity_type',
+                'identity_no' => 'member_identity_no',
+                'nib' => 'member_nib',
+                'npwp' => 'member_npwp',
+                'instagram' => 'member_instagram',
+                'facebook' => 'member_facebook',
+                'tiktok' => 'member_tiktok',
+            ] as $input => $column) {
+                if (array_key_exists($input, $data)) {
+                    $attributes[$column] = $data[$input];
+                }
+            }
+
+            // Media uploads are asynchronous. A normal profile edit may omit
+            // these values (or send an empty value), which must never erase
+            // the previously stored profile photo or identity document.
+            if (filled($data['image_url'] ?? null)) {
+                $attributes['member_image'] = $data['image_url'];
+                $attributes['member_image_filename'] = basename((string) parse_url($data['image_url'], PHP_URL_PATH));
+            }
+
+            if (filled($data['identity_image_url'] ?? null)) {
+                $attributes['member_identity_image'] = MediaUrl::canonicalPrivateUrl(
+                    $data['identity_image_url'],
+                );
+                $attributes['member_identity_image_filename'] = basename((string) parse_url(
+                    $attributes['member_identity_image'], PHP_URL_PATH,
+                ));
+            }
+
+            if (filled($data['payment_proof_image_url'] ?? null)) {
+                $registration = $member->approvedRegistration()->lockForUpdate()->first();
+                if ($registration === null) {
+                    throw new ProcessException('Mitra ini tidak memiliki data pendaftaran untuk memperbarui bukti transfer.');
+                }
+
+                $registration->update([
+                    'member_registration_payment_proof_image' => MediaUrl::canonicalPrivateUrl(
+                        $data['payment_proof_image_url'],
+                    ),
+                ]);
+            }
+
+            $member->update($attributes);
 
             $this->syncAddresses($member, $data['addresses']);
             $this->syncBankAccounts($member, $data['bank_accounts']);

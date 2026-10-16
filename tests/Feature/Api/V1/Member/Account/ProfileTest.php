@@ -8,6 +8,7 @@ use App\Models\MemberAccount;
 use App\Models\MemberAddress;
 use App\Models\MemberBankAccount;
 use App\Models\MemberGroup;
+use App\Models\MemberRegistration;
 use App\Support\MediaUrl;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -226,6 +227,29 @@ class ProfileTest extends TestCase
         $this->actingAs($this->createMemberAccount(), 'member_api');
         $this->putJson('/api/v1/member/profile', ['name' => 'Invalid Identity', 'identity_type' => 'LAINNYA'])
             ->assertUnprocessable()->assertJsonValidationErrors('identity_type');
+    }
+
+    public function test_member_cannot_replace_registration_payment_proof(): void
+    {
+        $account = $this->createMemberAccount();
+        $registration = MemberRegistration::query()->create([
+            'member_registration_member_level_id' => $account->member->member_member_level_id,
+            'member_registration_member_id' => $account->member->getKey(),
+            'member_registration_name' => 'Test Member',
+            'member_registration_username' => '',
+            'member_registration_password' => '',
+            'member_registration_status' => 'approved',
+            'member_registration_datetime' => now(),
+            'member_registration_payment_proof_image' => 'https://example.test/admin-proof.webp',
+        ]);
+        $this->actingAs($account, 'member_api');
+
+        $this->putJson('/api/v1/member/profile', [
+            'name' => 'Test Member',
+            'payment_proof_image_url' => 'https://example.test/member-proof.webp',
+        ])->assertUnprocessable()->assertJsonValidationErrors('payment_proof_image_url');
+
+        $this->assertSame('https://example.test/admin-proof.webp', $registration->fresh()->member_registration_payment_proof_image);
     }
 
     public function test_member_can_update_password(): void

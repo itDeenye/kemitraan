@@ -61,6 +61,10 @@ class AdminMemberResource extends ApiResource
                 $member ? $member->approvedRegistration?->member_registration_payment_proof_image
                     : $this->resource->payment_proof_image_url, 'admin',
             ),
+            'can_update_payment_proof' => $this->when(
+                $member !== null,
+                fn (): bool => $member->approvedRegistration !== null,
+            ),
             'image_filename' => $this->when(
                 $member !== null,
                 fn (): ?string => $member->member_image_filename,

@@ -31,29 +31,32 @@
                     <v-text-field
                         v-model="formData.name"
                         label="Nama Lengkap *"
+                        maxlength="200"
                         variant="outlined"
                         density="comfortable"
                         hide-details="auto"
-                        :rules="[(v) => !!v || 'Nama wajib diisi']"
+                        :rules="[
+                            rules.required('Nama lengkap'),
+                            rules.maxLength('Nama lengkap', 200),
+                        ]"
                         class="mb-4"
                     ></v-text-field>
 
                     <v-text-field
                         v-model="formData.whatsapp"
                         label="No. WhatsApp *"
+                        placeholder="08xxxxxxxxxx, 628xxxxxxxxxx, atau +628xxxxxxxxxx"
+                        inputmode="tel"
+                        pattern="[+]?[0-9]*"
+                        maxlength="16"
                         variant="outlined"
                         density="comfortable"
                         hide-details="auto"
-                        :rules="[(v) => !!v || 'WhatsApp wajib diisi']"
-                        class="mb-4"
-                    ></v-text-field>
-
-                    <v-text-field
-                        v-model="formData.phone"
-                        label="No. Telepon (Opsional)"
-                        variant="outlined"
-                        density="comfortable"
-                        hide-details="auto"
+                        :rules="[
+                            rules.required('Nomor WhatsApp'),
+                            rules.phoneCharacters,
+                            rules.indonesianPhone('Nomor WhatsApp'),
+                        ]"
                         class="mb-4"
                     ></v-text-field>
 
@@ -71,22 +74,9 @@
                         variant="outlined"
                         density="comfortable"
                         hide-details="auto"
-                        :rules="[(v) => !!v || 'Jenis kelamin wajib dipilih']"
+                        :rules="[rules.requiredSelect('Jenis kelamin')]"
                         class="mb-4"
                     ></v-select>
-
-                    <v-textarea
-                        v-model="formData.address"
-                        label="Alamat Lengkap *"
-                        placeholder="Masukkan Alamat Lengkap"
-                        persistent-placeholder
-                        variant="outlined"
-                        density="comfortable"
-                        hide-details="auto"
-                        :rules="[(v) => !!v || 'Alamat lengkap wajib diisi']"
-                        rows="3"
-                        class="mb-4"
-                    ></v-textarea>
 
                     <v-autocomplete
                         v-model="formData.province_id"
@@ -101,7 +91,7 @@
                         hide-details="auto"
                         :loading="loadingProvinces"
                         @update:model-value="onProvinceChange"
-                        :rules="[(v) => !!v || 'Provinsi wajib dipilih']"
+                        :rules="[rules.requiredSelect('Provinsi')]"
                         class="mb-4"
                     ></v-autocomplete>
 
@@ -119,7 +109,7 @@
                         :loading="loadingCities"
                         :disabled="!formData.province_id"
                         @update:model-value="onCityChange"
-                        :rules="[(v) => !!v || 'Kota/Kabupaten wajib dipilih']"
+                        :rules="[rules.requiredSelect('Kota/Kabupaten')]"
                         class="mb-4"
                     ></v-autocomplete>
 
@@ -137,7 +127,7 @@
                         :loading="loadingDistricts"
                         :disabled="!formData.city_id"
                         @update:model-value="onDistrictChange"
-                        :rules="[(v) => !!v || 'Kecamatan wajib dipilih']"
+                        :rules="[rules.requiredSelect('Kecamatan')]"
                         class="mb-4"
                     ></v-autocomplete>
 
@@ -154,9 +144,26 @@
                         hide-details="auto"
                         :loading="loadingSubdistricts"
                         :disabled="!formData.district_id"
-                        :rules="[(v) => !!v || 'Kelurahan/Desa wajib dipilih']"
+                        :rules="[rules.requiredSelect('Kelurahan/Desa')]"
                         class="mb-2"
                     ></v-autocomplete>
+
+                    <v-textarea
+                        v-model="formData.address"
+                        label="Alamat Detail *"
+                        placeholder="Jl. Contoh No. 123, RT 01/RW 02"
+                        persistent-placeholder
+                        variant="outlined"
+                        density="comfortable"
+                        hide-details="auto"
+                        maxlength="500"
+                        :rules="[
+                            rules.required('Alamat detail'),
+                            rules.maxLength('Alamat detail', 500),
+                        ]"
+                        rows="3"
+                        class="mb-4"
+                    ></v-textarea>
                 </v-form>
             </v-card-text>
 
@@ -189,16 +196,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, type Ref } from "vue";
+import { ref, reactive } from "vue";
 import saleService from "@/member/services/sale.service";
 import { useSnackbarStore } from "@/shared/stores/snackbar";
 import { useRegionCascade } from "@/shared/composables/useRegionCascade";
-import type { SaleCustomerPayload, SaleFormOptions } from "@/member/types/sale";
+import type { SaleCustomerPayload } from "@/member/types/sale";
 
 const emit = defineEmits(["saved"]);
-const props = defineProps<{
-    defaultAddress?: SaleFormOptions["seller"]["origin"];
-}>();
 const snackbar = useSnackbarStore();
 
 const isOpen = ref(false);
@@ -217,11 +221,33 @@ const {
     loadingDistricts,
     loadingSubdistricts,
     fetchProvinces,
-    initFromExisting,
     onProvinceChange: baseProvinceChange,
     onCityChange: baseCityChange,
     onDistrictChange: baseDistrictChange,
+    reset: resetRegions,
 } = useRegionCascade();
+
+const rules = {
+    required: (field: string) => (value: unknown) =>
+        (typeof value === "string" ? value.trim().length > 0 : !!value) ||
+        `${field} wajib diisi`,
+    requiredSelect: (field: string) => (value: unknown) =>
+        (value !== null && value !== undefined && value !== "") ||
+        `${field} wajib dipilih`,
+    maxLength: (field: string, maximum: number) => (value: unknown) =>
+        !value ||
+        String(value).length <= maximum ||
+        `${field} maksimal ${maximum} karakter`,
+    phoneCharacters: (value: unknown) =>
+        !value ||
+        /^\+?\d+$/.test(String(value)) ||
+        "Nomor hanya boleh berisi angka dan tanda + di awal",
+    indonesianPhone: (field: string) => (value: unknown) =>
+        !value ||
+        !/^\+?\d+$/.test(String(value)) ||
+        /^(?:08|628|\+628)\d{7,12}$/.test(String(value)) ||
+        `${field} harus diawali 08, 628, atau +628 dan berisi 9–15 digit`,
+};
 
 const onProvinceChange = async (val: any) => {
     formData.city_id = null;
@@ -253,32 +279,6 @@ const formData = reactive<SaleCustomerPayload>({
     subdistrict_id: null as any,
 });
 
-const resolveRegionId = (
-    options: Ref<{ id: string | number; name: string }[]>,
-    id: string | number | null | undefined,
-    name?: string,
-): string | number | null => {
-    if (id === null || id === undefined || id === "" || Number(id) === 0) {
-        return null;
-    }
-
-    const selected = options.value.find(
-        (option) =>
-            String(option.id) === String(id) || Number(option.id) === Number(id),
-    );
-    if (selected) return selected.id;
-
-    // Alamat lama masih bisa ditampilkan meski wilayahnya tak lagi ada di daftar aktif.
-    if (name?.trim()) {
-        const optionId =
-            typeof options.value[0]?.id === "string" ? String(id) : id;
-        options.value.push({ id: optionId, name: name.trim() });
-        return optionId;
-    }
-
-    return null;
-};
-
 const open = async () => {
     const sequence = ++openSequence;
     formData.name = "";
@@ -290,41 +290,18 @@ const open = async () => {
     formData.city_id = null;
     formData.district_id = null;
     formData.subdistrict_id = null;
+    resetRegions();
 
     if (formRef.value) formRef.value.resetValidation();
     isOpen.value = true;
     loadingDefaults.value = true;
 
     try {
-        const region = props.defaultAddress;
-        await Promise.all([
-            provinces.value.length === 0 ? fetchProvinces() : Promise.resolve(),
-            region ? initFromExisting(region) : Promise.resolve(),
-        ]);
+        if (provinces.value.length === 0) {
+            await fetchProvinces();
+        }
 
         if (sequence !== openSequence || !isOpen.value) return;
-
-        formData.address = region?.address || "";
-        formData.province_id = resolveRegionId(
-            provinces,
-            region?.province_id,
-            region?.province_name,
-        );
-        formData.city_id = resolveRegionId(
-            cities,
-            region?.city_id,
-            region?.city_name,
-        );
-        formData.district_id = resolveRegionId(
-            districts,
-            region?.district_id,
-            region?.district_name,
-        );
-        formData.subdistrict_id = resolveRegionId(
-            subdistricts,
-            region?.subdistrict_id,
-            region?.subdistrict_name,
-        );
     } finally {
         if (sequence === openSequence) loadingDefaults.value = false;
     }

@@ -10,6 +10,7 @@
                         :size="112"
                         accept="image/jpeg,image/png,image/webp"
                         @success="saveProfilePhoto"
+                        @uploading="mediaUploads.profile = $event"
                     />
                     <span class="soft-label mt-2"
                         >Ketuk untuk mengganti foto</span
@@ -84,6 +85,28 @@
                 />
 
                 <div class="section-heading mt-2 mb-3">
+                    <h3>Dokumen Identitas</h3>
+                </div>
+                <div class="d-flex align-center ga-3 mb-4">
+                    <MediaUpload
+                        v-model="identityImage"
+                        collection="general"
+                        :size="92"
+                        :rounded="false"
+                        fallback-icon="mdi-card-account-details-outline"
+                        accept="image/jpeg,image/png,image/webp"
+                        @success="identityImageChanged = true"
+                        @uploading="mediaUploads.identity = $event"
+                    />
+                    <div>
+                        <div class="text-body-2">Ketuk untuk mengganti dokumen</div>
+                        <div class="text-caption text-medium-emphasis">
+                            JPG, PNG, atau WEBP
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section-heading mt-2 mb-3">
                     <h3>Media Sosial</h3>
                 </div>
                 <v-text-field
@@ -117,7 +140,7 @@
                 <button
                     class="primary-button block"
                     type="submit"
-                    :disabled="loadingProfile"
+                    :disabled="loadingProfile || isUploadingMedia"
                 >
                     <template v-if="loadingProfile">Menyimpan...</template>
                     <template v-else>Simpan Perubahan</template>
@@ -143,6 +166,13 @@ const authStore = useAuthStore();
 const profileFormRef = ref<any>(null);
 const loadingProfile = ref(false);
 const profileImage = ref("");
+const identityImage = ref("");
+const identityImageChanged = ref(false);
+const mediaUploads = reactive({ profile: false, identity: false });
+const savingProfilePhoto = ref(false);
+const isUploadingMedia = computed(() =>
+    savingProfilePhoto.value || Object.values(mediaUploads).some(Boolean),
+);
 const originalIdentity = ref({ type: "KTP", number: "" });
 
 const formProfile = reactive({
@@ -169,6 +199,8 @@ async function loadProfile() {
             const member = response.data.member;
             formProfile.name = member.name || "";
             profileImage.value = member.image || "";
+            identityImage.value = member.identity?.image || "";
+            identityImageChanged.value = false;
             formProfile.email = member.email || "";
             formProfile.phone = member.mobile_phone || "";
             formProfile.gender = member.gender || "";
@@ -187,6 +219,7 @@ async function loadProfile() {
 }
 
 async function saveProfilePhoto(imageUrl: string) {
+    savingProfilePhoto.value = true;
     try {
         const response = await profileService.updateProfilePhoto(imageUrl);
         if (response.success) {
@@ -200,16 +233,27 @@ async function saveProfilePhoto(imageUrl: string) {
                 "Foto profil belum dapat diperbarui.",
             "error",
         );
+    } finally {
+        savingProfilePhoto.value = false;
     }
 }
 
 async function saveProfile() {
+    if (isUploadingMedia.value) {
+        snackbar.showMessage("Tunggu hingga proses upload selesai.", "info");
+        return;
+    }
     const { valid } = await profileFormRef.value?.validate();
     if (!valid) return;
 
     loadingProfile.value = true;
     try {
-        const response = await profileService.updateProfile(formProfile);
+        const response = await profileService.updateProfile({
+            ...formProfile,
+            ...(identityImageChanged.value && identityImage.value
+                ? { identity_image_url: identityImage.value }
+                : {}),
+        });
         if (response.success) {
             await authStore.fetchUser();
             snackbar.showMessage("Profil berhasil diperbarui");

@@ -90,6 +90,7 @@ class SaveMemberRequest extends FormRequest
                     ->ignore($memberId, 'member_id')->where(fn ($query) => $query->where('member_status', '!=', 3)),
             ],
             'identity_image_url' => ['nullable', 'string', 'max:255'],
+            'payment_proof_image_url' => ['nullable', 'string', 'max:255'],
             'nib' => ['nullable', 'string', 'max:20'],
             'npwp' => ['nullable', 'string', 'max:30'],
             'instagram' => ['nullable', 'string', 'max:100'],
@@ -133,6 +134,7 @@ class SaveMemberRequest extends FormRequest
             'identity_type' => 'jenis identitas',
             'identity_no' => 'nomor identitas',
             'identity_image_url' => 'dokumen identitas',
+            'payment_proof_image_url' => 'bukti transfer pendaftaran',
             'nib' => 'NIB',
             'npwp' => 'NPWP',
             'status' => 'status mitra',
@@ -144,8 +146,10 @@ class SaveMemberRequest extends FormRequest
         if (is_string($this->input('identity_type'))) {
             $this->merge(['identity_type' => strtoupper(trim($this->input('identity_type')))]);
         }
-        if (is_string($this->input('identity_image_url'))) {
-            $this->merge(['identity_image_url' => MediaUrl::canonicalPrivateUrl($this->input('identity_image_url'))]);
+        foreach (['identity_image_url', 'payment_proof_image_url'] as $field) {
+            if (is_string($this->input($field))) {
+                $this->merge([$field => MediaUrl::canonicalPrivateUrl($this->input($field))]);
+            }
         }
         if ($this->has('mobile_phone')) {
             $this->merge(['mobile_phone' => PhoneNumber::normalize($this->input('mobile_phone'))]);
@@ -174,6 +178,10 @@ class SaveMemberRequest extends FormRequest
                     MemberIdentity::validateNumber($validator,
                         $this->input('identity_type', $member->member_identity_type),
                         $this->input('identity_no', $member->member_identity_no), $member);
+                    if ($this->filled('payment_proof_image_url') && ! $member->approvedRegistration()->exists()) {
+                        $validator->errors()->add('payment_proof_image_url',
+                            'Mitra ini tidak memiliki data pendaftaran untuk memperbarui bukti transfer.');
+                    }
                 }
                 $addresses = is_array($this->input('addresses')) ? $this->input('addresses') : [];
                 $bankAccounts = is_array($this->input('bank_accounts')) ? $this->input('bank_accounts') : [];

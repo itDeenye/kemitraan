@@ -82,23 +82,19 @@
                             <v-text-field
                                 v-model="form.mobile_phone"
                                 label="Nomor Telepon"
+                                placeholder="08xxxxxxxxxx, 628xxxxxxxxxx, atau +628xxxxxxxxxx"
+                                inputmode="tel"
+                                pattern="[+]?[0-9]*"
+                                maxlength="16"
                                 variant="outlined"
                                 density="comfortable"
                                 hide-details="auto"
-                                :rules="[rules.required('No Telepon')]"
+                                :rules="[
+                                    rules.required('Nomor Telepon'),
+                                    rules.phoneCharacters,
+                                    rules.indonesianPhone,
+                                ]"
                             ></v-text-field>
-                        </v-col>
-
-                        <v-col cols="12">
-                            <v-textarea
-                                v-model="form.address"
-                                label="Alamat Lengkap"
-                                variant="outlined"
-                                density="comfortable"
-                                rows="3"
-                                hide-details="auto"
-                                :rules="[rules.required('Alamat lengkap')]"
-                            ></v-textarea>
                         </v-col>
 
                         <v-col cols="12" md="6">
@@ -167,10 +163,23 @@
                             ></v-autocomplete>
                         </v-col>
 
+                        <v-col cols="12">
+                            <v-textarea
+                                v-model="form.address"
+                                label="Alamat Detail"
+                                placeholder="Jl. Contoh No. 123, RT 01/RW 02"
+                                variant="outlined"
+                                density="comfortable"
+                                rows="3"
+                                hide-details="auto"
+                                :rules="[rules.required('Alamat lengkap')]"
+                            ></v-textarea>
+                        </v-col>
+
                         <v-col cols="12" md="6">
                             <v-text-field
                                 v-model="form.latitude"
-                                label="Latitude"
+                                label="Latitude (Opsional)"
                                 type="text"
                                 variant="outlined"
                                 density="comfortable"
@@ -181,7 +190,7 @@
                         <v-col cols="12" md="6">
                             <v-text-field
                                 v-model="form.longitude"
-                                label="Longitude"
+                                label="Longitude (Opsional)"
                                 type="text"
                                 variant="outlined"
                                 density="comfortable"
@@ -195,7 +204,7 @@
                                 label="Catatan / Info Tambahan (Opsional)"
                                 variant="outlined"
                                 density="comfortable"
-                                rows="2"
+                                rows="3"
                                 hide-details="auto"
                                 placeholder="Cth: Buka pukul 08.00-17.00"
                             ></v-textarea>
@@ -265,6 +274,15 @@ const rules = {
     requiredSelect: (field: string) => (v: any) =>
         !!v || `${field} wajib dipilih`,
     email: (v: any) => /.+@.+\..+/.test(v) || "Email tidak valid",
+    phoneCharacters: (v: any) =>
+        !v ||
+        /^\+?\d+$/.test(v) ||
+        "Nomor telepon hanya boleh berisi angka dan tanda + di awal",
+    indonesianPhone: (v: any) =>
+        !v ||
+        !/^\+?\d+$/.test(v) ||
+        /^(?:08|628|\+628)\d{7,12}$/.test(v) ||
+        "Nomor telepon harus diawali 08, 628, atau +628 dan berisi 9–15 digit",
 };
 
 const customFilter = (value: string, query: string, item: any) => {

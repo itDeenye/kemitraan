@@ -1,5 +1,5 @@
 <template>
-    <div class="screen-body">
+    <div ref="screenBodyRef" class="screen-body">
         <div v-if="step === 1" class="catalog-container">
             <div class="search-box">
                 <v-icon icon="mdi-magnify" size="small" />
@@ -118,20 +118,20 @@
                             product.member_prices &&
                             product.member_prices.length
                         "
-                        style="
-                            margin-top: 4px;
-                            font-size: 11px;
-                            color: var(--muted);
-                            line-height: 1.4;
-                        "
+                        class="member-price-list"
                     >
+                        <span class="member-price-list__title">Harga</span>
                         <div
                             v-for="mp in product.member_prices"
                             :key="mp.id ?? mp.member_level_id"
+                            class="member-price-list__item"
                         >
-                            Harga {{ mp.level || mp.member_level_name }}: Rp{{
-                                formatPrice(mp.price)
-                            }}
+                            <span class="member-price-list__level">
+                                - {{ mp.level || mp.member_level_name }}:
+                            </span>
+                            <span class="member-price-list__amount">
+                                Rp{{ formatPrice(mp.price) }}
+                            </span>
                         </div>
                     </div>
                     <div class="catalog-stock">
@@ -996,14 +996,13 @@
 
         <CreateCustomerDialog
             ref="createCustomerDialogRef"
-            :default-address="formOptions?.seller.origin"
             @saved="onCustomerCreated"
         />
     </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from "vue";
+import { ref, computed, nextTick, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import saleService from "@/member/services/sale.service";
 import purchaseService from "@/member/services/purchase.service";
@@ -1024,6 +1023,7 @@ const snackbar = useSnackbarStore();
 const { formatPrice, formatLocation } = useFormatter();
 
 const step = ref(1);
+const screenBodyRef = ref<HTMLElement | null>(null);
 const isLoadingCatalog = ref(true);
 const isLoadingMoreCatalog = ref(false);
 const isSubmitting = ref(false);
@@ -1033,6 +1033,7 @@ const isLoadingCustomers = ref(false);
 const deliveryType = ref<"pickup">("pickup");
 
 const products = ref<ProductCatalog[]>([]);
+const productCache = ref<Record<number, ProductCatalog>>({});
 const categories = ref<any[]>([]);
 const currentCategory = ref<number | null>(null);
 const searchQuery = ref("");
@@ -1081,7 +1082,7 @@ const cartProducts = computed(() => {
     const result = [];
     for (const [id, qty] of Object.entries(cart.value)) {
         if (qty > 0) {
-            const product = products.value.find((p) => p.id === Number(id));
+            const product = productCache.value[Number(id)];
             if (product) {
                 result.push({ product, quantity: qty });
             }
@@ -1171,6 +1172,8 @@ watch(
 );
 
 const loadCatalog = async (page = 1, append = false) => {
+    const requestId = ++catalogRequestId;
+
     if (append) isLoadingMoreCatalog.value = true;
     else isLoadingCatalog.value = true;
 
@@ -1190,7 +1193,13 @@ const loadCatalog = async (page = 1, append = false) => {
 
         const [prodRes, catRes] = await Promise.all(promises);
 
+        if (requestId !== catalogRequestId) return;
+
         if (prodRes.success && prodRes.data) {
+            prodRes.data.results.forEach((product: ProductCatalog) => {
+                productCache.value[product.id] = product;
+            });
+
             if (append) {
                 products.value = [...products.value, ...prodRes.data.results];
             } else {
@@ -1204,8 +1213,10 @@ const loadCatalog = async (page = 1, append = false) => {
     } catch (e) {
         console.error("Failed to load catalog", e);
     } finally {
-        isLoadingCatalog.value = false;
-        isLoadingMoreCatalog.value = false;
+        if (requestId === catalogRequestId) {
+            isLoadingCatalog.value = false;
+            isLoadingMoreCatalog.value = false;
+        }
     }
 };
 
@@ -1216,6 +1227,7 @@ const loadMoreProducts = () => {
 };
 
 let productSearchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let catalogRequestId = 0;
 watch([searchQuery, currentCategory], () => {
     if (productSearchDebounceTimer) clearTimeout(productSearchDebounceTimer);
     productSearchDebounceTimer = setTimeout(() => {
@@ -1333,24 +1345,14 @@ const totalQuantity = computed(() => {
 });
 
 const subtotal = computed(() => {
-    let total = 0;
-    products.value.forEach((p) => {
-        total += getQty(p.id) * p.price;
-    });
-    return total;
+    return cartProducts.value.reduce(
+        (total, item) => total + item.quantity * item.product.price,
+        0,
+    );
 });
 
 const cartItems = computed(() => {
-    const result = [];
-    for (const [id, qty] of Object.entries(cart.value)) {
-        if (qty > 0) {
-            const product = products.value.find((p) => p.id === Number(id));
-            if (product) {
-                result.push({ product, quantity: qty });
-            }
-        }
-    }
-    return result;
+    return cartProducts.value;
 });
 
 const allBatchesFilled = computed(() => {
@@ -1378,6 +1380,8 @@ const goToCheckout = async () => {
         if (!formOptions.value) await getFormOptions();
         if (customerOptions.value.length === 0) await loadCustomers();
         step.value = 2;
+        await nextTick();
+        screenBodyRef.value?.scrollTo({ top: 0, behavior: "smooth" });
     } finally {
         isProceedingToCheckout.value = false;
     }
