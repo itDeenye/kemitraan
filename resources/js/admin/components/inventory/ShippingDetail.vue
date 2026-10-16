@@ -429,11 +429,7 @@
                                     </div>
                                 </v-col>
 
-                                <v-col
-                                    cols="12"
-                                    sm="6"
-                                    v-if="order.shipping.delivery_note_number"
-                                >
+                                <v-col cols="12" sm="6">
                                     <div
                                         class="text-caption text-medium-emphasis"
                                     >
@@ -441,7 +437,23 @@
                                     </div>
                                     <div class="font-weight-medium">
                                         {{
-                                            order.shipping.delivery_note_number
+                                            order.shipping.delivery_note_number ||
+                                            "-"
+                                        }}
+                                    </div>
+                                </v-col>
+
+                                <v-col cols="12" sm="6" v-if="isPickup">
+                                    <div
+                                        class="text-caption text-medium-emphasis"
+                                    >
+                                        Jadwal Pengambilan
+                                    </div>
+                                    <div class="font-weight-medium">
+                                        {{
+                                            formatDateTime(
+                                                order.shipping.schedule_at,
+                                            )
                                         }}
                                     </div>
                                 </v-col>

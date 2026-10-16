@@ -17,11 +17,96 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class AdminTransactionInventoryWorkflowTest extends TestCase
 {
     use LazilyRefreshDatabase;
+
+    /** @return array<string, array{string}> */
+    public static function shippingMethods(): array
+    {
+        return [
+            'pickup' => ['pickup'],
+            'manual courier' => ['courier_manual'],
+            'express courier' => ['courier_express'],
+            'instant courier' => ['courier_instant'],
+        ];
+    }
+
+    #[DataProvider('shippingMethods')]
+    public function test_unprepared_shipment_details_include_ordered_items_without_persisting_shipping_data(string $method): void
+    {
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $this->createData();
+        Trx::query()->findOrFail(1)->update([
+            'trx_shipping_method' => $method,
+            'trx_status' => 'processing',
+            'trx_supply_chain_code' => 'C0126090000004',
+        ]);
+        DB::table('trx_detail')->insert([
+            'trx_detail_trx_id' => 1,
+            'trx_detail_product_id' => 1,
+            'trx_detail_product_code' => 'SRM-001',
+            'trx_detail_product_name' => 'Serum DNY',
+            'trx_detail_qty' => 3,
+        ]);
+
+        if ($method === 'pickup') {
+            $pickupId = DB::table('shipping_pickup')->insertGetId([
+                'shipping_pickup_ref_type' => 'trx',
+                'shipping_pickup_ref_id' => 1,
+                'shipping_pickup_seller_name' => 'Gudang Pusat',
+                'shipping_pickup_seller_address' => 'Jakarta',
+                'shipping_pickup_pin' => '12345',
+            ]);
+            DB::table('shipping_pickup_status')->insert([
+                'shipping_pickup_status_shipping_pickup_id' => $pickupId,
+                'shipping_pickup_status_ref_type' => 'trx',
+                'shipping_pickup_status_ref_id' => 1,
+                'shipping_pickup_status_value' => 'pending',
+            ]);
+        } elseif ($method !== 'courier_manual') {
+            DB::table('shipping_'.$method)->insert([
+                'shipping_'.$method.'_ref_type' => 'trx',
+                'shipping_'.$method.'_ref_id' => 1,
+                'shipping_'.$method.'_origin_address' => 'Jakarta',
+                'shipping_'.$method.'_destination_address' => 'Surabaya',
+                ...($method === 'courier_express' ? [
+                    'shipping_courier_express_origin_subdistrict_id' => 0,
+                    'shipping_courier_express_destination_subdistrict_id' => 0,
+                ] : []),
+            ]);
+        }
+
+        $response = $this->getJson('/api/v1/admin/inventory/shipments/1')
+            ->assertOk()
+            ->assertJsonPath('data.status', 'processing')
+            ->assertJsonPath('data.supply_chain_status', 'awaiting_callback')
+            ->assertJsonPath('data.shipping.method', $method)
+            ->assertJsonPath('data.shipping.delivery_note_number', '')
+            ->assertJsonPath('data.shipping.items', [[
+                'product_id' => 1,
+                'quantity' => 5,
+                'batch_number' => '',
+                'expiry_date' => '',
+            ]])
+            ->assertJsonPath('data.details.0.product.batches', [])
+            ->assertJsonPath('data.details.1.product.batches', []);
+
+        if ($method === 'pickup') {
+            $response->assertJsonPath('data.shipping.verification_status', 'pending')
+                ->assertJsonPath('data.shipping.schedule_at', null);
+        }
+
+        $this->assertDatabaseCount('shipping_detail', 0);
+        $this->assertDatabaseHas('shipping_'.$method, [
+            'shipping_'.$method.'_ref_type' => 'trx',
+            'shipping_'.$method.'_ref_id' => 1,
+            'shipping_'.$method.'_delivery_note_number' => null,
+        ]);
+    }
 
     public function test_shipment_list_and_detail_include_origin_and_destination_snapshots(): void
     {
@@ -1410,6 +1495,8 @@ class AdminTransactionInventoryWorkflowTest extends TestCase
             'pickup_pin' => '12345',
         ])->assertOk()
             ->assertJsonPath('data.status', 'received')
+            ->assertJsonPath('data.shipping.delivery_note_number', $payload['delivery_note_number'])
+            ->assertJsonPath('data.shipping.items', $payload['items'])
             ->assertJsonPath('data.shipping.verification_status', 'picked_up');
 
         $this->assertDatabaseHas('shipping_pickup_status', [

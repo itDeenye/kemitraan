@@ -249,6 +249,18 @@ class AdminOrderResource extends ApiResource
     /** @return array<string, mixed>|null */
     private function shipping(Trx $trx, mixed $trackingOrderId, mixed $trackingNumber): ?array
     {
+        $deliveryNoteNumber = $this->deliveryNoteNumber($trx) ?? '';
+        $items = $this->transactionShippingItems($trx);
+
+        if ($items === []) {
+            $items = $trx->details->groupBy('trx_detail_product_id')->map(fn ($details): array => [
+                'product_id' => (int) $details->first()->trx_detail_product_id,
+                'quantity' => (int) $details->sum('trx_detail_qty'),
+                'batch_number' => '',
+                'expiry_date' => '',
+            ])->values()->all();
+        }
+
         return match ($trx->trx_shipping_method) {
             'courier_express' => $trx->shippingExpress ? [
                 'method' => 'courier_express',
@@ -258,8 +270,8 @@ class AdminOrderResource extends ApiResource
                 'pickup_method' => $trx->shippingExpress->shipping_courier_express_pickup_method,
                 'pickup_number' => $trx->shippingExpress->shipping_courier_express_pickup_number,
                 'pickup_schedule' => $trx->shippingExpress->shipping_courier_express_schedule_datetime,
-                'delivery_note_number' => $trx->shippingExpress->shipping_courier_express_delivery_note_number,
-                'items' => $this->shippingItems($trx->shippingExpress->details),
+                'delivery_note_number' => $deliveryNoteNumber,
+                'items' => $items,
                 'tracking_number' => $trx->shippingExpress->shipping_courier_express_awb ?: $trackingNumber,
                 'delivery_status' => $trx->shippingExpress->latestStatus
                     ?->shipping_courier_express_status_value,
@@ -272,8 +284,8 @@ class AdminOrderResource extends ApiResource
                 'service' => $trx->shippingInstant->shipping_courier_instant_expedition_service,
                 'vehicle' => $trx->shippingInstant->shipping_courier_instant_expedition_vehicle,
                 'order_id' => $trx->shippingInstant->shipping_courier_instant_order_id ?: $trackingOrderId,
-                'delivery_note_number' => $trx->shippingInstant->shipping_courier_instant_delivery_note_number,
-                'items' => $this->shippingItems($trx->shippingInstant->details),
+                'delivery_note_number' => $deliveryNoteNumber,
+                'items' => $items,
                 'tracking_number' => $trx->shippingInstant->shipping_courier_instant_awb ?: $trackingNumber,
                 'delivery_status' => $trx->shippingInstant->latestStatus
                     ?->shipping_courier_instant_status_value,
@@ -288,8 +300,8 @@ class AdminOrderResource extends ApiResource
                 'method' => 'courier_manual',
                 'courier' => $trx->shippingManual->shipping_courier_manual_name,
                 'service' => $trx->shippingManual->shipping_courier_manual_service,
-                'delivery_note_number' => $trx->shippingManual->shipping_courier_manual_delivery_note_number,
-                'items' => $this->shippingItems($trx->shippingManual->details),
+                'delivery_note_number' => $deliveryNoteNumber,
+                'items' => $items,
                 'tracking_number' => $trx->shippingManual->shipping_courier_manual_awb,
                 'cost' => (int) $trx->shippingManual->shipping_courier_manual_price,
                 'insurance' => (int) ($trx->shippingManual->shipping_courier_manual_insurance ?? 0),
@@ -299,8 +311,8 @@ class AdminOrderResource extends ApiResource
             ] : null,
             'pickup' => $trx->shippingPickup ? [
                 'method' => 'pickup',
-                'delivery_note_number' => $trx->shippingPickup->shipping_pickup_delivery_note_number,
-                'items' => $this->shippingItems($trx->shippingPickup->details),
+                'delivery_note_number' => $deliveryNoteNumber,
+                'items' => $items,
                 'schedule_at' => $trx->shippingPickup->shipping_pickup_schedule_datetime,
                 'verification_status' => $trx->shippingPickup->latestStatus?->shipping_pickup_status_value,
             ] : null,
