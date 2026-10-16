@@ -120,6 +120,10 @@ export interface MonthlyRewardGrowthResponse {
     success: boolean;
     message: string;
     data: {
+        reward_access: {
+            sharing_profit: boolean;
+            stockist_voucher: boolean;
+        };
         period: {
             year: number;
             month: number;
@@ -150,6 +154,23 @@ export interface MonthlyRewardGrowthResponse {
         };
         series: MonthlyRewardGrowthSeriesItem[];
     };
+}
+
+export interface PointHistoryItem {
+    id: number;
+    transaction: { id: number; code: string | null; is_preorder: boolean };
+    quantity: number;
+    monthly_points: number;
+    annual_points: number;
+    approved_at: string;
+}
+
+export interface PointHistoryResponse {
+    success: boolean;
+    message: string;
+    summary: { monthly_points: number; annual_points: number; transaction_count: number };
+    available_years: number[];
+    data: { results: PointHistoryItem[]; pagination: DataTablePagination };
 }
 
 export interface StockistRewardResponse {

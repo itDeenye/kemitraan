@@ -18,12 +18,16 @@
                     {{ rewardMinimumLabel }}
                 </small>
             </div>
+            <button class="point-history-link" type="button" @click="showPointHistory">
+                <span><v-icon icon="mdi-history" size="16" /> Riwayat Poin</span>
+                <v-icon icon="mdi-chevron-right" size="18" />
+            </button>
         </div>
 
         <div class="section-heading mt-6">
             <h3>Jenis Reward</h3>
         </div>
-        <div class="quick-grid">
+        <div class="quick-grid" :style="{ gridTemplateColumns: `repeat(${rewardColumnCount}, minmax(0, 1fr))` }">
             <button
                 class="quick-item flow-link"
                 type="button"
@@ -45,6 +49,7 @@
                 Tahunan
             </button>
             <button
+                v-if="growthData?.reward_access?.stockist_voucher"
                 class="quick-item flow-link"
                 type="button"
                 @click="router.push('/member/rewards/stockist')"
@@ -55,6 +60,7 @@
                 Voucher
             </button>
             <button
+                v-if="growthData?.reward_access?.sharing_profit"
                 class="quick-item flow-link"
                 type="button"
                 @click="router.push('/member/rewards/sharing')"
@@ -272,6 +278,18 @@ const growthData = ref<MonthlyRewardGrowthResponse["data"] | null>(null);
 const isLoading = ref(true);
 const activeMonth = ref<number | null>(null);
 
+const rewardColumnCount = computed(() => 2
+    + Number(Boolean(growthData.value?.reward_access?.stockist_voucher))
+    + Number(Boolean(growthData.value?.reward_access?.sharing_profit)));
+
+function showPointHistory() {
+    const summary = growthData.value?.summary;
+    router.push({
+        path: "/member/rewards/points",
+        query: summary ? { year: summary.year, month: summary.month } : {},
+    });
+}
+
 const rewardPointLabel = computed(() => {
     return `${growthData.value?.summary.total_points || 0} poin terkumpul`;
 });
@@ -338,3 +356,23 @@ const fetchGrowth = async () => {
 
 onMounted(fetchGrowth);
 </script>
+
+<style scoped>
+.point-history-link {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid rgb(255 255 255 / 25%);
+    color: white;
+    font-size: 12px;
+    text-align: left;
+}
+.point-history-link span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+</style>

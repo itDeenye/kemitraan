@@ -212,7 +212,7 @@
                 </div>
             </div>
             <div
-                v-if="isDistributorOrAgent"
+                v-if="authStore.user?.member?.reward_access?.stockist_voucher"
                 class="list-row flow-link"
                 @click="router.push('/member/rewards/stockist')"
             >
@@ -228,7 +228,7 @@
                 </div>
             </div>
             <div
-                v-if="isDistributorOrAgent"
+                v-if="authStore.user?.member?.reward_access?.sharing_profit"
                 class="list-row flow-link"
                 @click="router.push('/member/rewards/sharing')"
             >
@@ -338,6 +338,7 @@ const isAgentOrReseller = computed(() => {
 });
 
 onMounted(async () => {
+    await authStore.fetchUser();
     if (!isDistributor.value) return;
 
     try {

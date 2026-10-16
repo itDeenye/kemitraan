@@ -499,6 +499,13 @@ declare module 'vue-router/auto-routes' {
       { id: ParamValue<false> },
       | never
     >,
+    '/member/rewards/points': RouteRecordInfo<
+      '/member/rewards/points',
+      '/member/rewards/points',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     '/member/rewards/sharing/': RouteRecordInfo<
       '/member/rewards/sharing/',
       '/member/rewards/sharing',
@@ -1078,6 +1085,12 @@ declare module 'vue-router/auto-routes' {
     'resources/js/member/pages/rewards/monthly/[id].vue': {
       routes:
         | '/member/rewards/monthly/[id]'
+      views:
+        | never
+    }
+    'resources/js/member/pages/rewards/points.vue': {
+      routes:
+        | '/member/rewards/points'
       views:
         | never
     }

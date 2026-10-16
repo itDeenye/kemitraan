@@ -258,6 +258,21 @@ class MemberSalesService
                         ->where("{$trxTable}.trx_type", 'stock');
                 });
             })
+            ->orderByRaw("CASE WHEN
+                ({$trxTable}.trx_payment_method = 'transfer'
+                    AND {$trxTable}.trx_status = 'waiting_payment_approval')
+                OR ({$trxTable}.trx_status = 'processing' AND child_summary.child_count IS NULL)
+                OR ({$trxTable}.trx_parent_trx_id = 0
+                    AND {$trxTable}.trx_preorder_fulfillment_mode = 'upline_transit'
+                    AND {$trxTable}.trx_shipping_method = 'pickup'
+                    AND ({$trxTable}.trx_status = 'ready_to_pickup'
+                        OR ({$trxTable}.trx_status = 'processing' AND {$terminalReadyForArrivalSql})))
+                OR ({$trxTable}.trx_is_preorder = 0 AND {$trxTable}.trx_status = 'waiting_payment')
+                OR ({$trxTable}.trx_is_preorder = 1 AND child_summary.child_count IS NULL
+                    AND {$trxTable}.trx_status IN (
+                        'waiting_stock_screening', 'waiting_payment', 'waiting_payment_approval', 'processing'
+                    ))
+                THEN 0 ELSE 1 END")
             ->search(['code', 'customer_name', 'customer_whatsapp', 'buyer_member_name', 'buyer_member_whatsapp'])
             ->defaultSort('-id');
 

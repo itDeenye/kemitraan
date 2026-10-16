@@ -5,6 +5,7 @@ namespace Tests\Feature\Api\V1\Member;
 use App\Models\Member;
 use App\Models\MemberAccount;
 use App\Models\MemberGroup;
+use App\Models\Stockist;
 use App\Models\Trx;
 use App\Models\TrxSpreadPayment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -57,6 +58,17 @@ class MemberSharingProfitTest extends TestCase
     private function createMemberAccount(string $code, string $name): MemberAccount
     {
         $member = $this->createMember($code, $name);
+        Stockist::query()->create([
+            'stockist_member_id' => $member->getKey(),
+            'stockist_name' => $name,
+            'stockist_note' => '',
+            'stockist_is_active' => 1,
+            'stockist_is_deleted' => 0,
+            'stockist_input_datetime' => now(),
+        ]);
+        $this->createMember($code.'-DST', $name.' Distributor')->update([
+            'member_parent_member_id' => $member->getKey(),
+        ]);
         $group = MemberGroup::query()->create([
             'member_group_name' => $code,
             'member_group_is_active' => 1,

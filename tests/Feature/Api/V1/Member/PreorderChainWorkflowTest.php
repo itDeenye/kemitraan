@@ -13,6 +13,7 @@ use App\Models\ProductCategory;
 use App\Models\ProductPrice;
 use App\Models\SiteAdministrator;
 use App\Models\SiteAdministratorGroup;
+use App\Models\Stockist;
 use App\Models\Trx;
 use App\Models\TrxPaymentTransfer;
 use App\Services\Report\AdminMemberBatchStockReportService;
@@ -21,6 +22,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class PreorderChainWorkflowTest extends TestCase
@@ -1923,6 +1925,58 @@ class PreorderChainWorkflowTest extends TestCase
         $this->assertDatabaseCount('member_point_transaction', 3);
         $this->assertDatabaseCount('reward_point_annual_log', 3);
         $this->assertDatabaseCount('member_achievement', 0);
+    }
+
+    #[DataProvider('preorderSpreadEligibilityCases')]
+    public function test_preorder_generated_spread_requires_active_distributor_stockist_parent(
+        ?int $active,
+        int $deleted,
+        bool $eligible,
+    ): void {
+        [$parent] = $this->createMember(1, 1, 0, 'DST', 'Parent');
+        [$distributor] = $this->createMember(2, 1, 1, 'DST', 'Distributor');
+        [$agent, $account] = $this->createMember(3, 2, 2, 'AGT', 'Agent');
+        $product = $this->createReferences([$parent, $distributor, $agent]);
+        if ($active !== null) {
+            Stockist::query()->create([
+                'stockist_member_id' => $parent->getKey(),
+                'stockist_name' => $parent->member_name,
+                'stockist_note' => '',
+                'stockist_is_active' => $active,
+                'stockist_is_deleted' => $deleted,
+                'stockist_input_datetime' => now(),
+            ]);
+        }
+        $this->actingAs($account, 'member_api');
+
+        $order = $this->postJson('/api/v1/member/purchases/orders', [
+            'bank_account_id' => $this->bankAccountId($distributor),
+            'shipping_method' => 'pickup',
+            'items' => [['product_id' => $product->getKey(), 'quantity' => 2]],
+        ])->assertOk();
+
+        $terminal = Trx::query()->where('trx_parent_trx_id', $order->json('data.id'))->sole();
+        $this->assertSame('warehouse', $terminal->trx_seller_type);
+        $this->assertSame($distributor->getKey(), $terminal->trx_buyer_id);
+        $this->assertDatabaseCount('trx_spread_payment', $eligible ? 1 : 0);
+        if ($eligible) {
+            $this->assertDatabaseHas('trx_spread_payment', [
+                'trx_spread_payment_trx_id' => $terminal->getKey(),
+                'trx_spread_payment_upline_id' => $parent->getKey(),
+                'trx_spread_payment_member_id' => $distributor->getKey(),
+                'trx_spread_payment_amount' => 2000,
+            ]);
+        }
+    }
+
+    public static function preorderSpreadEligibilityCases(): array
+    {
+        return [
+            'non-stockist distributor' => [null, 0, false],
+            'inactive stockist distributor' => [0, 0, false],
+            'deleted stockist distributor' => [1, 1, false],
+            'eligible distributor stockist' => [1, 0, true],
+        ];
     }
 
     /** @return array{Member, MemberAccount} */

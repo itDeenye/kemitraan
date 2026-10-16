@@ -181,6 +181,17 @@ class MemberGoodsReceiveService
                     )
                 )
             )")
+            ->orderByRaw("CASE WHEN {$receiveTable}.goods_receive_id IS NULL
+                AND {$trxTable}.trx_status = 'received' AND (
+                    {$trxTable}.trx_is_preorder = 1
+                    OR {$trxTable}.trx_shipping_method = 'courier_manual'
+                    OR ({$trxTable}.trx_shipping_method = 'pickup'
+                        AND pickup_summary.pickup_status = 'picked_up')
+                    OR ({$trxTable}.trx_shipping_method = 'courier_express'
+                        AND express_status IN ('finished_packages', 'completed'))
+                    OR ({$trxTable}.trx_shipping_method = 'courier_instant'
+                        AND instant_status IN ('finished_packages', 'completed'))
+                ) THEN 0 ELSE 1 END")
             ->search(['code', 'seller_code', 'seller_name', 'warehouse_name', 'receive_number'])
             ->defaultSort('-id')
             ->get($params);

@@ -478,9 +478,12 @@ class MemberPurchaseOrderResource extends ApiResource
         bool $isPreorder,
         int $parentTransactionId,
     ): array {
-        $isUplineTransitRoot = $trx !== null
-            && (int) $trx->trx_parent_trx_id === 0
-            && $trx->trx_preorder_fulfillment_mode === 'upline_transit';
+        $isUplineTransitRoot = $parentTransactionId === 0
+            && ($trx?->trx_preorder_fulfillment_mode
+                ?? $this->resource->preorder_fulfillment_mode
+                ?? null) === 'upline_transit';
+        $pickupPin = $trx?->shippingPickup?->shipping_pickup_pin
+            ?? ($this->resource->pickup_pin ?? null);
         $canReceive = $status === 'received' && ($isPreorder || match ($shippingMethod) {
             'courier_express', 'courier_instant' => in_array(
                 $shippingStatus,
@@ -508,6 +511,7 @@ class MemberPurchaseOrderResource extends ApiResource
                     ? $status === 'ready_to_pickup'
                     : $status === 'processing')
                 && (! $isPreorder || $parentTransactionId === 0)
+                && filled($pickupPin)
                 && ! in_array($pickupStatus, ['picked_up', 'completed'], true),
             'can_verify_payment' => false,
             'can_ship' => false,

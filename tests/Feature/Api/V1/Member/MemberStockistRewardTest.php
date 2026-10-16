@@ -6,6 +6,7 @@ use App\Models\Member;
 use App\Models\MemberAccount;
 use App\Models\MemberGroup;
 use App\Models\RewardStockist;
+use App\Models\Stockist;
 use App\Models\Trx;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -164,6 +165,14 @@ class MemberStockistRewardTest extends TestCase
             'member_mobilephone' => '08123456789',
             'member_join_datetime' => now(),
             'member_status' => 1,
+        ]);
+        Stockist::query()->create([
+            'stockist_member_id' => $member->getKey(),
+            'stockist_name' => 'Test Stockist',
+            'stockist_note' => '',
+            'stockist_is_active' => 1,
+            'stockist_is_deleted' => 0,
+            'stockist_input_datetime' => now(),
         ]);
 
         return MemberAccount::query()->create([

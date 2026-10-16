@@ -12,6 +12,7 @@ use App\Models\RewardStockist;
 use App\Models\Trx;
 use App\Models\TrxDetail;
 use App\Models\TrxSpreadPayment;
+use App\Services\Reward\MemberRewardEligibility;
 use App\Support\BusinessConfig;
 use App\Support\PointCalculation;
 use Carbon\CarbonImmutable;
@@ -21,6 +22,8 @@ use Illuminate\Support\Facades\DB;
 
 class MonthlyPartnershipClosingService
 {
+    public function __construct(private readonly MemberRewardEligibility $rewardEligibility) {}
+
     private const MEMBER_TYPES = ['distributor', 'agent', 'reseller'];
 
     private const PURCHASED_RETAIL_STATUSES = [
@@ -259,7 +262,7 @@ class MonthlyPartnershipClosingService
 
     private function storeStockistReward(Member $member, CarbonImmutable $period, int $amount): bool
     {
-        if (! $member->stockist) {
+        if (! $this->rewardEligibility->canAccessStockistVoucher($member)) {
             return false;
         }
 
@@ -298,14 +301,23 @@ class MonthlyPartnershipClosingService
     {
         $transactions = Trx::query()
             ->whereIn('trx_seller_type', self::MEMBER_TYPES)
-            ->whereIn('trx_buyer_type', self::MEMBER_TYPES)
+            ->where('trx_buyer_type', 'distributor')
             ->where('trx_type', 'stock')
             ->whereIn('trx_status', ['received', 'completed'])
             ->whereBetween('trx_datetime', [$period->startOfMonth(), $period->endOfMonth()])
             ->orderBy('trx_id')
             ->get();
         $sellerIds = $transactions->pluck('trx_seller_id')->unique()->values();
-        $sellers = Member::query()->whereIn('member_id', $sellerIds)->get()->keyBy('member_id');
+        $sellers = Member::query()
+            ->with(['level', 'stockist'])
+            ->whereIn('member_id', $sellerIds)
+            ->get()
+            ->keyBy('member_id');
+        $buyers = Member::query()
+            ->with('level')
+            ->whereIn('member_id', $transactions->pluck('trx_buyer_id')->unique())
+            ->get()
+            ->keyBy('member_id');
         $bankAccounts = MemberBankAccount::query()
             ->whereIn('member_bank_account_member_id', $sellerIds)
             ->where('member_bank_account_is_active', 1)
@@ -319,7 +331,14 @@ class MonthlyPartnershipClosingService
 
         foreach ($transactions as $transaction) {
             $seller = $sellers->get($transaction->trx_seller_id);
-            if (! $seller) {
+            $buyer = $buyers->get($transaction->trx_buyer_id);
+            if (! $seller
+                || ! $buyer
+                || (int) $buyer->member_status !== 1
+                || $buyer->level?->member_level_code !== 'DST'
+                || ! $buyer->level->member_level_is_active
+                || (int) $buyer->member_parent_member_id !== (int) $seller->getKey()
+                || ! $this->rewardEligibility->canAccessStockistVoucher($seller)) {
                 continue;
             }
 

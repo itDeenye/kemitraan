@@ -278,6 +278,9 @@ class MemberMonthlyRewardService
                 },
             ],
             'series' => $series,
+            'reward_access' => app(MemberRewardEligibility::class)->access(
+                Member::query()->findOrFail($memberId),
+            ),
         ];
     }
 

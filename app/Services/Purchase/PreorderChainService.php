@@ -30,6 +30,7 @@ use App\Models\WarehouseStock;
 use App\Models\WarehouseStockLog;
 use App\Services\Inventory\StockAllocationService;
 use App\Services\Reward\MemberPointService;
+use App\Services\Reward\MemberRewardEligibility;
 use App\Services\Transaction\TransactionCodeService;
 use App\Support\BusinessConfig;
 use Illuminate\Support\Collection;
@@ -42,6 +43,7 @@ class PreorderChainService
         private readonly TransactionCodeService $transactionCodeService,
         private readonly StockAllocationService $stockAllocationService,
         private readonly MemberPointService $memberPointService,
+        private readonly MemberRewardEligibility $rewardEligibility,
     ) {}
 
     /**
@@ -1325,7 +1327,7 @@ class PreorderChainService
 
     private function spreadPaymentUpline(Member $buyer): ?Member
     {
-        if ($buyer->level?->member_level_code !== 'DST') {
+        if ((int) $buyer->member_status !== 1 || $buyer->level?->member_level_code !== 'DST') {
             return null;
         }
 
@@ -1335,7 +1337,7 @@ class PreorderChainService
             return null;
         }
 
-        return $parent->level?->member_level_code === 'DST' ? $parent : null;
+        return $this->rewardEligibility->canAccessSharingProfit($parent) ? $parent : null;
     }
 
     private function copyShipping(

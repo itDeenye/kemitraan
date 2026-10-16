@@ -32,6 +32,7 @@ use App\Models\WarehouseStock;
 use App\Services\Inventory\StockAllocationService;
 use App\Services\Notification\MemberNotificationService;
 use App\Services\Notification\PartnershipEmailService;
+use App\Services\Reward\MemberRewardEligibility;
 use App\Services\Shipping\MemberShippingService;
 use App\Services\Transaction\TransactionCodeService;
 use App\Support\BusinessConfig;
@@ -53,6 +54,7 @@ class MemberPurchaseService
         private readonly PreorderPaymentSequenceGuard $preorderPaymentSequenceGuard,
         private readonly PartnershipEmailService $partnershipEmailService,
         private readonly MemberNotificationService $memberNotificationService,
+        private readonly MemberRewardEligibility $rewardEligibility,
     ) {}
 
     /**
@@ -115,6 +117,7 @@ class MemberPurchaseService
             "{$trxTable}.trx_code as code",
             "{$trxTable}.trx_type as order_type",
             "{$trxTable}.trx_parent_trx_id as parent_transaction_id",
+            "{$trxTable}.trx_preorder_fulfillment_mode as preorder_fulfillment_mode",
             "{$trxTable}.trx_seller_type as seller_type",
             "{$trxTable}.trx_seller_id as seller_id",
             'seller_member.member_code as seller_code',
@@ -180,6 +183,7 @@ class MemberPurchaseService
             "{$paymentTable}.payment_transfer_datetime as payment_transferred_at",
             "{$paymentTable}.payment_transfer_approval_datetime as payment_verified_at",
             'pickup_summary.pickup_status as pickup_status',
+            'list_pickup.shipping_pickup_pin as pickup_pin',
             'parent_payment.payment_transfer_approval_status as parent_payment_status',
             'list_express.shipping_courier_express_origin_name as shipment_origin_name_express',
             'list_express.shipping_courier_express_origin_phone as shipment_origin_phone_express',
@@ -274,6 +278,33 @@ class MemberPurchaseService
             ->whereIn("{$trxTable}.trx_buyer_type", ['distributor', 'agent', 'reseller'])
             ->where("{$trxTable}.trx_type", 'stock')
             ->whereRaw($this->visiblePurchaseOrderCondition($trxTable))
+            ->orderByRaw("CASE WHEN
+                ({$trxTable}.trx_status = 'waiting_payment'
+                    AND ({$trxTable}.trx_parent_trx_id = 0
+                        OR parent_payment.payment_transfer_approval_status = 'approved'))
+                OR ({$trxTable}.trx_status = 'waiting_stock_screening'
+                    AND {$trxTable}.trx_is_preorder = 0 AND {$trxTable}.trx_parent_trx_id = 0)
+                OR ({$trxTable}.trx_status = 'received' AND (
+                    {$trxTable}.trx_is_preorder = 1
+                    OR {$trxTable}.trx_shipping_method = 'courier_manual'
+                    OR ({$trxTable}.trx_shipping_method = 'pickup'
+                        AND pickup_summary.pickup_status = 'picked_up')
+                    OR ({$trxTable}.trx_shipping_method = 'courier_express'
+                        AND express_status IN ('finished_packages', 'completed'))
+                    OR ({$trxTable}.trx_shipping_method = 'courier_instant'
+                        AND instant_status IN ('finished_packages', 'completed'))
+                ))
+                OR ({$trxTable}.trx_shipping_method = 'pickup'
+                    AND ({$trxTable}.trx_is_preorder = 0 OR {$trxTable}.trx_parent_trx_id = 0)
+                    AND (({$trxTable}.trx_parent_trx_id = 0
+                            AND {$trxTable}.trx_preorder_fulfillment_mode = 'upline_transit'
+                            AND {$trxTable}.trx_status = 'ready_to_pickup')
+                        OR (({$trxTable}.trx_parent_trx_id <> 0
+                                OR {$trxTable}.trx_preorder_fulfillment_mode <> 'upline_transit')
+                            AND {$trxTable}.trx_status = 'processing'))
+                    AND NULLIF(TRIM(list_pickup.shipping_pickup_pin), '') IS NOT NULL
+                    AND COALESCE(pickup_summary.pickup_status, '') NOT IN ('picked_up', 'completed'))
+                THEN 0 ELSE 1 END")
             ->search(['code', 'seller_code', 'seller_name', 'warehouse_name'])
             ->defaultSort('-id')
             ->get($params);
@@ -1026,7 +1057,7 @@ class MemberPurchaseService
 
     private function spreadPaymentUpline(Member $member): ?Member
     {
-        if ($member->level?->member_level_code !== 'DST') {
+        if ((int) $member->member_status !== 1 || $member->level?->member_level_code !== 'DST') {
             return null;
         }
 
@@ -1036,11 +1067,15 @@ class MemberPurchaseService
             return null;
         }
 
-        return $parent->level?->member_level_code === 'DST' ? $parent : null;
+        return $this->rewardEligibility->canAccessSharingProfit($parent) ? $parent : null;
     }
 
     private function availableVoucher(Member $member, bool $lock = false): ?RewardStockist
     {
+        if (! $this->rewardEligibility->canAccessStockistVoucher($member)) {
+            return null;
+        }
+
         $query = RewardStockist::query()
             ->where('reward_stockist_member_id', $member->getKey())
             ->where('reward_stockist_used_trx_id', 0)

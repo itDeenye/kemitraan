@@ -6,7 +6,9 @@ use App\Exceptions\ProcessException;
 use App\Models\Customer;
 use App\Models\Member;
 use App\Models\MemberLevel;
+use App\Models\ProductPrice;
 use App\Models\Trx;
+use App\Models\TrxDetail;
 use App\Support\MediaUrl;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -23,6 +25,14 @@ class MemberDashboardService
         [$dateFrom, $dateTo] = $this->period($params);
         $sellerType = $this->memberType($member->level?->member_level_code);
 
+        $invalidStatuses = [
+            'waiting_stock_screening',
+            'waiting_payment',
+            'waiting_payment_approval',
+            'rejected',
+            'cancelled',
+        ];
+
         $salesSummary = Trx::query()
             ->where('trx_seller_id', $memberId)
             ->where('trx_seller_type', $sellerType)
@@ -33,6 +43,28 @@ class MemberDashboardService
                 .'THEN trx_grand_total_price ELSE 0 END), 0) as product_value'
             )
             ->first();
+
+        $trxTable = (new Trx)->getTable();
+        $detailTable = (new TrxDetail)->getTable();
+        $priceTable = (new ProductPrice)->getTable();
+        $salesMargin = Trx::query()
+            ->from("{$trxTable} as sales")
+            ->join("{$detailTable} as detail", 'detail.trx_detail_trx_id', '=', 'sales.trx_id')
+            ->leftJoin("{$priceTable} as seller_price", function ($join) use ($member): void {
+                $join->on('seller_price.product_price_product_id', '=', 'detail.trx_detail_product_id')
+                    ->where('seller_price.product_price_member_level_id', $member->member_member_level_id);
+            })
+            ->where('sales.trx_seller_id', $memberId)
+            ->where('sales.trx_seller_type', $sellerType)
+            ->whereBetween('sales.trx_datetime', [$dateFrom, $dateTo])
+            ->whereNotIn('sales.trx_status', $invalidStatuses)
+            ->selectRaw(
+                'COALESCE(SUM(CASE '
+                .'WHEN detail.trx_detail_nett_price > COALESCE(seller_price.product_price_value, detail.trx_detail_nett_price) '
+                .'THEN (detail.trx_detail_nett_price - COALESCE(seller_price.product_price_value, detail.trx_detail_nett_price)) '
+                .'* detail.trx_detail_qty ELSE 0 END), 0) as value'
+            )
+            ->value('value');
 
         $purchaseProductValue = Trx::query()
             ->where('trx_buyer_id', $memberId)
@@ -49,7 +81,7 @@ class MemberDashboardService
 
         $salesProductValue = (int) ($salesSummary?->product_value ?? 0);
         $purchaseProductValue = (int) $purchaseProductValue;
-        $grossProfit = max(0, $salesProductValue - $purchaseProductValue);
+        $grossProfit = (int) $salesMargin;
 
         return [
             'period' => [

@@ -5,6 +5,7 @@ namespace App\Http\Resources\Api\V1\Member;
 use App\Http\Resources\ApiResource;
 use App\Models\MemberAccount;
 use App\Services\Partnership\MemberPasswordService;
+use App\Services\Reward\MemberRewardEligibility;
 use App\Support\MediaUrl;
 use Illuminate\Http\Request;
 
@@ -45,6 +46,10 @@ class AuthenticatedMemberResource extends ApiResource
                 ] : null,
                 'image' => MediaUrl::publicUrl($member?->member_image),
                 'is_stockist' => $member?->stockist !== null,
+                'reward_access' => $member ? app(MemberRewardEligibility::class)->access($member) : [
+                    'sharing_profit' => false,
+                    'stockist_voucher' => false,
+                ],
             ],
         ];
     }

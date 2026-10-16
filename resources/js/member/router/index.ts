@@ -94,6 +94,7 @@ router.beforeEach(async (to, _from, next) => {
             '/member/transactions/sales/shipping': 'Pengiriman Pesanan',
             '/member/transactions/sales/[id]': 'Detail Pesanan',
             '/member/rewards': 'Komisi',
+            '/member/rewards/points': 'Riwayat Poin',
             '/member/rewards/monthly': 'Reward Bulanan',
             '/member/rewards/monthly/[id]': 'Detail Reward',
             '/member/rewards/annual': 'Reward Tahunan',
@@ -186,6 +187,19 @@ router.beforeEach(async (to, _from, next) => {
         if (!isValid) {
             sessionStorage.setItem('member_intended_url', to.fullPath);
             return next({ path: '/member/login' })
+        }
+    }
+
+    const rewardAccessKey = to.path === '/member/rewards/stockist' || to.path.startsWith('/member/rewards/stockist/')
+        ? 'stockist_voucher'
+        : to.path === '/member/rewards/sharing' || to.path.startsWith('/member/rewards/sharing/')
+            ? 'sharing_profit'
+            : null
+    if (rewardAccessKey) {
+        const isValid = await authStore.fetchUser()
+        if (!isValid) return next({ path: '/member/login' })
+        if (!authStore.user?.member?.reward_access?.[rewardAccessKey]) {
+            return next({ path: '/member/rewards' })
         }
     }
 

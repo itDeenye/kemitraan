@@ -1,6 +1,7 @@
 import api from '@/shared/services/api';
 import type { 
     AnnualRewardResponse, 
+    PointHistoryResponse,
     MonthlyRewardGrowthResponse,
     DownlineMonthlyRewardResponse,
     MonthlyRewardResponse, 
@@ -16,6 +17,11 @@ interface RewardListParams {
 }
 
 class RewardService {
+    async getPointHistory(params: { year?: number; month?: number; page?: number; limit?: number } = {}): Promise<PointHistoryResponse> {
+        const { data } = await api.get('/member/rewards/points', { params });
+        return data;
+    }
+
     async getMonthlyRewards(params: RewardListParams = {}): Promise<MonthlyRewardResponse> {
         const { data } = await api.get('/member/rewards/monthly', { params });
         return data;

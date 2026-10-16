@@ -5,6 +5,8 @@ namespace Tests\Feature\Api\V1\Member;
 use App\Models\Member;
 use App\Models\MemberAccount;
 use App\Models\MemberGroup;
+use App\Models\Product;
+use App\Models\ProductPrice;
 use App\Models\Trx;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -33,8 +35,8 @@ class MemberDashboardTest extends TestCase
             'member_status' => 1,
             'member_join_datetime' => now(),
         ]);
-        $this->transaction($memberId, $downline->getKey(), 'agent', 'DASHBOARD-PARTNERSHIP-SALE', 1000000);
-        $this->transaction($memberId, 1, 'customer', 'DASHBOARD-CUSTOMER-SALE', 500000);
+        $this->transaction($memberId, $downline->getKey(), 'agent', 'DASHBOARD-PARTNERSHIP-SALE', 1000000, 600000);
+        $this->transaction($memberId, 1, 'customer', 'DASHBOARD-CUSTOMER-SALE', 500000, 250000);
         Trx::query()->create([
             'trx_code' => 'DASHBOARD-PURCHASE',
             'trx_seller_type' => 'warehouse',
@@ -57,7 +59,7 @@ class MemberDashboardTest extends TestCase
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.member.id', $memberId)
             ->assertJsonPath('data.member.level.code', 'DST')
-            ->assertJsonPath('data.summary.gross_profit', 750000)
+            ->assertJsonPath('data.summary.gross_profit', 650000)
             ->assertJsonPath('data.summary.purchases.product_value', 750000)
             ->assertJsonPath('data.summary.sales.product_value', 1500000)
             ->assertJsonMissingPath('data.summary.stock_quantity')
@@ -70,7 +72,7 @@ class MemberDashboardTest extends TestCase
     {
         $account = $this->createMemberAccount();
         $memberId = $account->member_account_member_id;
-        $this->transaction($memberId, 1, 'customer', 'DASHBOARD-SMALL-SALE', 1500000);
+        $this->transaction($memberId, 1, 'customer', 'DASHBOARD-SMALL-SALE', 1500000, 1750000);
         Trx::query()->create([
             'trx_code' => 'DASHBOARD-BIGGER-PURCHASE',
             'trx_seller_type' => 'warehouse',
@@ -126,8 +128,19 @@ class MemberDashboardTest extends TestCase
         string $buyerType,
         string $code,
         int $amount,
+        int $sellerPrice,
     ): Trx {
-        return Trx::query()->create([
+        $product = Product::query()->create([
+            'product_code' => $code,
+            'product_name' => $code,
+            'product_customer_price' => $amount,
+        ]);
+        ProductPrice::query()->create([
+            'product_price_product_id' => $product->getKey(),
+            'product_price_member_level_id' => 1,
+            'product_price_value' => $sellerPrice,
+        ]);
+        $transaction = Trx::query()->create([
             'trx_code' => $code,
             'trx_seller_type' => 'distributor',
             'trx_seller_id' => $sellerId,
@@ -142,5 +155,15 @@ class MemberDashboardTest extends TestCase
             'trx_status_datetime' => now(),
             'trx_datetime' => now(),
         ]);
+        $transaction->details()->create([
+            'trx_detail_product_id' => $product->getKey(),
+            'trx_detail_product_code' => $product->product_code,
+            'trx_detail_product_name' => $product->product_name,
+            'trx_detail_product_price' => $amount,
+            'trx_detail_nett_price' => $amount,
+            'trx_detail_qty' => 1,
+        ]);
+
+        return $transaction;
     }
 }

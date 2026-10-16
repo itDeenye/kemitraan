@@ -44,6 +44,10 @@ export interface AuthUser {
         }
         image: string | null
         is_stockist: boolean
+        reward_access?: {
+            sharing_profit: boolean
+            stockist_voucher: boolean
+        }
     }
 }
 

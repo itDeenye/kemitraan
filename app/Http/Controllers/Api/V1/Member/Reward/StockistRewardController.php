@@ -8,18 +8,23 @@ use App\Http\Resources\Api\V1\Member\MemberStockistRewardResource;
 use App\Http\Resources\DataTableResource;
 use App\Models\MemberAccount;
 use App\Models\RewardStockist;
+use App\Services\Reward\MemberRewardEligibility;
 use App\Services\Reward\MemberStockistRewardService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class StockistRewardController extends Controller
 {
-    public function __construct(private readonly MemberStockistRewardService $rewardService) {}
+    public function __construct(
+        private readonly MemberStockistRewardService $rewardService,
+        private readonly MemberRewardEligibility $rewardEligibility,
+    ) {}
 
     public function index(ListStockistRewardsRequest $request): DataTableResource
     {
         /** @var MemberAccount $account */
         $account = $request->user();
+        abort_unless($this->rewardEligibility->canAccessStockistVoucher($account->member), 403);
         $params = $request->validated();
         $memberId = $account->member_account_member_id;
 
@@ -53,6 +58,8 @@ class StockistRewardController extends Controller
                 'error_code' => 'not_found',
             ], 404);
         }
+
+        abort_unless($this->rewardEligibility->canAccessStockistVoucher($account->member), 403);
 
         return (new MemberStockistRewardResource($this->rewardService->stockistReward($stockist_reward)))
             ->additional(['success' => true, 'message' => 'Detail voucher reward stockist berhasil dimuat.']);

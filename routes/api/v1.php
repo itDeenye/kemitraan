@@ -67,6 +67,7 @@ use App\Http\Controllers\Api\V1\Member\Purchase\PaymentController as MemberPurch
 use App\Http\Controllers\Api\V1\Member\Return\ReturnController as MemberReturnController;
 use App\Http\Controllers\Api\V1\Member\Reward\AnnualRewardController as MemberAnnualRewardController;
 use App\Http\Controllers\Api\V1\Member\Reward\MonthlyRewardController as MemberMonthlyRewardController;
+use App\Http\Controllers\Api\V1\Member\Reward\PointHistoryController as MemberPointHistoryController;
 use App\Http\Controllers\Api\V1\Member\Reward\SharingProfitController as MemberSharingProfitController;
 use App\Http\Controllers\Api\V1\Member\Reward\StockistRewardController as MemberStockistRewardController;
 use App\Http\Controllers\Api\V1\Member\SalesOrder\ArrivalController as MemberSaleArrivalController;
@@ -366,6 +367,7 @@ Route::prefix('v1')->middleware('throttle:dny-api')->group(function () use ($med
             Route::get('inventory/returns/{return}/shipping/schedules', [MemberReturnController::class, 'shippingSchedules']);
             Route::post('inventory/returns/{return}/ship', [MemberReturnController::class, 'ship']);
             Route::post('inventory/returns/{return}/replacement/receive', [MemberReturnController::class, 'complete']);
+            Route::get('rewards/points', [MemberPointHistoryController::class, 'index']);
             Route::get('rewards/annual', [MemberAnnualRewardController::class, 'index']);
             Route::get('rewards/monthly', [MemberMonthlyRewardController::class, 'index']);
             Route::get('rewards/monthly/downlines', [MemberMonthlyRewardController::class, 'downlines']);

@@ -14,12 +14,14 @@ use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\ProductPrice;
 use App\Models\RewardStockist;
+use App\Models\Stockist;
 use App\Models\Trx;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class MemberPurchaseWorkflowTest extends TestCase
@@ -136,6 +138,7 @@ class MemberPurchaseWorkflowTest extends TestCase
     public function test_checkout_records_voucher_id_and_value_on_transaction(): void
     {
         $account = $this->createMemberAccount();
+        $this->createStockist($account->member);
         [$product] = $this->createPurchaseReferences();
         $voucher = RewardStockist::query()->create([
             'reward_stockist_member_id' => 1,
@@ -180,6 +183,7 @@ class MemberPurchaseWorkflowTest extends TestCase
     {
         Mail::fake();
         $account = $this->createMemberAccount();
+        $this->createStockist($account->member);
         $this->createRegionalReferences();
         [$product] = $this->createPurchaseReferences();
         $product->forceFill([
@@ -1065,6 +1069,8 @@ class MemberPurchaseWorkflowTest extends TestCase
         $mainDistributorAccount = $this->createMemberAccount(1, 'DST-MAIN', 'purchase.main-distributor');
         $firstUpgradeAccount = $this->createMemberAccount(2, 'DST-UP-001', 'purchase.first-upgrade');
         $secondUpgradeAccount = $this->createMemberAccount(3, 'DST-UP-002', 'purchase.second-upgrade');
+        $this->createStockist($mainDistributorAccount->member);
+        $this->createStockist($firstUpgradeAccount->member);
         [$product] = $this->createPurchaseReferences();
         DB::table('warehouse_stock')
             ->where('warehouse_stock_warehouse_id', 1)
@@ -1259,6 +1265,86 @@ class MemberPurchaseWorkflowTest extends TestCase
         $this->getJson('/api/v1/member/purchases/orders/summary')
             ->assertOk()
             ->assertJsonPath('data.goods_receipts.ready_to_receive', 0);
+    }
+
+    #[DataProvider('ineligibleStockistCases')]
+    public function test_ineligible_distributor_cannot_see_or_use_historical_voucher(?int $active, int $deleted): void
+    {
+        $account = $this->createMemberAccount();
+        if ($active !== null) {
+            $this->createStockist($account->member, $active, $deleted);
+        }
+        [$product] = $this->createPurchaseReferences();
+        $voucher = RewardStockist::query()->create([
+            'reward_stockist_member_id' => $account->member->getKey(),
+            'reward_stockist_year' => now()->year,
+            'reward_stockist_month' => now()->month,
+            'reward_stockist_total_trx_amount' => 50000000,
+            'reward_stockist_bonus_value' => 25000,
+            'reward_stockist_used_value' => 0,
+            'reward_stockist_used_trx_id' => 0,
+            'reward_stockist_expiry_date' => today()->addMonth(),
+        ]);
+        $this->actingAs($account, 'member_api');
+
+        $this->getJson('/api/v1/member/purchases/options')
+            ->assertOk()
+            ->assertJsonPath('data.voucher', null);
+        $this->postJson('/api/v1/member/purchases/orders', [
+            'bank_company_id' => 1,
+            'shipping_method' => 'pickup',
+            'use_voucher' => true,
+            'items' => [['product_id' => $product->getKey(), 'quantity' => 1]],
+        ])->assertUnprocessable();
+
+        $this->assertDatabaseCount('trx', 0);
+        $this->assertSame(0, (int) $voucher->fresh()->reward_stockist_used_value);
+        $this->assertSame(25000, (int) $voucher->fresh()->reward_stockist_bonus_value);
+    }
+
+    #[DataProvider('ineligibleStockistCases')]
+    public function test_distributor_purchase_does_not_create_spread_for_ineligible_parent(?int $active, int $deleted): void
+    {
+        $parent = $this->createMemberAccount();
+        $account = $this->createMemberAccount(2, 'DST-CHILD', 'purchase.child');
+        $account->member->update(['member_parent_member_id' => $parent->member->getKey()]);
+        if ($active !== null) {
+            $this->createStockist($parent->member, $active, $deleted);
+        }
+        [$product] = $this->createPurchaseReferences();
+        $this->actingAs($account, 'member_api');
+
+        $this->getJson('/api/v1/member/purchases/options')
+            ->assertOk()
+            ->assertJsonCount(0, 'data.spread_payment_banks');
+        $this->postJson('/api/v1/member/purchases/orders', [
+            'bank_company_id' => 1,
+            'shipping_method' => 'pickup',
+            'items' => [['product_id' => $product->getKey(), 'quantity' => 1]],
+        ])->assertOk();
+
+        $this->assertDatabaseCount('trx_spread_payment', 0);
+    }
+
+    public static function ineligibleStockistCases(): array
+    {
+        return [
+            'non-stockist distributor' => [null, 0],
+            'inactive stockist distributor' => [0, 0],
+            'deleted stockist distributor' => [1, 1],
+        ];
+    }
+
+    private function createStockist(Member $member, int $active = 1, int $deleted = 0): void
+    {
+        Stockist::query()->create([
+            'stockist_member_id' => $member->getKey(),
+            'stockist_name' => $member->member_name,
+            'stockist_note' => '',
+            'stockist_is_active' => $active,
+            'stockist_is_deleted' => $deleted,
+            'stockist_input_datetime' => now(),
+        ]);
     }
 
     private function createMemberAccount(

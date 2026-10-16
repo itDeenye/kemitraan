@@ -8,18 +8,23 @@ use App\Http\Resources\Api\V1\Member\MemberSharingProfitResource;
 use App\Http\Resources\DataTableResource;
 use App\Models\MemberAccount;
 use App\Models\TrxSpreadPayment;
+use App\Services\Reward\MemberRewardEligibility;
 use App\Services\Reward\MemberSharingProfitService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class SharingProfitController extends Controller
 {
-    public function __construct(private readonly MemberSharingProfitService $sharingProfitService) {}
+    public function __construct(
+        private readonly MemberSharingProfitService $sharingProfitService,
+        private readonly MemberRewardEligibility $rewardEligibility,
+    ) {}
 
     public function index(ListSharingProfitsRequest $request): DataTableResource
     {
         /** @var MemberAccount $account */
         $account = $request->user();
+        abort_unless($this->rewardEligibility->canAccessSharingProfit($account->member), 403);
 
         return (new DataTableResource(
             $this->sharingProfitService->sharingProfits(
@@ -45,6 +50,8 @@ class SharingProfitController extends Controller
                 'error_code' => 'not_found',
             ], 404);
         }
+
+        abort_unless($this->rewardEligibility->canAccessSharingProfit($account->member), 403);
 
         return (new MemberSharingProfitResource(
             $this->sharingProfitService->sharingProfit($sharingProfit),

@@ -6,14 +6,18 @@ use App\Exceptions\ProcessException;
 use App\Models\Member;
 use App\Models\MemberLevel;
 use App\Models\MemberPointTransaction;
+use App\Models\RewardStockist;
+use App\Models\Stockist;
 use App\Models\Trx;
 use App\Models\TrxDetail;
+use App\Models\TrxSpreadPayment;
 use App\Services\Partnership\MonthlyPartnershipClosingService;
 use App\Services\Reward\MemberPointService;
 use App\Support\BusinessConfig;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class MonthlyPartnershipClosingTest extends TestCase
@@ -72,17 +76,11 @@ class MonthlyPartnershipClosingTest extends TestCase
             'member_upgrade_qualified_to_year_month' => 2607,
             'member_upgrade_qualified_status' => 'requested',
         ]);
-        $this->assertDatabaseHas('trx_spread_payment', [
-            'trx_spread_payment_upline_id' => $agent->getKey(),
-            'trx_spread_payment_member_id' => $reseller->getKey(),
-            'trx_spread_payment_percentage' => 1,
-            'trx_spread_payment_amount' => 50_000,
-            'trx_spread_payment_status' => 'pending',
-        ]);
+        $this->assertDatabaseCount('trx_spread_payment', 0);
 
         $this->assertSame(0, Artisan::call('rewards:close-month', ['--period' => '2026-07']));
         $this->assertDatabaseCount('member_upgrade_qualified', 1);
-        $this->assertDatabaseCount('trx_spread_payment', 3);
+        $this->assertDatabaseCount('trx_spread_payment', 0);
     }
 
     public function test_agent_upgrade_uses_three_month_purchases_buying_patients_and_recruited_resellers(): void
@@ -138,6 +136,8 @@ class MonthlyPartnershipClosingTest extends TestCase
         $distributor = $this->member(1, 'DST-001', $distributorLevel);
         $agent = $this->member(2, 'AGT-001', $agentLevel, $distributor);
         $reseller = $this->member(3, 'RSL-001', $resellerLevel, $agent);
+        $distributorChild = $this->member(4, 'DST-CHILD', $distributorLevel, $distributor);
+        $this->stockist($distributor);
 
         BusinessConfig::put('reward_monthly', [
             'reward_monthly_min_qty_reseller' => 60,
@@ -146,6 +146,7 @@ class MonthlyPartnershipClosingTest extends TestCase
             'spread_payment_percentage' => 2,
         ]);
         $this->purchase($reseller, $agent, 50, '2026-07-10', 'PO-RSL-CONFIG');
+        $this->purchase($distributorChild, $distributor, 50, '2026-07-10', 'PO-DST-CONFIG');
 
         $this->assertSame(0, Artisan::call('rewards:close-month', ['--period' => '2026-07']));
 
@@ -155,8 +156,8 @@ class MonthlyPartnershipClosingTest extends TestCase
             'reward_point_monthly_bonus_value' => 0,
         ]);
         $this->assertDatabaseHas('trx_spread_payment', [
-            'trx_spread_payment_upline_id' => $agent->getKey(),
-            'trx_spread_payment_member_id' => $reseller->getKey(),
+            'trx_spread_payment_upline_id' => $distributor->getKey(),
+            'trx_spread_payment_member_id' => $distributorChild->getKey(),
             'trx_spread_payment_percentage' => 2,
             'trx_spread_payment_amount' => 100_000,
         ]);
@@ -267,6 +268,117 @@ class MonthlyPartnershipClosingTest extends TestCase
 
         $this->expectException(ProcessException::class);
         $trx->pointTotals();
+    }
+
+    #[DataProvider('stockistEligibilityCases')]
+    public function test_monthly_closing_creates_vouchers_only_for_active_distributor_stockists(
+        int $levelIndex,
+        ?int $active,
+        int $deleted,
+        bool $eligible,
+    ): void {
+        Carbon::setTestNow('2026-08-01 00:05:00');
+        $levels = $this->levels();
+        $supplier = $this->member(1, 'SUPPLIER', $levels[0]);
+        $member = $this->member(2, 'OWNER', $levels[$levelIndex], $supplier);
+        if ($active !== null) {
+            $this->stockist($member, $active, $deleted);
+        }
+        $this->transaction([
+            'trx_code' => 'VOUCHER-PURCHASE',
+            'trx_seller_type' => 'warehouse',
+            'trx_seller_id' => 1,
+            'trx_buyer_type' => $this->memberType($member),
+            'trx_buyer_id' => $member->getKey(),
+            'trx_type' => 'stock',
+            'trx_status' => 'completed',
+            'trx_grand_total_price' => 50000000,
+            'trx_datetime' => '2026-07-10 10:00:00',
+        ]);
+        $historical = RewardStockist::query()->create([
+            'reward_stockist_member_id' => $member->getKey(),
+            'reward_stockist_year' => 2025,
+            'reward_stockist_month' => 1,
+            'reward_stockist_total_trx_amount' => 50000000,
+            'reward_stockist_bonus_value' => 1250000,
+            'reward_stockist_used_value' => 0,
+            'reward_stockist_used_trx_id' => 0,
+        ]);
+
+        $result = app(MonthlyPartnershipClosingService::class)->close(Carbon::parse('2026-07-01'));
+
+        $this->assertSame($eligible ? 1 : 0, $result['stockist_rewards']);
+        $this->assertSame($eligible, RewardStockist::query()
+            ->where('reward_stockist_member_id', $member->getKey())
+            ->where('reward_stockist_year', 2026)
+            ->where('reward_stockist_month', 7)
+            ->exists());
+        $this->assertSame(1250000, (int) $historical->fresh()->reward_stockist_bonus_value);
+    }
+
+    public static function stockistEligibilityCases(): array
+    {
+        return [
+            'non-stockist distributor' => [0, null, 0, false],
+            'inactive stockist' => [0, 0, 0, false],
+            'deleted stockist' => [0, 1, 1, false],
+            'stockist agent' => [1, 1, 0, false],
+            'stockist reseller' => [2, 1, 0, false],
+            'eligible distributor stockist' => [0, 1, 0, true],
+        ];
+    }
+
+    public function test_monthly_closing_sharing_profit_requires_eligible_direct_distributor_parent(): void
+    {
+        Carbon::setTestNow('2026-08-01 00:05:00');
+        [$distributorLevel, $agentLevel] = $this->levels();
+        $stockist = $this->member(1, 'STOCKIST', $distributorLevel);
+        $this->stockist($stockist);
+        $child = $this->member(2, 'DIRECT-DST', $distributorLevel, $stockist);
+        $agent = $this->member(3, 'AGENT', $agentLevel, $stockist);
+        $unrelated = $this->member(4, 'UNRELATED-DST', $distributorLevel);
+        $plainDistributor = $this->member(5, 'PLAIN-DST', $distributorLevel);
+        $plainChild = $this->member(6, 'PLAIN-CHILD', $distributorLevel, $plainDistributor);
+        $this->purchase($child, $stockist, 50, '2026-07-10', 'ELIGIBLE-SPREAD');
+        $this->purchase($agent, $stockist, 50, '2026-07-10', 'AGENT-BUYER');
+        $this->purchase($unrelated, $stockist, 50, '2026-07-10', 'UNRELATED-BUYER');
+        $this->purchase($plainChild, $plainDistributor, 50, '2026-07-10', 'NONSTOCKIST-PARENT');
+        $historical = TrxSpreadPayment::query()->create([
+            'trx_spread_payment_trx_id' => Trx::query()->where('trx_code', 'NONSTOCKIST-PARENT')->value('trx_id'),
+            'trx_spread_payment_upline_id' => $plainDistributor->getKey(),
+            'trx_spread_payment_member_id' => $plainChild->getKey(),
+            'trx_spread_payment_amount' => 123456,
+            'trx_spread_payment_status' => 'paid',
+            'trx_spread_payment_created_datetime' => now(),
+        ]);
+
+        $result = app(MonthlyPartnershipClosingService::class)->close(Carbon::parse('2026-07-01'));
+
+        $this->assertSame(1, $result['spread_payments']);
+        $this->assertDatabaseCount('trx_spread_payment', 2);
+        $this->assertDatabaseHas('trx_spread_payment', [
+            'trx_spread_payment_upline_id' => $stockist->getKey(),
+            'trx_spread_payment_member_id' => $child->getKey(),
+            'trx_spread_payment_amount' => 50000,
+        ]);
+        $this->assertSame(123456, (int) $historical->fresh()->trx_spread_payment_amount);
+        $this->assertSame('paid', $historical->fresh()->trx_spread_payment_status);
+
+        $repeated = app(MonthlyPartnershipClosingService::class)->close(Carbon::parse('2026-07-01'));
+        $this->assertSame(0, $repeated['spread_payments']);
+        $this->assertDatabaseCount('trx_spread_payment', 2);
+    }
+
+    private function stockist(Member $member, int $active = 1, int $deleted = 0): void
+    {
+        Stockist::query()->create([
+            'stockist_member_id' => $member->getKey(),
+            'stockist_name' => $member->member_name,
+            'stockist_note' => '',
+            'stockist_is_active' => $active,
+            'stockist_is_deleted' => $deleted,
+            'stockist_input_datetime' => now(),
+        ]);
     }
 
     /** @return array{MemberLevel, MemberLevel, MemberLevel} */

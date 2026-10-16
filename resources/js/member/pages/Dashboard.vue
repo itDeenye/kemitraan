@@ -31,7 +31,7 @@
         <div class="card hero-balance">
             <div class="balance-top">
                 <div>
-                    <div class="soft-label" style="color: #f1cbd3">Profit</div>
+                    <div class="soft-label" style="color: #f1cbd3">Profit Penjualan</div>
                     <div class="money">
                         <span
                             v-if="isLoading"
