@@ -112,6 +112,7 @@ class AdminTransactionInventoryWorkflowTest extends TestCase
     {
         $this->actingAs($this->createAdministrator(), 'admin_api');
         $this->createData();
+        $this->createRegionalReferences();
         Trx::query()->findOrFail(1)->details()->update([
             'trx_detail_product_monthly_points' => 3,
             'trx_detail_product_annual_points' => 7,
@@ -147,7 +148,7 @@ class AdminTransactionInventoryWorkflowTest extends TestCase
             ->assertJsonPath('data.results.0.seller.origin.postal_code', '10110')
             ->assertJsonPath('data.results.0.buyer.destination.name', 'Distributor Utama')
             ->assertJsonPath('data.results.0.buyer.destination.code', 'DST-001')
-            ->assertJsonPath('data.results.0.buyer.destination.city.name', 'Surabaya')
+            ->assertJsonPath('data.results.0.buyer.destination.city.name', 'Kota Surabaya')
             ->assertJsonPath('data.results.0.buyer.destination.province.name', 'Jawa Timur');
 
         $this->getJson('/api/v1/admin/inventory/shipments/1')

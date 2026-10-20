@@ -3,6 +3,7 @@
 use App\Exceptions\ProcessException;
 use App\Http\Middleware\EnsureAdminAccountIsActive;
 use App\Http\Middleware\EnsureMemberAccountIsActive;
+use App\Http\Middleware\FormatCityNames;
 use App\Http\Middleware\NormalizeDataTableQuery;
 use App\Http\Middleware\UseUnescapedJson;
 use Illuminate\Auth\AuthenticationException;
@@ -24,6 +25,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->appendToGroup('api', NormalizeDataTableQuery::class);
         $middleware->appendToGroup('api', UseUnescapedJson::class);
+        $middleware->appendToGroup('api', FormatCityNames::class);
 
         $middleware->alias([
             'admin.active' => EnsureAdminAccountIsActive::class,

@@ -146,7 +146,7 @@ class AdminMemberDirectoryTest extends TestCase
             ->assertJsonPath('data.addresses.0.region.province_id', '9')
             ->assertJsonPath('data.addresses.0.region.province_name', 'Jawa Barat')
             ->assertJsonPath('data.addresses.0.region.city_id', '376')
-            ->assertJsonPath('data.addresses.0.region.city_name', 'Purwakarta')
+            ->assertJsonPath('data.addresses.0.region.city_name', 'Kabupaten Purwakarta')
             ->assertJsonPath('data.addresses.0.region.city_type', 'Kabupaten')
             ->assertJsonPath('data.addresses.0.region.district_id', '5218')
             ->assertJsonPath('data.addresses.0.region.district_name', 'Purwakarta')

@@ -23,7 +23,7 @@ class PublicReferenceTest extends TestCase
         $this->getJson('/api/v1/references/cities?province_id=11')
             ->assertOk()
             ->assertJsonCount(1, 'data')
-            ->assertJsonPath('data.0.name', 'Surabaya');
+            ->assertJsonPath('data.0.name', 'Kota Surabaya');
 
         $this->getJson('/api/v1/references/districts?city_id=1101')
             ->assertOk()
@@ -51,6 +51,27 @@ class PublicReferenceTest extends TestCase
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.code', 'ID')
             ->assertJsonPath('data.0.phone_code', '+62');
+    }
+
+    public function test_city_and_regency_with_the_same_name_have_distinct_names_and_unchanged_ids(): void
+    {
+        $this->createReferenceData();
+        DB::table('ref_city')->insert([
+            ['city_id' => '1103', 'city_province_id' => '11', 'city_name' => 'Malang', 'city_type' => 'Kabupaten'],
+            ['city_id' => '1104', 'city_province_id' => '11', 'city_name' => 'Malang', 'city_type' => 'Kota'],
+            ['city_id' => '1105', 'city_province_id' => '11', 'city_name' => 'Kota Batu', 'city_type' => 'Kota'],
+        ]);
+
+        $response = $this->getJson('/api/v1/references/cities?province_id=11')
+            ->assertOk()
+            ->assertJsonCount(4, 'data');
+        $cities = collect($response->json('data'))->keyBy('id');
+
+        $this->assertSame('Kabupaten Malang', $cities['1103']['name']);
+        $this->assertSame('Kota Malang', $cities['1104']['name']);
+        $this->assertSame('Kota Batu', $cities['1105']['name']);
+        $this->assertSame('Kota', $cities['1104']['type']);
+        $this->assertSame('Malang', DB::table('ref_city')->where('city_id', '1104')->value('city_name'));
     }
 
     public function test_region_parent_parameter_is_required_and_validated_in_indonesian(): void

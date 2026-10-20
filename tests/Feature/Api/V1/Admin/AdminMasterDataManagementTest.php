@@ -109,7 +109,7 @@ class AdminMasterDataManagementTest extends TestCase
         )->assertSuccessful()
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.member.level.code', 'DST')
-            ->assertJsonPath('data.region.city_name', 'Surabaya');
+            ->assertJsonPath('data.region.city_name', 'Kota Surabaya');
         $stockistId = $response->json('data.id');
 
         $this->getJson('/api/v1/admin/partnership/stockists?search=stockist%20surabaya')

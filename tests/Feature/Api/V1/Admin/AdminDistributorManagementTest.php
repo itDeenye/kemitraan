@@ -47,13 +47,16 @@ class AdminDistributorManagementTest extends TestCase
             ->assertJsonPath('data.nib', $payload['nib'])
             ->assertJsonPath('data.npwp', $payload['npwp'])
             ->assertJsonPath('data.image', $payload['image_url'])
+            ->assertJsonPath('data.region', 'Kota Surabaya, Jawa Timur')
             ->assertJsonCount(2, 'data.addresses')
             ->assertJsonCount(2, 'data.bank_accounts')
             ->json('data.id');
         $this->getJson("/api/v1/admin/partnership/distributors/{$id}")
-            ->assertOk()->assertJsonPath('data.bank_accounts.0.account_number', '0012345678');
+            ->assertOk()->assertJsonPath('data.bank_accounts.0.account_number', '0012345678')
+            ->assertJsonPath('data.region', 'Kota Surabaya, Jawa Timur');
         $this->getJson('/api/v1/admin/partnership/distributors')
-            ->assertOk()->assertJsonPath('data.results.0.npwp', $payload['npwp']);
+            ->assertOk()->assertJsonPath('data.results.0.npwp', $payload['npwp'])
+            ->assertJsonPath('data.results.0.region', 'Kota Surabaya, Jawa Timur');
         $this->assertDatabaseHas('member', ['member_id' => $id, 'member_npwp' => $payload['npwp']]);
         $this->assertDatabaseHas('member_address', ['member_address_member_id' => $id,
             'member_address_full' => 'Jl. Domisili', 'member_address_is_default' => 1]);

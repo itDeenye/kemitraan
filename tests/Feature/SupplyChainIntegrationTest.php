@@ -112,6 +112,7 @@ class SupplyChainIntegrationTest extends TestCase
 
         $this->assertSame('0001/0000/0000', $member->refresh()->member_code);
         $this->assertSame('LC01/0001/0000/0000', $gateway->customerPayloads[0]['no_kemitraan']);
+        $this->assertSame('Jakarta Selatan', $gateway->customerPayloads[0]['kabupaten']);
         $this->assertSame('CUST-001', $sync->member_supply_chain_sync_customer_no);
         $this->assertSame('CUST-001', $member->refresh()->member_supply_chain_code);
         $this->assertSame(

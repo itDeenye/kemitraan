@@ -79,7 +79,7 @@ class AdminCompanyManagementTest extends TestCase
             ->assertSuccessful()
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.name', 'Warehouse Surabaya')
-            ->assertJsonPath('data.region.city_name', 'Surabaya');
+            ->assertJsonPath('data.region.city_name', 'Kota Surabaya');
         $warehouseId = $response->json('data.id');
 
         $this->getJson('/api/v1/admin/company/warehouses?search=surabaya')

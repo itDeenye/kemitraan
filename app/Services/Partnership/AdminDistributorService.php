@@ -50,6 +50,7 @@ class AdminDistributorService
             'member.member_identity_image as identity_image',
             'ref_province.province_name as province_name',
             'ref_city.city_name as city_name',
+            'ref_city.city_type as city_type',
         ])
             ->from('member')
             ->leftJoin('member_level', 'member_level.member_level_id = member.member_member_level_id')

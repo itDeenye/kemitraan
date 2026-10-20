@@ -6,6 +6,7 @@ use App\Http\Resources\Api\V1\Member\MemberAddressResource;
 use App\Http\Resources\Api\V1\Member\MemberBankAccountResource;
 use App\Http\Resources\ApiResource;
 use App\Models\Member;
+use App\Services\Reference\CityNameFormatter;
 use App\Support\MediaUrl;
 use Illuminate\Http\Request;
 
@@ -20,6 +21,9 @@ class AdminDistributorResource extends ApiResource
     {
         $status = (int) $this->value('status', 'member_status');
         $member = $this->resource instanceof Member ? $this->resource : null;
+        $cityName = $member
+            ? CityNameFormatter::displayName($member->city?->city_name, $member->city?->city_type)
+            : CityNameFormatter::displayName($this->resource->city_name ?? null, $this->resource->city_type ?? null);
 
         return [
             'id' => $this->value('id', 'member_id'),
@@ -44,8 +48,8 @@ class AdminDistributorResource extends ApiResource
                 ? $member->member_join_datetime?->toAtomString()
                 : $this->resource->joined_at,
             'region' => $member
-                ? ($member->city?->city_name ? $member->city->city_name.', '.$member->province?->province_name : null)
-                : ($this->resource->city_name ?? null ? $this->resource->city_name.', '.$this->resource->province_name : null),
+                ? ($cityName ? $cityName.', '.$member->province?->province_name : null)
+                : ($cityName ? $cityName.', '.$this->resource->province_name : null),
             'address' => $this->when($member !== null, fn (): array => [
                 'address' => $member->member_address,
                 'subdistrict_id' => $member->member_subdistrict_id,
