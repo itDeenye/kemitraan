@@ -81,6 +81,8 @@
                                     item-title="name"
                                     item-value="id"
                                     label="Level Mitra yang Didaftarkan *"
+                                    placeholder="Pilih Level Mitra"
+                                    persistent-placeholder
                                     variant="outlined"
                                     density="compact"
                                     :rules="[required('Level Mitra')]"
@@ -708,6 +710,8 @@
                 </button>
             </div>
         </template>
+
+        <MobileConfirm ref="confirmDialogRef" />
     </div>
 </template>
 
@@ -723,6 +727,7 @@ import type { ReferenceBank } from "@/shared/services/reference.service";
 import networkService from "@/member/services/network.service";
 import BaseBadge from "@/shared/components/BaseBadge.vue";
 import MediaUpload from "@/shared/components/MediaUpload.vue";
+import MobileConfirm from "@/member/components/MobileConfirm.vue";
 import { encodeRouteId } from "@/shared/utils/route-id";
 import {
     identityNumberRule,
@@ -771,6 +776,7 @@ const activeTab = ref<RegistrationTab>(
             : "form",
 );
 const regFormRef = ref<any>(null);
+const confirmDialogRef = ref<InstanceType<typeof MobileConfirm> | null>(null);
 const isFormValid = ref(false);
 const loadingOptions = ref(false);
 const submitting = ref(false);
@@ -922,7 +928,6 @@ async function loadOptions() {
             referenceService.getBanks(),
         ]);
         options.value = opts;
-        form.level_id = opts.target_level.id;
         banks.value = bankList;
         await fetchProvinces();
     } catch (e: any) {
@@ -1110,6 +1115,78 @@ async function submitRegistration() {
     const { valid } = await regFormRef.value?.validate();
     if (!valid) return;
 
+    if (!form.level_id) {
+        errors.level_id = ["Level Mitra wajib diisi"];
+        snackbar.showMessage(
+            "Silakan pilih Level Mitra yang didaftarkan.",
+            "error",
+        );
+        return;
+    }
+
+    if (confirmDialogRef.value) {
+        const selectedLevelName = selectedLevel.value?.name || "Mitra";
+        const uplineAgent =
+            canChooseAgentUpline.value && form.upline_member_id
+                ? options.value?.agents?.find(
+                      (a) => a.id === form.upline_member_id,
+                  )
+                : null;
+        const sponsor = options.value?.sponsor;
+
+        const confirmMessage = `
+            <div style="font-size: 13px; color: #4b5563; margin-bottom: 12px;">
+                Apakah Anda yakin ingin mendaftarkan mitra baru dengan data berikut?
+            </div>
+            <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px 14px; text-align: left; font-size: 13px; display: flex; flex-direction: column; gap: 8px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed #e5e7eb; padding-bottom: 6px;">
+                    <span style="color: #6b7280;">Level Mitra</span>
+                    <span style="font-weight: 700; color: var(--wine, #940923);">${selectedLevelName}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px dashed #e5e7eb; padding-bottom: 6px;">
+                    <span style="color: #6b7280;">Nama Lengkap</span>
+                    <span style="font-weight: 600; color: #111827; text-align: right; max-width: 170px; word-break: break-word;">${form.name}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed #e5e7eb; padding-bottom: 6px;">
+                    <span style="color: #6b7280;">Nomor Telepon</span>
+                    <span style="color: #111827; font-weight: 500;">${form.mobile_phone}</span>
+                </div>
+                ${
+                    uplineAgent
+                        ? `<div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px dashed #e5e7eb; padding-bottom: 6px;">
+                            <span style="color: #6b7280;">Agen Utama Upline</span>
+                            <div style="text-align: right; max-width: 170px;">
+                                <div style="font-weight: 600; color: #111827; word-break: break-word;">${uplineAgent.name}</div>
+                                ${uplineAgent.code ? `<div style="font-size: 11px; color: #6b7280;">${uplineAgent.code}</div>` : ""}
+                            </div>
+                           </div>`
+                        : ""
+                }
+                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                    <span style="color: #6b7280;">Pendaftar / Sponsor</span>
+                    <div style="text-align: right; max-width: 170px;">
+                        <div style="font-weight: 600; color: #374151; word-break: break-word;">${sponsor?.name || "-"}</div>
+                        ${sponsor?.code ? `<div style="font-size: 11px; color: #6b7280;">${sponsor.code}</div>` : ""}
+                    </div>
+                </div>
+            </div>
+            <div style="font-size: 11px; color: #9ca3af; margin-top: 10px;">
+                Pastikan data dan dokumen pendaftaran telah sesuai sebelum melanjutkan.
+            </div>
+        `;
+
+        const isConfirmed = await confirmDialogRef.value.open({
+            title: "Konfirmasi Pendaftaran",
+            message: confirmMessage,
+            confirmText: "Ya, Daftarkan",
+            cancelText: "Batal",
+            confirmColor: "wine",
+            icon: "mdi-account-plus",
+        });
+
+        if (!isConfirmed) return;
+    }
+
     submitting.value = true;
     Object.keys(errors).forEach((k) => delete errors[k]);
 
@@ -1165,7 +1242,7 @@ async function submitRegistration() {
 
 function resetForm() {
     Object.assign(form, {
-        level_id: options.value?.target_level.id ?? null,
+        level_id: null,
         upline_member_id: null,
         name: "",
         email: "",

@@ -4,6 +4,7 @@ namespace App\Services\Partnership;
 
 use App\Exceptions\ProcessException;
 use App\Models\Member;
+use App\Models\MemberAccount;
 use App\Models\MemberLevel;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -18,7 +19,7 @@ class MemberCodeService
                 ->lockForUpdate()
                 ->get();
 
-            return match ($targetLevel->member_level_code) {
+            $code = match ($targetLevel->member_level_code) {
                 'DST' => $this->format(
                     $this->nextSequence($members, fn (array $segments): bool => $segments[0] > 0
                         && $segments[1] === 0
@@ -30,6 +31,28 @@ class MemberCodeService
                 'RSL' => $this->nextResellerCode($members, $sponsor),
                 default => throw new ProcessException('Tingkat mitra tidak didukung untuk pembuatan kode.'),
             };
+
+            $segmentIndex = match ($targetLevel->member_level_code) {
+                'DST' => 0,
+                'AGT' => 1,
+                'RSL' => 2,
+            };
+            $pattern = explode('/', $code);
+            $pattern[$segmentIndex] = '____';
+            $reservedUsernames = MemberAccount::query()
+                ->where('member_account_username', 'like', implode('/', $pattern))
+                ->where('member_account_username', '>=', $code)
+                ->lockForUpdate()
+                ->pluck('member_account_username')
+                ->flip();
+            $segments = $this->segments($code);
+
+            while ($reservedUsernames->has($code)) {
+                $segments[$segmentIndex]++;
+                $code = $this->format(...$segments);
+            }
+
+            return $code;
         });
     }
 

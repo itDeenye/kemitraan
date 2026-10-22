@@ -11,7 +11,6 @@ use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 
 class HttpSupplyChainGateway implements SupplyChainGateway
 {
@@ -22,7 +21,7 @@ class HttpSupplyChainGateway implements SupplyChainGateway
         $data = $this->authenticatedPost('/tambah-customer', $payload);
 
         if (blank($data['cust_no'] ?? null)) {
-            throw new ProcessException('Nomor customer tidak ditemukan pada respons Supply Chain.', 502);
+            throw new ProcessException($this->internalErrorMessage(null, 'Nomor customer tidak ditemukan pada respons Aplikasi Internal.'), 502);
         }
 
         return $data;
@@ -33,7 +32,7 @@ class HttpSupplyChainGateway implements SupplyChainGateway
         $data = $this->authenticatedPost('/simpan', $payload);
 
         if (blank($data['jual_no'] ?? null)) {
-            throw new ProcessException('Nomor penjualan tidak ditemukan pada respons Supply Chain.', 502);
+            throw new ProcessException($this->internalErrorMessage(null, 'Nomor penjualan tidak ditemukan pada respons Aplikasi Internal.'), 502);
         }
 
         return $data;
@@ -62,14 +61,6 @@ class HttpSupplyChainGateway implements SupplyChainGateway
             return $this->post($endpoint, $payload, $token);
         } catch (RequestException $exception) {
             if (! $exception->response->unauthorized()) {
-                $existingCustomer = $this->existingCustomerData(
-                    $endpoint,
-                    $exception->response->json(),
-                );
-                if ($existingCustomer !== null) {
-                    return $existingCustomer;
-                }
-
                 throw $this->requestFailure($exception);
             }
 
@@ -78,20 +69,12 @@ class HttpSupplyChainGateway implements SupplyChainGateway
             try {
                 return $this->post($endpoint, $payload, $this->token());
             } catch (RequestException $retryException) {
-                $existingCustomer = $this->existingCustomerData(
-                    $endpoint,
-                    $retryException->response->json(),
-                );
-                if ($existingCustomer !== null) {
-                    return $existingCustomer;
-                }
-
                 throw $this->requestFailure($retryException);
             }
         } catch (ConnectionException $exception) {
             report($exception);
 
-            throw new ProcessException('Layanan Supply Chain sedang tidak dapat dihubungi.', 503);
+            throw new ProcessException('Layanan Aplikasi Internal sedang tidak dapat dihubungi.', 503);
         }
     }
 
@@ -107,7 +90,7 @@ class HttpSupplyChainGateway implements SupplyChainGateway
                 $password = (string) config('services.supply_chain.password');
 
                 if ($username === '' || $password === '') {
-                    throw new ProcessException('Kredensial Supply Chain belum dikonfigurasi.', 503);
+                    throw new ProcessException('Kredensial Aplikasi Internal belum dikonfigurasi.', 503);
                 }
 
                 try {
@@ -118,7 +101,7 @@ class HttpSupplyChainGateway implements SupplyChainGateway
                 } catch (ConnectionException $exception) {
                     report($exception);
 
-                    throw new ProcessException('Layanan Supply Chain sedang tidak dapat dihubungi.', 503);
+                    throw new ProcessException('Layanan Aplikasi Internal sedang tidak dapat dihubungi.', 503);
                 } catch (RequestException $exception) {
                     throw $this->requestFailure($exception);
                 }
@@ -126,7 +109,7 @@ class HttpSupplyChainGateway implements SupplyChainGateway
                 $payload = $response->json();
                 $token = is_array($payload) ? data_get($payload, 'data.api_token') : null;
                 if (($payload['success'] ?? false) !== true || blank($token)) {
-                    throw new ProcessException('Autentikasi Supply Chain tidak berhasil.', 502);
+                    throw new ProcessException($this->internalErrorMessage($payload, 'Autentikasi Aplikasi Internal tidak berhasil.'), 502);
                 }
 
                 return (string) $token;
@@ -147,64 +130,39 @@ class HttpSupplyChainGateway implements SupplyChainGateway
         }
         $body = $response->json();
 
-        $existingCustomer = $this->existingCustomerData($endpoint, $body);
-        if ($existingCustomer !== null) {
-            return $existingCustomer;
-        }
-
         if (! is_array($body) || ($body['success'] ?? false) !== true) {
-            Log::warning('Permintaan Supply Chain ditolak.', [
+            Log::warning('Permintaan Aplikasi Internal ditolak.', [
                 'endpoint' => $endpoint,
                 'message' => is_array($body) ? ($body['message'] ?? null) : null,
             ]);
 
             throw new ProcessException(
-                is_array($body) && filled($body['message'] ?? null)
-                    ? (string) $body['message']
-                    : 'Respons Supply Chain tidak dapat diproses.',
+                $this->internalErrorMessage($body, 'Respons Aplikasi Internal tidak dapat diproses.'),
                 502,
             );
         }
 
         $data = $body['data'] ?? [];
 
-        return is_array($data) ? $data : [];
-    }
-
-    /**
-     * @return array<string, mixed>|null
-     */
-    private function existingCustomerData(string $endpoint, mixed $payload): ?array
-    {
-        if ($endpoint !== '/tambah-customer' || ! is_array($payload)) {
-            return null;
+        if ($endpoint === '/tambah-customer') {
+            $customerNumber = is_array($data) ? ($data['cust_no'] ?? $data['Cust_no'] ?? null) : null;
+            if ((! is_string($customerNumber) && ! is_int($customerNumber)) || trim((string) $customerNumber) === '') {
+                throw new ProcessException($this->internalErrorMessage($body, 'Nomor customer tidak ditemukan pada respons Aplikasi Internal.'), 502);
+            }
+            $data['cust_no'] = trim((string) $customerNumber);
         }
 
-        $message = Str::lower((string) ($payload['message'] ?? ''));
-        if (! Str::contains($message, ['sudah terdaftar', 'data kembar'])) {
-            return null;
-        }
-
-        $data = $payload['data'] ?? null;
-        if (! is_array($data)) {
-            return null;
-        }
-
-        $customerNumber = trim((string) ($data['cust_no'] ?? $data['Cust_no'] ?? ''));
-        if ($customerNumber === '') {
-            return null;
-        }
-
-        $data['cust_no'] = $customerNumber;
-
-        return $data;
+        return [
+            ...(is_array($data) ? $data : []),
+            'message' => $this->responseMessage($body, ''),
+        ];
     }
 
     private function client(?string $token = null): PendingRequest
     {
         $baseUrl = rtrim((string) config('services.supply_chain.base_url'), '/');
         if ($baseUrl === '') {
-            throw new ProcessException('Alamat layanan Supply Chain belum dikonfigurasi.', 503);
+            throw new ProcessException('Alamat layanan Aplikasi Internal belum dikonfigurasi.', 503);
         }
 
         $request = Http::baseUrl($baseUrl)
@@ -230,16 +188,28 @@ class HttpSupplyChainGateway implements SupplyChainGateway
         $response = $exception->response;
         $payload = $response->json();
         $payload = is_array($payload) ? $payload : [
-            'message' => 'Respons Supply Chain bukan JSON.',
+            'message' => 'Respons Aplikasi Internal bukan JSON.',
         ];
-        $message = $response->unauthorized() || $response->forbidden()
-            ? 'Autentikasi Supply Chain ditolak.'
-            : (string) ($payload['message'] ?? 'Permintaan ke Supply Chain belum berhasil.');
+        $fallbackMessage = $response->unauthorized() || $response->forbidden()
+            ? 'Autentikasi Aplikasi Internal ditolak.'
+            : 'Permintaan ke Aplikasi Internal belum berhasil.';
 
         return new SupplyChainRequestException(
-            $message,
+            $this->internalErrorMessage($payload, $fallbackMessage),
             $response->status(),
             $payload,
         );
+    }
+
+    private function responseMessage(mixed $payload, string $fallback): string
+    {
+        $message = is_array($payload) ? ($payload['message'] ?? null) : null;
+
+        return is_string($message) && filled($message) ? $message : $fallback;
+    }
+
+    private function internalErrorMessage(mixed $payload, string $fallback): string
+    {
+        return 'Error pada Aplikasi Internal: '.$this->responseMessage($payload, $fallback);
     }
 }

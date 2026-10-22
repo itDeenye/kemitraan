@@ -33,6 +33,7 @@ use App\Http\Controllers\Api\V1\Admin\Reward\SharingProfitController as AdminSha
 use App\Http\Controllers\Api\V1\Admin\Reward\SharingProfitHistoryController as AdminSharingProfitHistoryController;
 use App\Http\Controllers\Api\V1\Admin\Reward\StockistRewardController as AdminStockistRewardController;
 use App\Http\Controllers\Api\V1\Admin\Stc\BalanceController as AdminStcBalanceController;
+use App\Http\Controllers\Api\V1\Admin\Stc\ShippingCostReportController;
 use App\Http\Controllers\Api\V1\Admin\Stc\TopUpController as AdminStcTopUpController;
 use App\Http\Controllers\Api\V1\Admin\System\AdministratorController as AdminAdministratorController;
 use App\Http\Controllers\Api\V1\Admin\System\AuditTrailController as AdminAuditTrailController;
@@ -154,9 +155,12 @@ Route::prefix('v1')->middleware('throttle:dny-api')->group(function () use ($med
                 ->only(['index', 'store', 'show'])
                 ->parameters(['distributors' => 'distributor']);
             Route::get('partnership/members', [AdminMemberController::class, 'index']);
+            Route::get('partnership/members/{member}/level-change-options', [AdminMemberController::class, 'levelChangeOptions']);
+            Route::post('partnership/members/{member}/change-level', [AdminMemberController::class, 'changeLevel']);
             Route::get('partnership/members/{member}/deactivation-options', [AdminMemberController::class, 'deactivationOptions']);
             Route::post('partnership/members/{member}/deactivate', [AdminMemberController::class, 'deactivate']);
             Route::post('partnership/members/{member}/reset-password', [AdminMemberController::class, 'resetPassword']);
+            Route::post('partnership/members/{member}/supply-chain/sync', [AdminMemberController::class, 'syncSupplyChain']);
             Route::get('partnership/members/{member}', [AdminMemberController::class, 'show']);
             Route::put('partnership/members/{member}', [AdminMemberController::class, 'update']);
             Route::get('partnership/genealogy', [AdminGenealogyController::class, 'index']);
@@ -178,6 +182,7 @@ Route::prefix('v1')->middleware('throttle:dny-api')->group(function () use ($med
             Route::get('partnership/registrations', [AdminRegistrationController::class, 'index']);
             Route::post('partnership/registrations', [AdminRegistrationController::class, 'store']);
             Route::get('partnership/registrations/{registration}', [AdminRegistrationController::class, 'show']);
+            Route::patch('partnership/registrations/{registration}', [AdminRegistrationController::class, 'update']);
             Route::post(
                 'partnership/registrations/{registration}/approve',
                 [AdminRegistrationController::class, 'approve']
@@ -227,6 +232,7 @@ Route::prefix('v1')->middleware('throttle:dny-api')->group(function () use ($med
             Route::get('rewards/sharing-profits/{upline}', [AdminSharingProfitController::class, 'show']);
 
             Route::get('stc/balance', [AdminStcBalanceController::class, 'show']);
+            Route::get('stc/shipping-cost-report', ShippingCostReportController::class);
             Route::get('stc/mutations', [AdminStcBalanceController::class, 'mutations']);
             Route::get('stc/top-ups', [AdminStcTopUpController::class, 'index']);
             Route::get('stc/top-up-options', [AdminStcTopUpController::class, 'options']);
@@ -235,6 +241,7 @@ Route::prefix('v1')->middleware('throttle:dny-api')->group(function () use ($med
             Route::get('transactions/orders', [AdminOrderController::class, 'index']);
             Route::get('transactions/orders/{trx}', [AdminOrderController::class, 'show']);
             Route::get('transactions/orders/{trx}/document', [AdminOrderController::class, 'document']);
+            Route::post('transactions/orders/{trx}/supply-chain/sync', [AdminOrderController::class, 'syncSupplyChain']);
             Route::post(
                 'transactions/orders/{trx}/stock-screening/approve',
                 [AdminOrderController::class, 'approveStockScreening'],

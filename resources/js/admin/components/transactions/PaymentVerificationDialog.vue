@@ -555,17 +555,22 @@
                                             <span
                                                 class="text-medium-emphasis flex-shrink-0 text-no-wrap"
                                             >
-                                                Metode Kirim
+                                                Metode Penerimaan
                                             </span>
                                             <BaseBadge
                                                 class="ml-auto"
                                                 type="shipping_method"
                                                 :value="
+                                                    payment.display_shipping_method ||
                                                     payment.shipping?.method ||
                                                     payment.shipping_method
                                                 "
                                                 align="end"
-                                            />
+                                            >
+                                                <template v-if="payment.is_preorder && payment.preorder_fulfillment_mode === 'upline_transit' && (payment.display_shipping_method || payment.shipping?.method || payment.shipping_method) === 'pickup'">
+                                                    Ambil di Upline
+                                                </template>
+                                            </BaseBadge>
                                         </div>
                                         <div
                                             v-if="shippingStatus"
@@ -590,7 +595,7 @@
                                             <span
                                                 class="text-medium-emphasis flex-shrink-0 text-no-wrap"
                                             >
-                                                Kurir
+                                                {{ payment.display_shipping_method === 'pickup' ? 'Kurir ke Lokasi Pengambilan' : 'Kurir' }}
                                             </span>
                                             <span
                                                 class="font-weight-medium text-capitalize text-right ml-auto"
@@ -601,7 +606,7 @@
                                         </div>
                                         <div
                                             v-if="
-                                                payment.shipping?.pickup_method
+                                                payment.shipping?.courier?.trim() && payment.shipping?.pickup_method
                                             "
                                             class="d-flex align-center ga-3"
                                         >

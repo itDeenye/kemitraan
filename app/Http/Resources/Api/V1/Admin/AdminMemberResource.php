@@ -7,6 +7,7 @@ use App\Http\Resources\Api\V1\Member\MemberBankAccountResource;
 use App\Http\Resources\ApiResource;
 use App\Models\Member;
 use App\Support\MediaUrl;
+use App\Support\SupplyChainSyncEligibility;
 use Illuminate\Http\Request;
 
 class AdminMemberResource extends ApiResource
@@ -21,10 +22,14 @@ class AdminMemberResource extends ApiResource
         $status = (int) $this->value('status', 'member_status');
         $member = $this->resource instanceof Member ? $this->resource : null;
         $account = $member?->accounts->first();
+        $customerNumber = $member ? $member->member_supply_chain_code : ($this->resource->customer_number ?? null);
 
         return [
             'id' => $this->value('id', 'member_id'),
             'code' => $this->value('code', 'member_code'),
+            'customer_number' => $customerNumber,
+            'can_sync_supply_chain' => SupplyChainSyncEligibility::member($status, $customerNumber),
+            'can_change_level' => (bool) ($this->resource->can_change_level ?? false),
             'name' => $this->value('name', 'member_name'),
             'email' => $this->value('email', 'member_email'),
             'mobile_phone' => $this->value('mobile_phone', 'member_mobilephone'),

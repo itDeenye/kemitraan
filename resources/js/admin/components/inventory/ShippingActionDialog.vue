@@ -58,7 +58,7 @@
                         class="mb-4"
                     >
                         <div class="font-weight-bold">
-                            Terintegrasi Supply &amp; Chain
+                            Terintegrasi Aplikasi Internal
                         </div>
                         <div class="text-body-2 mt-1">
                             Nomor Faktur:

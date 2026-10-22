@@ -8,6 +8,7 @@ use App\Http\Requests\Api\V1\Admin\Transaction\StockScreeningActionRequest;
 use App\Http\Resources\Api\V1\Admin\AdminOrderResource;
 use App\Http\Resources\DataTableResource;
 use App\Models\Trx;
+use App\Services\Integration\AdminSupplyChainSyncService;
 use App\Services\Inventory\StockScreeningService;
 use App\Services\Transaction\AdminTransactionService;
 use Illuminate\Http\JsonResponse;
@@ -17,6 +18,7 @@ class OrderController extends Controller
     public function __construct(
         private readonly AdminTransactionService $transactionService,
         private readonly StockScreeningService $stockScreeningService,
+        private readonly AdminSupplyChainSyncService $supplyChainSyncService,
     ) {}
 
     public function index(ListOrdersRequest $request): DataTableResource
@@ -40,6 +42,11 @@ class OrderController extends Controller
     {
         return (new AdminOrderResource($this->transactionService->order($trx)))
             ->additional(['success' => true, 'message' => 'Detail pesanan penjualan berhasil dimuat.']);
+    }
+
+    public function syncSupplyChain(Trx $trx): JsonResponse
+    {
+        return response()->json(['success' => true, ...$this->supplyChainSyncService->sale($trx)]);
     }
 
     public function document(Trx $trx): AdminOrderResource

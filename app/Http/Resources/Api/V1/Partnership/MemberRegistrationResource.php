@@ -23,6 +23,8 @@ class MemberRegistrationResource extends ApiResource
 
         return [
             'id' => $this->value('id', 'member_registration_id'),
+            'can_edit' => $audience === 'admin' && $status === 'requested'
+                && in_array($distributorApprovalStatus, MemberRegistration::ADMIN_READY_APPROVAL_STATUSES, true),
             'level' => [
                 'id' => $registration?->level?->member_level_id ?? $this->resource->level_id,
                 'code' => $registration?->level?->member_level_code ?? $this->resource->level_code,

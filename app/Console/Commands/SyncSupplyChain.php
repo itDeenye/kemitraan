@@ -15,12 +15,12 @@ class SyncSupplyChain extends Command
                             {--sales : Antrekan pembelian ke perusahaan yang belum tersinkron}
                             {--scheduled : Mode cron; jangan antrekan ulang data yang sudah gagal}';
 
-    protected $description = 'Menyinkronkan member lama dan penjualan perusahaan ke Supply Chain';
+    protected $description = 'Menyinkronkan member lama dan penjualan perusahaan ke Aplikasi Internal';
 
     public function handle(): int
     {
         if (! config('services.supply_chain.enabled')) {
-            $this->error('Integrasi Supply Chain belum diaktifkan.');
+            $this->error('Integrasi Aplikasi Internal belum diaktifkan.');
 
             return self::FAILURE;
         }

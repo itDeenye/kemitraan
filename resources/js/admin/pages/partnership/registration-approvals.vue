@@ -74,6 +74,16 @@
                         @click="openDetailDialog(item.id)"
                     />
                     <v-btn
+                        v-if="item.can_edit === true && item.status?.code === 'requested'"
+                        v-tooltip:top="'Edit Pengajuan'"
+                        icon="mdi-pencil-outline"
+                        variant="outlined"
+                        size="small"
+                        class="rounded"
+                        color="info"
+                        @click="openEditDialog(item.id)"
+                    />
+                    <v-btn
                         v-tooltip:top="'Setujui Pengajuan'"
                         icon="mdi-check-circle-outline"
                         variant="outlined"
@@ -109,6 +119,7 @@
 
         <!-- Modals -->
         <RegistrationDetailDialog ref="detailRef" />
+        <RegistrationEditDialog ref="editRef" @updated="refreshTable" />
         <ApprovalActionDialog ref="actionRef" @processed="refreshTable" />
     </div>
 </template>
@@ -119,6 +130,7 @@ import { ref } from "vue";
 import BaseDataTable from "@/shared/components/BaseDataTable.vue";
 import BaseBadge from "@/shared/components/BaseBadge.vue";
 import RegistrationDetailDialog from "@/admin/components/partnership/RegistrationDetailDialog.vue";
+import RegistrationEditDialog from "@/admin/components/partnership/RegistrationEditDialog.vue";
 import ApprovalActionDialog from "@/admin/components/partnership/ApprovalActionDialog.vue";
 import { useFormatter } from "@/shared/composables/useFormatter";
 
@@ -128,6 +140,7 @@ const { formatDateTime } = useFormatter();
 const search = ref("");
 const approvalTable = ref();
 const detailRef = ref();
+const editRef = ref();
 const actionRef = ref();
 
 const headers = [
@@ -190,6 +203,10 @@ const openDetailDialog = (id: number) => {
     if (detailRef.value) {
         detailRef.value.open(id);
     }
+};
+
+const openEditDialog = (id: number) => {
+    editRef.value?.open(id);
 };
 
 const openActionDialog = (

@@ -46,6 +46,9 @@ export interface MemberIdentity {
 export interface Member {
     id: number;
     code: string;
+    customer_number?: string | null;
+    can_sync_supply_chain?: boolean;
+    can_change_level?: boolean;
     name: string;
     email: string;
     mobile_phone: string;

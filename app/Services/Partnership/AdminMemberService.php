@@ -7,12 +7,19 @@ use App\Libraries\DataTable;
 use App\Models\Member;
 use App\Models\MemberAddress;
 use App\Models\MemberBankAccount;
+use App\Models\MemberSupplyChainSync;
+use App\Services\Integration\SupplyChainSyncService;
 use App\Support\MediaUrl;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 class AdminMemberService
 {
+    public function __construct(
+        private readonly SupplyChainSyncService $supplyChainSyncService,
+        private readonly MemberDirectLevelChangeService $levelChangeService,
+    ) {}
+
     /**
      * @param  array<string, mixed>  $params
      * @return array{results: Collection<int, object>, pagination?: array<string, mixed>}
@@ -21,9 +28,10 @@ class AdminMemberService
     {
         $params = $this->normalizeLevelFilter($params);
 
-        return DataTable::select([
+        $data = DataTable::select([
             'member.member_id as id',
             'member.member_code as code',
+            'member.member_supply_chain_code as customer_number',
             'member.member_name as name',
             'member.member_email as email',
             'member.member_mobilephone as mobile_phone',
@@ -47,6 +55,11 @@ class AdminMemberService
             ->search(['code', 'name', 'email', 'mobile_phone'])
             ->defaultSort('-id')
             ->get($params);
+        $eligible = $this->levelChangeService->eligibleQuery()->whereIn('member_id', $data['results']->pluck('id'))->pluck('member_id');
+        foreach ($data['results'] as $row) {
+            $row->can_change_level = $eligible->contains($row->id);
+        }
+        return $data;
     }
 
     /** @param array<string, mixed> $params */
@@ -96,6 +109,7 @@ class AdminMemberService
             'network',
             $this->detailNetwork($member)
         );
+        $member->setAttribute('can_change_level', $this->levelChangeService->eligibleQuery()->whereKey($member->getKey())->exists());
 
         return $member;
     }
@@ -109,7 +123,7 @@ class AdminMemberService
             throw new ProcessException('Gunakan aksi Nonaktifkan agar jaringan dan kewajiban reward dipindahkan dengan aman.');
         }
 
-        DB::transaction(function () use ($member, $data): void {
+        $update = fn () => DB::transaction(function () use ($member, $data): void {
             $attributes = [
                 'member_name' => $data['name'],
                 'member_email' => $data['email'] ?? '',
@@ -165,9 +179,27 @@ class AdminMemberService
 
             $member->update($attributes);
 
+            if (array_key_exists('customer_number', $data)) {
+                $member->update(['member_supply_chain_code' => $data['customer_number']]);
+                MemberSupplyChainSync::query()->updateOrCreate([
+                    'member_supply_chain_sync_member_id' => $member->getKey(),
+                ], [
+                    'member_supply_chain_sync_customer_no' => $data['customer_number'],
+                    'member_supply_chain_sync_status' => 'synced',
+                    'member_supply_chain_sync_error' => null,
+                    'member_supply_chain_sync_synced_datetime' => now(),
+                ]);
+            }
+
             $this->syncAddresses($member, $data['addresses']);
             $this->syncBankAccounts($member, $data['bank_accounts']);
         });
+
+        if (array_key_exists('customer_number', $data)) {
+            $this->supplyChainSyncService->withMemberSyncLock($member, $update);
+        } else {
+            $update();
+        }
 
         return $this->detail($member->refresh());
     }

@@ -29,7 +29,7 @@ class SupplyChainSaleApprovalRequest extends FormRequest
     public function attributes(): array
     {
         return [
-            'invoice_number' => 'nomor faktur Supply Chain',
+            'invoice_number' => 'nomor faktur Aplikasi Internal',
             'delivery_note_number' => 'nomor surat jalan',
             'products' => 'rincian batch produk',
             'products.*.product_code' => 'kode produk',

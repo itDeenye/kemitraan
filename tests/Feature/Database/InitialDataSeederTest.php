@@ -144,13 +144,13 @@ class InitialDataSeederTest extends TestCase
             101, 102, 103, 105, 106, 108, 109, 113, 114,
             121, 122, 123, 128, 129, 133, 134, 135, 136, 137,
             138, 139, 140, 143, 151, 152, 153,
-            154, 155, 157, 158, 159, 160, 161, 162, 163, 164,
+            154, 155, 157, 158, 159, 160, 161, 162, 163, 164, 165,
         ];
         $expectedAdministratorMenuIds = [
             1, 6, 101, 102, 103, 105, 106, 108, 109,
             113, 114, 121, 122, 123, 128, 129, 133, 134, 135,
             136, 137, 138, 139, 140, 143, 151,
-            152, 154, 155, 157, 158, 159, 160, 161, 162, 163, 164,
+            152, 154, 155, 157, 158, 159, 160, 161, 162, 163, 164, 165,
         ];
         $this->assertSame(
             $expectedMenuIds,
@@ -160,6 +160,10 @@ class InitialDataSeederTest extends TestCase
                 ->map(fn (mixed $menuId): int => (int) $menuId)
                 ->all(),
         );
+        $this->assertDatabaseHas('site_administrator_menu', [
+            'administrator_menu_id' => 165, 'administrator_menu_par_id' => 153,
+            'administrator_menu_title' => 'Laporan Biaya Pengiriman', 'administrator_menu_link' => '/stc/shipping-cost-report',
+        ]);
         $this->assertSame(
             $expectedAdministratorMenuIds,
             DB::table('site_administrator_privilege')

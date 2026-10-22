@@ -13,21 +13,363 @@ use App\Models\MemberSupplyChainSync;
 use App\Models\Product;
 use App\Models\ShippingDetail;
 use App\Models\ShippingPickup;
+use App\Models\SiteAdministrator;
+use App\Models\SiteAdministratorGroup;
 use App\Models\Trx;
 use App\Models\TrxDetail;
 use App\Models\TrxSupplyChainSync;
 use App\Models\Warehouse;
 use App\Services\Integration\SupplyChainSyncService;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Component\Process\Process;
 use Tests\TestCase;
 
 class SupplyChainIntegrationTest extends TestCase
 {
     use LazilyRefreshDatabase;
+
+    public function test_retry_after_admin_edit_uses_latest_primary_phone_and_ktp_not_the_old_recipient_phone(): void
+    {
+        [$member, $trx] = $this->createTransactionData();
+        $this->prepareManualSync();
+        DB::table('ref_country')->insertOrIgnore([
+            'country_id' => 1, 'country_iso_code' => 'ID', 'country_phone_code' => '+62',
+            'country_name' => 'Indonesia', 'country_flag' => '', 'country_is_active' => '1',
+        ]);
+        DB::table('ref_subdistrict')->insert([
+            'subdistrict_id' => 88001, 'subdistrict_district_id' => 317101,
+            'subdistrict_name' => 'Kelurahan Test', 'subdistrict_zip_code' => 12160,
+        ]);
+        Http::fake([
+            'manual-supply.test/*/login' => Http::response(['success' => true, 'data' => ['api_token' => 'test-token']]),
+            'manual-supply.test/*/tambah-customer' => Http::sequence()
+                ->push(['success' => false, 'message' => 'Nomor telepon sudah terdaftar.'], 422)
+                ->push(['success' => true, 'data' => ['cust_no' => '90000046']]),
+        ]);
+        $url = "/api/v1/admin/partnership/members/{$member->getKey()}/supply-chain/sync";
+        $this->postJson($url)->assertStatus(502);
+        $this->assertNull($member->fresh()->member_supply_chain_code);
+        $address = $member->defaultAddress;
+        $this->putJson("/api/v1/admin/partnership/members/{$member->getKey()}", [
+            'name' => 'Budi Santoso', 'mobile_phone' => '081799998888', 'gender' => 'Laki-laki', 'status' => 1,
+            'identity_type' => 'KTP', 'identity_no' => '3171012345670002', 'bank_accounts' => [],
+            'addresses' => [[
+                'id' => $address->getKey(), 'recipient' => 'Penerima Lama', 'phone' => '081234567890',
+                'full_address' => 'Jl. Sudirman No. 45', 'province_id' => '31', 'city_id' => '3171',
+                'district_id' => '317101', 'subdistrict_id' => 88001, 'country_id' => 1, 'is_default' => true,
+            ]],
+        ])->assertJsonMissingValidationErrors()->assertOk();
+        $this->assertSame('+6281799998888', $member->fresh()->member_mobilephone);
+        $this->assertSame('3171012345670002', $member->fresh()->member_identity_no);
+
+        $this->postJson($url)->assertOk()->assertJsonPath('data.customer_number', '90000046');
+        Http::assertSent(fn ($request) => str_ends_with($request->url(), '/tambah-customer')
+            && $request['cust_phone1'] === '+6281799998888' && $request['NoKTP'] === '3171012345670002');
+        Http::assertSentCount(3);
+        $sync = MemberSupplyChainSync::query()->where('member_supply_chain_sync_member_id', $member->getKey())->firstOrFail();
+        $this->assertSame('+6281799998888', $sync->member_supply_chain_sync_param['cust_phone1']);
+        $this->assertSame('3171012345670002', $sync->member_supply_chain_sync_param['NoKTP']);
+
+        $gateway = new FakeSupplyChainGateway;
+        (new SupplyChainSyncService($gateway))->syncSale($trx);
+        $this->assertCount(0, $gateway->customerPayloads);
+        $this->assertSame('+6281234567890', $gateway->salePayloads[0]['telp_penerima']);
+    }
+
+    public function test_admin_manual_member_sync_returns_the_internal_message_and_hides_the_action(): void
+    {
+        [$member] = $this->createTransactionData();
+        $this->prepareManualSync();
+        Http::fake([
+            'manual-supply.test/*/login' => Http::response(['success' => true, 'data' => ['api_token' => 'test-token']]),
+            'manual-supply.test/*/tambah-customer' => Http::response([
+                'success' => true, 'message' => 'Customer berhasil disimpan di internal.', 'data' => ['cust_no' => '90000046'],
+            ]),
+        ]);
+        $this->getJson('/api/v1/admin/partnership/members')->assertOk()
+            ->assertJsonPath('data.results.0.can_sync_supply_chain', true);
+        $this->getJson("/api/v1/admin/partnership/members/{$member->getKey()}")->assertOk()
+            ->assertJsonPath('data.can_sync_supply_chain', true);
+
+        $url = "/api/v1/admin/partnership/members/{$member->getKey()}/supply-chain/sync";
+        $this->postJson($url)->assertOk()
+            ->assertJsonPath('message', 'Customer berhasil disimpan di internal.')
+            ->assertJsonPath('data.customer_number', '90000046')
+            ->assertJsonPath('data.can_sync_supply_chain', false);
+
+        $this->getJson('/api/v1/admin/partnership/members')->assertOk()
+            ->assertJsonPath('data.results.0.customer_number', '90000046')
+            ->assertJsonPath('data.results.0.can_sync_supply_chain', false);
+        $this->postJson($url)->assertStatus(409);
+        Http::assertSentCount(2);
+    }
+
+    public function test_admin_manual_member_sync_returns_the_original_internal_error_and_allows_retry(): void
+    {
+        [$member] = $this->createTransactionData();
+        $this->prepareManualSync();
+        Http::fake([
+            'manual-supply.test/*/login' => Http::response(['success' => true, 'data' => ['api_token' => 'test-token']]),
+            'manual-supply.test/*/tambah-customer' => Http::sequence()
+                ->push(['success' => false, 'message' => 'Customer ditolak: nomor identitas belum valid.'], 422)
+                ->push(['success' => true, 'message' => 'Customer berhasil disinkronkan.', 'data' => ['cust_no' => '90000046']]),
+        ]);
+        $url = "/api/v1/admin/partnership/members/{$member->getKey()}/supply-chain/sync";
+        $this->postJson($url)->assertStatus(502)
+            ->assertJsonPath('message', 'Error pada Aplikasi Internal: Customer ditolak: nomor identitas belum valid.');
+        $this->assertNull($member->fresh()->member_supply_chain_code);
+        $this->getJson('/api/v1/admin/partnership/members')->assertOk()
+            ->assertJsonPath('data.results.0.can_sync_supply_chain', true);
+
+        $this->postJson($url)->assertOk()->assertJsonPath('data.customer_number', '90000046');
+    }
+
+    #[DataProvider('manualSaleTypes')]
+    public function test_admin_manual_sale_sync_only_creates_the_internal_sale_and_hides_the_action(bool $preorder): void
+    {
+        [$member, $trx] = $this->createTransactionData();
+        $trx->update(['trx_is_preorder' => $preorder]);
+        $member->update(['member_supply_chain_code' => '90000046']);
+        $this->prepareManualSync();
+        Http::fake([
+            'manual-supply.test/*/login' => Http::response(['success' => true, 'data' => ['api_token' => 'test-token']]),
+            'manual-supply.test/*/simpan' => Http::response([
+                'success' => true, 'message' => 'Transaksi berhasil dibuat di internal.', 'data' => ['jual_no' => 'INV-001'],
+            ]),
+        ]);
+        $this->getJson('/api/v1/admin/transactions/orders')->assertOk()
+            ->assertJsonPath('data.results.0.can_sync_supply_chain', true);
+        $this->getJson('/api/v1/admin/inventory/shipments')->assertOk()
+            ->assertJsonPath('data.results.0.can_sync_supply_chain', true);
+
+        $url = "/api/v1/admin/transactions/orders/{$trx->getKey()}/supply-chain/sync";
+        $this->postJson($url)->assertOk()
+            ->assertJsonPath('message', 'Transaksi berhasil dibuat di internal.')
+            ->assertJsonPath('data.invoice_number', 'INV-001')
+            ->assertJsonPath('data.supply_chain_status', 'awaiting_callback')
+            ->assertJsonPath('data.can_sync_supply_chain', false);
+
+        $this->getJson('/api/v1/admin/transactions/orders')->assertOk()
+            ->assertJsonPath('data.results.0.can_sync_supply_chain', false);
+        $this->getJson("/api/v1/admin/transactions/orders/{$trx->getKey()}")->assertOk()
+            ->assertJsonPath('data.can_sync_supply_chain', false);
+        $this->getJson('/api/v1/admin/inventory/shipments')->assertOk()
+            ->assertJsonPath('data.results.0.invoice_number', 'INV-001')
+            ->assertJsonPath('data.results.0.can_sync_supply_chain', false);
+        $this->postJson($url)->assertStatus(409);
+        Http::assertSentCount(2);
+    }
+
+    public static function manualSaleTypes(): array
+    {
+        return ['regular' => [false], 'preorder' => [true]];
+    }
+
+    public function test_admin_manual_sale_sync_preserves_the_internal_rejection_without_an_invoice(): void
+    {
+        [$member, $trx] = $this->createTransactionData();
+        $member->update(['member_supply_chain_code' => '90000046']);
+        $this->prepareManualSync();
+        Http::fake([
+            'manual-supply.test/*/login' => Http::response(['success' => true, 'data' => ['api_token' => 'test-token']]),
+            'manual-supply.test/*/simpan' => Http::response(['success' => false, 'message' => 'Kode produk tidak ditemukan di internal.'], 400),
+        ]);
+
+        $this->postJson("/api/v1/admin/transactions/orders/{$trx->getKey()}/supply-chain/sync")
+            ->assertStatus(502)->assertJsonPath('message', 'Error pada Aplikasi Internal: Kode produk tidak ditemukan di internal.');
+
+        $this->assertNull($trx->fresh()->trx_supply_chain_code);
+        $this->getJson('/api/v1/admin/inventory/shipments')->assertOk()
+            ->assertJsonPath('data.results.0.can_sync_supply_chain', true);
+        $this->assertDatabaseHas('trx_supply_chain_syncs', [
+            'trx_supply_chain_sync_trx_id' => $trx->getKey(), 'trx_supply_chain_sync_status' => 'failed',
+        ]);
+    }
+
+    #[DataProvider('ineligibleManualSales')]
+    public function test_admin_manual_sale_sync_rejects_ineligible_orders_without_calling_internal(array $attributes): void
+    {
+        [, $trx] = $this->createTransactionData();
+        $trx->update($attributes);
+        $this->prepareManualSync();
+        Http::fake();
+
+        $this->getJson('/api/v1/admin/transactions/orders')->assertOk()
+            ->assertJsonPath('data.results.0.can_sync_supply_chain', false);
+        $this->postJson("/api/v1/admin/transactions/orders/{$trx->getKey()}/supply-chain/sync")
+            ->assertUnprocessable();
+
+        Http::assertNothingSent();
+    }
+
+    public static function ineligibleManualSales(): array
+    {
+        return [
+            'unpaid' => [['trx_status' => 'waiting_payment']],
+            'payment under review' => [['trx_status' => 'waiting_payment_approval']],
+            'cancelled' => [['trx_status' => 'cancelled']],
+            'member seller' => [['trx_seller_type' => 'distributor']],
+            'retail' => [['trx_type' => 'retail']],
+        ];
+    }
+
+    public function test_manual_sync_requires_admin_and_rejects_inactive_members_and_disabled_integration(): void
+    {
+        [$member, $trx] = $this->createTransactionData();
+        Http::preventStrayRequests();
+        $memberUrl = "/api/v1/admin/partnership/members/{$member->getKey()}/supply-chain/sync";
+        $saleUrl = "/api/v1/admin/transactions/orders/{$trx->getKey()}/supply-chain/sync";
+        $this->postJson($memberUrl)->assertUnauthorized();
+        $this->postJson($saleUrl)->assertUnauthorized();
+
+        $this->prepareManualSync();
+        $member->update(['member_status' => 2]);
+        $this->getJson('/api/v1/admin/partnership/members')->assertOk()
+            ->assertJsonPath('data.results.0.can_sync_supply_chain', false);
+        $this->postJson($memberUrl)->assertUnprocessable();
+        config()->set('services.supply_chain.enabled', false);
+        $this->postJson($saleUrl)->assertStatus(503);
+        Http::assertNothingSent();
+    }
+
+    public function test_manual_member_sync_prevents_a_second_request_while_internal_is_processing(): void
+    {
+        [$member] = $this->createTransactionData();
+        $this->prepareManualSync();
+        $url = "/api/v1/admin/partnership/members/{$member->getKey()}/supply-chain/sync";
+        $nested = null;
+        $attempted = false;
+        Http::fake([
+            'manual-supply.test/*/login' => Http::response(['success' => true, 'data' => ['api_token' => 'test-token']]),
+            'manual-supply.test/*/tambah-customer' => function () use ($url, &$nested, &$attempted) {
+                if (! $attempted) {
+                    $attempted = true;
+                    $nested = $this->postJson($url);
+                }
+
+                return Http::response(['success' => true, 'data' => ['cust_no' => '90000046']]);
+            },
+        ]);
+
+        $this->postJson($url)->assertOk();
+        $this->assertNotNull($nested);
+        $nested->assertStatus(409);
+        Http::assertSentCount(2);
+        $this->assertDatabaseCount('member_supply_chain_syncs', 1);
+    }
+
+    public function test_background_sync_reuses_the_persisted_member_and_sale_numbers_without_recreating_them(): void
+    {
+        [$member, $trx] = $this->createTransactionData();
+        $member->update(['member_supply_chain_code' => '90000046']);
+        $trx->update(['trx_supply_chain_code' => 'INV-001']);
+        $this->prepareManualSync();
+
+        app(SupplyChainSyncService::class)->syncMember($member);
+        app(SupplyChainSyncService::class)->syncSale($trx);
+
+        Http::assertNothingSent();
+        $this->assertSame('90000046', $member->fresh()->member_supply_chain_code);
+        $this->assertSame('INV-001', $trx->fresh()->trx_supply_chain_code);
+    }
+
+    #[DataProvider('concurrentSyncResources')]
+    public function test_manual_sync_rejects_an_entity_being_synced_by_another_process(string $resource): void
+    {
+        [$member, $trx] = $this->createTransactionData();
+        $this->prepareManualSync();
+        $record = $resource === 'member' ? $member : $trx;
+        $route = $resource === 'member' ? 'partnership/members' : 'transactions/orders';
+        $cacheDirectory = storage_path('framework/testing/supply-chain-sync-'.Str::uuid());
+        File::ensureDirectoryExists($cacheDirectory);
+        $cacheDirectory = realpath($cacheDirectory);
+        $this->assertStringStartsWith(realpath(storage_path('framework/testing')).DIRECTORY_SEPARATOR, $cacheDirectory);
+        $originalCache = config('cache');
+        config()->set('cache.default', 'file');
+        config()->set('cache.stores.file.path', $cacheDirectory);
+        config()->set('cache.stores.file.lock_path', $cacheDirectory);
+        Cache::purge('file');
+
+        $script = <<<'PHP'
+require $argv[1].'/vendor/autoload.php';
+$app = require $argv[1].'/bootstrap/app.php';
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+config()->set('cache.default', 'file');
+config()->set('cache.stores.file.path', $argv[2]);
+config()->set('cache.stores.file.lock_path', $argv[2]);
+Illuminate\Support\Facades\Cache::purge('file');
+Illuminate\Support\Facades\Http::preventStrayRequests();
+trait PauseAfterSyncLock {
+    public function refresh() {
+        fwrite(STDOUT, "LOCKED\n");
+        fflush(STDOUT);
+        usleep(10000000);
+        throw new RuntimeException('The parent must stop this worker before synchronization continues.');
+    }
+}
+$record = $argv[3] === 'member'
+    ? new class extends App\Models\Member { use PauseAfterSyncLock; }
+    : new class extends App\Models\Trx { use PauseAfterSyncLock; };
+$record->setAttribute($record->getKeyName(), (int) $argv[4]);
+$service = $app->make(App\Services\Integration\SupplyChainSyncService::class);
+$argv[3] === 'member' ? $service->syncMember($record) : $service->syncSale($record);
+PHP;
+
+        $process = new Process([PHP_BINARY, '-r', $script, base_path(), $cacheDirectory, $resource, (string) $record->getKey()]);
+        $process->setTimeout(15);
+
+        try {
+            $process->start();
+            while ($process->isRunning() && ! str_contains($process->getOutput(), 'LOCKED')) {
+                $process->checkTimeout();
+                usleep(10000);
+            }
+            $this->assertStringContainsString(
+                'LOCKED',
+                $process->getOutput(),
+                $process->getErrorOutput(),
+            );
+            $this->postJson("/api/v1/admin/{$route}/{$record->getKey()}/supply-chain/sync")
+                ->assertStatus(409)->assertJsonPath('message', 'Sinkronisasi sedang diproses. Silakan tunggu.');
+            Http::assertNothingSent();
+        } finally {
+            $process->stop(0);
+            Cache::purge('file');
+            config()->set('cache', $originalCache);
+            File::deleteDirectory($cacheDirectory);
+        }
+    }
+
+    public static function concurrentSyncResources(): array
+    {
+        return ['member' => ['member'], 'sale' => ['sale']];
+    }
+
+    private function prepareManualSync(): void
+    {
+        config()->set('services.supply_chain.enabled', true);
+        config()->set('services.supply_chain.base_url', 'https://manual-supply.test');
+        config()->set('services.supply_chain.username', 'manual-test');
+        config()->set('services.supply_chain.password', 'test-secret');
+        Http::preventStrayRequests();
+        $group = SiteAdministratorGroup::query()->create([
+            'administrator_group_title' => 'Super Administrator', 'administrator_group_type' => 'superuser', 'administrator_group_is_active' => 1,
+        ]);
+        $this->actingAs(SiteAdministrator::query()->create([
+            'administrator_administrator_group_id' => $group->getKey(), 'administrator_username' => 'sync.admin',
+            'administrator_name' => 'Sync Admin', 'administrator_email' => 'sync.admin@example.test',
+            'administrator_password' => Hash::make('Secret123'), 'administrator_is_active' => 1,
+        ]), 'admin_api');
+    }
 
     public function test_member_sync_command_uses_missing_member_code_and_job_retries_three_times(): void
     {
@@ -146,14 +488,14 @@ class SupplyChainIntegrationTest extends TestCase
                 'data' => ['api_token' => 'test-token'],
             ]),
             'https://supply-duplicate.test/api/v1/penjualan-supply-chain/tambah-customer' => Http::response([
-                'success' => false,
+                'success' => true,
                 'message' => "Customer dengan No KTP '3171012345670001' sudah terdaftar pada sistem (data kembar).",
                 'data' => [
                     'nama' => 'Budi Santoso',
                     'Cust_no' => '10030900 ',
                     'no_kemitraan' => 'KM-2026-002',
                 ],
-            ], 400),
+            ]),
         ]);
 
         $sync = (new SupplyChainSyncService(new HttpSupplyChainGateway))->syncMember($member);
@@ -162,6 +504,51 @@ class SupplyChainIntegrationTest extends TestCase
         $this->assertSame('10030900', $sync->member_supply_chain_sync_customer_no);
         $this->assertSame('10030900', $sync->member_supply_chain_sync_response['cust_no']);
         $this->assertSame('10030900', $member->refresh()->member_supply_chain_code);
+    }
+
+    #[DataProvider('rejectedCustomerResponses')]
+    public function test_rejected_customer_response_never_synchronizes_even_when_it_contains_a_number(int $status, bool $refreshToken): void
+    {
+        [$member] = $this->createTransactionData();
+        $this->prepareManualSync();
+        $message = "Customer dengan No KTP '3171012345670001' sudah terdaftar pada sistem (data kembar).";
+        $responses = Http::sequence();
+        if ($refreshToken) {
+            $responses->push(['success' => false, 'message' => 'Token kedaluwarsa.'], 401);
+        }
+        $responses->push([
+            'success' => false,
+            'message' => $message,
+            'data' => ['nama' => 'Budi Santoso', 'Cust_no' => '10030900 ', 'no_kemitraan' => 'KM-2026-002'],
+        ], $status);
+        Http::fake([
+            'manual-supply.test/*/login' => Http::response(['success' => true, 'data' => ['api_token' => 'test-token']]),
+            'manual-supply.test/*/tambah-customer' => $responses,
+        ]);
+
+        $this->postJson("/api/v1/admin/partnership/members/{$member->getKey()}/supply-chain/sync")
+            ->assertStatus(502)->assertJsonPath('message', 'Error pada Aplikasi Internal: '.$message);
+
+        $this->assertNull($member->fresh()->member_supply_chain_code);
+        $this->assertDatabaseHas('member_supply_chain_syncs', [
+            'member_supply_chain_sync_member_id' => $member->getKey(),
+            'member_supply_chain_sync_status' => 'failed',
+            'member_supply_chain_sync_customer_no' => null,
+            'member_supply_chain_sync_error' => 'Error pada Aplikasi Internal: '.$message,
+        ]);
+        $this->getJson("/api/v1/admin/partnership/members/{$member->getKey()}")->assertOk()
+            ->assertJsonPath('data.can_sync_supply_chain', true);
+        Http::assertSentCount($refreshToken ? 4 : 2);
+    }
+
+    public static function rejectedCustomerResponses(): array
+    {
+        return [
+            'HTTP 200 business rejection' => [200, false],
+            'HTTP 400 rejection' => [400, false],
+            'HTTP 200 rejection after token refresh' => [200, true],
+            'HTTP 400 rejection after token refresh' => [400, true],
+        ];
     }
 
     public function test_company_sale_stops_after_create_and_waits_for_internal_approval_callback(): void

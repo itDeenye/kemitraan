@@ -6,6 +6,7 @@ use App\Mail\MemberCredentialsMail;
 use App\Models\Member;
 use App\Models\MemberGroup;
 use App\Models\MemberLevel;
+use App\Models\MemberRegistration;
 use App\Models\RefBank;
 use App\Models\RefCity;
 use App\Models\RefDistrict;
@@ -21,6 +22,34 @@ use Tests\TestCase;
 class AdminDistributorManagementTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_direct_distributor_creation_rejects_legacy_member_and_pending_registration_phones(): void
+    {
+        Mail::fake();
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $this->setupRegion();
+        MemberGroup::query()->create(['member_group_name' => 'Distributor', 'member_group_is_active' => 1]);
+        $this->createMember('PHONE-OWNER', 'Owner', 'DST', 1)->update(['member_mobilephone' => '081799998888']);
+        MemberRegistration::query()->create([
+            'member_registration_member_level_id' => 1, 'member_registration_name' => 'Applicant',
+            'member_registration_username' => '', 'member_registration_password' => '',
+            'member_registration_mobilephone' => '6281799998889', 'member_registration_status' => 'requested',
+            'member_registration_datetime' => now(),
+        ]);
+        $payload = [
+            'name' => 'Duplicate', 'gender' => 'Laki-laki', 'status' => 1,
+            'birth_date' => '1990-01-01', 'domicile_address' => 'Jl. Domisili',
+            'identity_type' => 'KTP', 'identity_no' => '0001234567890123',
+            'address' => 'Jl. KTP', 'province_id' => '35', 'city_id' => '3578',
+            'district_id' => '357801', 'subdistrict_id' => 3578010001,
+        ];
+        foreach (['+6281799998888', '081799998889'] as $phone) {
+            $this->postJson('/api/v1/admin/partnership/distributors', [...$payload, 'mobile_phone' => $phone])
+                ->assertUnprocessable()->assertJsonValidationErrors('mobile_phone');
+        }
+        $this->assertDatabaseCount('member', 1);
+        Mail::assertNothingOutgoing();
+    }
 
     public function test_distributor_can_be_created_with_documents_existing_address_fields_and_multiple_banks(): void
     {

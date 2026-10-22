@@ -17,7 +17,7 @@
             </h2>
 
             <div
-                class="text-[14px] text-[#6b7280] mb-8 max-w-[280px] mx-auto leading-relaxed w-full"
+                class="text-[14px] text-[#6b7280] mb-6 max-w-[320px] mx-auto leading-relaxed w-full"
                 v-html="message"
             ></div>
 
@@ -28,7 +28,7 @@
                     :disabled="isLoading"
                     @click="cancel"
                 >
-                    Tidak
+                    {{ cancelText }}
                 </button>
                 <button
                     class="flex-1 py-3 px-4 rounded-full font-bold text-[14px] text-white transition-all duration-200 active:scale-[0.98] flex items-center justify-center focus:outline-none"
@@ -61,6 +61,7 @@ const isLoading = ref(false);
 const title = ref("");
 const message = ref("");
 const confirmText = ref("Ya");
+const cancelText = ref("Tidak");
 const confirmColor = ref("primary");
 const icon = ref("mdi-help-circle-outline");
 const iconColor = ref("primary");
@@ -69,23 +70,33 @@ const isError = computed(() => {
     return confirmColor.value === "error" || confirmColor.value === "red";
 });
 
+const isWine = computed(() => {
+    return confirmColor.value === "wine" || confirmColor.value === "var(--wine)";
+});
+
 const iconBgClass = computed(() => {
-    return isError.value ? "bg-red-50" : "bg-blue-50";
+    if (isError.value) return "bg-red-50";
+    if (isWine.value) return "bg-[#fff1f2]";
+    return "bg-blue-50";
 });
 
 const resolvedIconColor = computed(() => {
     if (iconColor.value !== "primary") return iconColor.value;
-    return isError.value ? "error" : "primary";
+    if (isError.value) return "error";
+    if (isWine.value) return "var(--wine, #940923)";
+    return "primary";
 });
 
 const confirmColorCss = computed(() => {
-    return isError.value ? "var(--red, #ef4444)" : "var(--primary, #3b82f6)";
+    if (isError.value) return "var(--red, #ef4444)";
+    if (isWine.value) return "var(--wine, #940923)";
+    return "var(--primary, #3b82f6)";
 });
 
 const confirmColorShadow = computed(() => {
-    return isError.value
-        ? "rgba(239, 68, 68, 0.25)"
-        : "rgba(59, 130, 246, 0.25)";
+    if (isError.value) return "rgba(239, 68, 68, 0.25)";
+    if (isWine.value) return "rgba(148, 9, 35, 0.25)";
+    return "rgba(59, 130, 246, 0.25)";
 });
 
 let resolvePromise: ((value: boolean) => void) | null = null;
@@ -94,6 +105,7 @@ const open = (options: {
     title?: string;
     message: string;
     confirmText?: string;
+    cancelText?: string;
     confirmColor?: string;
     icon?: string;
     iconColor?: string;
@@ -101,6 +113,7 @@ const open = (options: {
     title.value = options.title || "Konfirmasi";
     message.value = options.message;
     confirmText.value = options.confirmText || "Ya, Lanjutkan";
+    cancelText.value = options.cancelText || "Tidak";
     confirmColor.value = options.confirmColor || "primary";
     icon.value = options.icon || "mdi-help-circle-outline";
     iconColor.value = options.iconColor || options.confirmColor || "primary";

@@ -49,7 +49,7 @@ class SupplyChainSaleApprovalController extends Controller
                 'integration_callback_log_response_json' => [
                     'message' => $exception instanceof ProcessException
                         ? $exception->getMessage()
-                        : 'Callback approval Supply Chain gagal diproses.',
+                        : 'Callback approval Aplikasi Internal gagal diproses.',
                     'error_code' => 'process_error',
                 ],
                 'integration_callback_log_status' => 'failed',
@@ -66,7 +66,7 @@ class SupplyChainSaleApprovalController extends Controller
         $expected = trim((string) config('services.supply_chain.callback_token', ''));
         if ($expected === '') {
             if (app()->environment('production')) {
-                throw new ProcessException('Token callback Supply Chain belum dikonfigurasi.', 503);
+                throw new ProcessException('Token callback Aplikasi Internal belum dikonfigurasi.', 503);
             }
 
             return;
@@ -74,7 +74,7 @@ class SupplyChainSaleApprovalController extends Controller
 
         $actual = (string) ($request->header('X-Supply-Chain-Callback-Token') ?: $request->bearerToken());
         if ($actual === '' || ! hash_equals($expected, $actual)) {
-            throw new ProcessException('Callback approval Supply Chain tidak dapat diverifikasi.', 401);
+            throw new ProcessException('Callback approval Aplikasi Internal tidak dapat diverifikasi.', 401);
         }
     }
 

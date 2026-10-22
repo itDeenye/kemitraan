@@ -723,6 +723,59 @@ class AdminTransactionInventoryWorkflowTest extends TestCase
         }
     }
 
+    #[DataProvider('preorderDisplayShippingMethods')]
+    public function test_admin_shipping_information_uses_the_original_pickup_choice_without_changing_the_courier_flow(int $depth, string $originMethod, string $expected, string $mode = 'upline_transit', string $method = 'courier_express'): void
+    {
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $this->createData();
+        $parentId = 0;
+        for ($index = 1; $index <= $depth; $index++) {
+            $parentId = DB::table('trx')->insertGetId([
+                ...$this->trxPayload(), 'trx_id' => $index + 1, 'trx_code' => 'ORIGIN-'.$index,
+                'trx_parent_trx_id' => $parentId, 'trx_is_preorder' => 1,
+                'trx_preorder_fulfillment_mode' => $index === 1 ? $mode : 'direct',
+                'trx_shipping_method' => $index === 1 ? $originMethod : 'courier_express',
+            ]);
+        }
+        Trx::query()->findOrFail(1)->update([
+            'trx_parent_trx_id' => $parentId, 'trx_is_preorder' => $depth > 0,
+            'trx_shipping_method' => $method, 'trx_status' => 'processing',
+        ]);
+        $this->createPayment();
+
+        foreach (['transactions/orders', 'inventory/shipments'] as $route) {
+            $this->getJson('/api/v1/admin/'.$route.'?filter[code]=TRX-001')->assertOk()
+                ->assertJsonPath('data.results.0.display_shipping_method', $expected)
+                ->assertJsonPath('data.results.0.shipping_method', $method)
+                ->assertJsonPath('data.results.0.preorder_fulfillment_mode', $depth > 0 ? $mode : 'direct');
+            $this->getJson('/api/v1/admin/'.$route.'?filter[code]=TRX-001&filter[display_shipping_method]='.$expected)
+                ->assertOk()->assertJsonCount(1, 'data.results');
+            $opposite = $expected === 'pickup' ? 'courier_express' : 'pickup';
+            $this->getJson('/api/v1/admin/'.$route.'?filter[code]=TRX-001&filter[display_shipping_method]='.$opposite)
+                ->assertOk()->assertJsonCount(0, 'data.results');
+            $this->getJson('/api/v1/admin/'.$route.'/1')->assertOk()
+                ->assertJsonPath('data.display_shipping_method', $expected)
+                ->assertJsonPath('data.shipping_method', $method)
+                ->assertJsonPath('data.preorder_fulfillment_mode', $depth > 0 ? $mode : 'direct')
+                ->assertJsonPath('data.actions.requires_pickup_method', $method === 'courier_express')
+                ->assertJsonPath('data.actions.requires_pickup_pin', $method === 'pickup');
+        }
+        $this->getJson('/api/v1/admin/transactions/payments/1')->assertOk()
+            ->assertJsonPath('data.display_shipping_method', $expected)
+            ->assertJsonPath('data.shipping_method', $method);
+    }
+
+    public static function preorderDisplayShippingMethods(): array
+    {
+        return ['regular courier' => [0, 'pickup', 'courier_express'],
+            'PO via one upline, final pickup' => [1, 'pickup', 'pickup'],
+            'PO via two uplines, final pickup' => [2, 'pickup', 'pickup'],
+            'PO final courier' => [2, 'courier_express', 'courier_express'],
+            'legacy PO actual warehouse pickup' => [1, 'pickup', 'pickup', 'direct', 'pickup'],
+            'legacy PO courier remains courier' => [2, 'pickup', 'courier_express', 'direct'],
+            'regular warehouse pickup' => [0, 'pickup', 'pickup', 'direct', 'pickup']];
+    }
+
     public function test_stock_adjustment_and_order_fulfillment_workflow(): void
     {
         Mail::fake();

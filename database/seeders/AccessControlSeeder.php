@@ -83,6 +83,9 @@ class AccessControlSeeder extends Seeder
             [159, 10, 'Laporan Pencapaian Poin', '', '/rewards/point-achievement-report', 'mdi-file-certificate-outline', 6],
             [160, 7, 'Screening Stok', '', '/transactions/stock-screening', 'mdi-clipboard-text-search-outline', 2],
         ];
+        $reportMenuId = SiteAdministratorMenu::query()->where('administrator_menu_link', '/stc/shipping-cost-report')->value('administrator_menu_id')
+            ?? max(165, ((int) SiteAdministratorMenu::query()->max('administrator_menu_id')) + 1);
+        $menus[] = [(int) $reportMenuId, 153, 'Laporan Biaya Pengiriman', 'Biaya pengiriman yang tidak ditagihkan kepada pembeli.', '/stc/shipping-cost-report', 'mdi-truck-check-outline', 3];
         $menuIds = array_column($menus, 0);
         $parentIds = array_values(array_unique(array_filter(array_column($menus, 1))));
 

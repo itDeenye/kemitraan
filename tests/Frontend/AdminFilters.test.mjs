@@ -2,11 +2,13 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import test from 'node:test';
+import { baseParse, compile } from '@vue/compiler-dom';
 import { parse } from '@vue/compiler-sfc';
 import ts from 'typescript';
 
 const require = createRequire(import.meta.url);
 const Vue = require('vue');
+const { renderToString } = createRequire(require.resolve('vue'))('@vue/server-renderer');
 const source = path => readFileSync(new URL(`../../resources/js/${path}`, import.meta.url), 'utf8');
 const transpile = code => ts.transpileModule(code, {
     compilerOptions: { target: ts.ScriptTarget.ESNext, module: ts.ModuleKind.CommonJS },
@@ -14,6 +16,18 @@ const transpile = code => ts.transpileModule(code, {
 const badgeExports = {};
 new Function('exports', transpile(source('shared/composables/useBadge.ts')))(badgeExports);
 const badge = badgeExports.useBadge();
+const badgeDescriptor = parse(source('shared/components/BaseBadge.vue')).descriptor;
+const badgeRender = new Function('Vue', compile(badgeDescriptor.template.content, { mode: 'function', prefixIdentifiers: true }).code)(Vue);
+const badgeScript = transpile(badgeDescriptor.scriptSetup.content.replace(/^import .+;\r?$/gm, ''));
+const ShippingBadge = {
+    props: ['type', 'value', 'text', 'color', 'size', 'variant', 'chipClass', 'align', 'inline'],
+    setup(props, { slots }) {
+        const computed = new Function('computed', 'useBadge', 'defineProps', `${badgeScript}\nreturn { badgeLabel, badgeColor, alignClass };`)(
+            Vue.computed, badgeExports.useBadge, () => props,
+        );
+        return () => badgeRender(Vue.proxyRefs({ ...props, ...computed, $slots: slots }), []);
+    },
+};
 
 function headers(path) {
     const script = parse(source(`admin/pages/${path}`)).descriptor.scriptSetup.content;
@@ -24,10 +38,33 @@ function headers(path) {
 }
 
 for (const path of ['transactions/sales-orders.vue', 'inventory/Shipping.vue']) {
+    test(`${path} displays final pickup while retaining the courier method in the row`, async () => {
+        const template = parse(source(`admin/pages/${path}`)).descriptor.template.content;
+        const find = node => node.tag === 'template' && node.props?.some(prop => prop.type === 7 && prop.arg?.content === 'item.shipping_method')
+            ? node : node.children?.map(find).find(Boolean);
+        const slot = find(baseParse(template)).loc.source.replace(/^<template[^>]+>/, '<div>').replace(/<\/template>$/, '</div>');
+        const render = new Function('Vue', compile(slot, { mode: 'function', prefixIdentifiers: true }).code)(Vue);
+        for (const [preorder, mode, method, label] of [
+            [true, 'upline_transit', 'courier_express', 'Ambil di Upline'],
+            [true, 'direct', 'pickup', 'Ambil Sendiri'],
+            [false, 'direct', 'pickup', 'Ambil Sendiri'],
+        ]) {
+            const item = { is_preorder: preorder, preorder_fulfillment_mode: mode, shipping_method: method, display_shipping_method: 'pickup' };
+            const app = Vue.createSSRApp({ render: () => render({ item, column: {} }, []) });
+            app.component('BaseBadge', ShippingBadge);
+            app.component('v-chip', { setup: (_, { attrs, slots }) => () => Vue.h('span', { 'data-color': attrs.color }, slots.default?.()) });
+            const text = await renderToString(app);
+            assert.ok(text.includes(label), text);
+            assert.doesNotMatch(text, /Kurir Ekspres/);
+            assert.match(text, /data-color="success"/);
+            assert.equal(item.shipping_method, method);
+        }
+    });
     test(`${path} courier filters cover all methods shown by the list`, () => {
         const options = headers(path).find(column => column.key === 'shipping_method').options;
         assert.deepEqual(options.map(option => option.value).sort(), ['courier_express', 'courier_instant', 'courier_manual', 'pickup']);
-        for (const option of options) assert.equal(option.label, badge.getBadgeData('shipping_method', option.value).label);
+        for (const option of options) assert.equal(option.label, option.value === 'pickup'
+            ? 'Ambil Sendiri / Ambil di Upline' : badge.getBadgeData('shipping_method', option.value).label);
     });
 }
 
@@ -58,10 +95,10 @@ test('upgrade filters include applied and cancelled states shown in history', ()
     assert.deepEqual(options.map(option => option.value).sort(), ['applied', 'approved', 'cancelled', 'rejected', 'requested', 'scheduled']);
 });
 
-function table() {
+function table(pageHeaders) {
     const props = Vue.reactive({
         url: '/admin/transactions/orders', queryParams: {}, search: '', selected: [],
-        headers: [
+        headers: pageHeaders ?? [
             { key: 'buyer.code', title: 'Kode Mitra', filter: true, type: 'text' },
             { key: 'order_type.code', filterKey: 'is_preorder', title: 'Tipe Pesanan', type: 'select', options: [{ value: 0, label: 'Reguler' }] },
             { key: 'ordered_at', type: 'date' },
@@ -81,6 +118,17 @@ function table() {
 }
 
 const options = { page: 1, itemsPerPage: 10, sortBy: [] };
+for (const path of ['transactions/sales-orders.vue', 'inventory/Shipping.vue']) {
+    test(`${path} filters by the displayed final shipping choice rather than the transit courier`, async () => {
+        const page = table(headers(path));
+        page.currentFilters.value = { 'shipping_method[eq]': 'pickup' };
+        const pending = page.loadServerItems(options);
+        assert.equal(page.requests[0].params['filter[display_shipping_method]'], 'pickup');
+        assert.equal('filter[shipping_method]' in page.requests[0].params, false);
+        page.requests[0].resolve({ data: { data: { results: [], pagination: { total_data: 0 } } } });
+        await pending;
+    });
+}
 const response = (code, total) => ({ data: { data: { results: [{ code }], pagination: { total_data: total } } } });
 
 test('new filters cannot be overwritten by an older unfiltered response', async () => {

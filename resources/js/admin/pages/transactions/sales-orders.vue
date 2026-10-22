@@ -177,9 +177,13 @@
             <template #item.shipping_method="{ item, column }">
                 <BaseBadge
                     type="shipping_method"
-                    :value="item.shipping_method"
+                    :value="item.display_shipping_method || item.shipping_method"
                     :align="column.align"
-                />
+                >
+                    <template v-if="item.is_preorder && item.preorder_fulfillment_mode === 'upline_transit' && (item.display_shipping_method || item.shipping_method) === 'pickup'">
+                        Ambil di Upline
+                    </template>
+                </BaseBadge>
             </template>
             <template #item.totals.grand_total="{ item }">
                 <div class="text-body-2 font-weight-bold">
@@ -195,6 +199,12 @@
             </template>
             <template #item.actions="{ item }">
                 <div class="d-flex ga-2 justify-center">
+                    <SupplyChainSyncButton
+                        :key="`sync-order-${item.id}`"
+                        :endpoint="`/admin/transactions/orders/${item.id}/supply-chain/sync`"
+                        :can-sync="item.can_sync_supply_chain"
+                        @processed="refreshTable"
+                    />
                     <v-btn
                         v-tooltip:top="'Detail Pesanan'"
                         icon="mdi-eye-outline"
@@ -248,6 +258,7 @@ import { useBadge } from "@/shared/composables/useBadge";
 import { ref, computed, onMounted } from "vue";
 import BaseDataTable from "@/shared/components/BaseDataTable.vue";
 import BaseBadge from "@/shared/components/BaseBadge.vue";
+import SupplyChainSyncButton from "@/shared/components/SupplyChainSyncButton.vue";
 import OrderDetailDialog from "@/admin/components/transactions/OrderDetailDialog.vue";
 import { useFormatter } from "@/shared/composables/useFormatter";
 import transactionOrderService from "@/admin/services/transaction-order.service";
@@ -362,13 +373,15 @@ const headers = [
     {
         title: "Metode Pengiriman",
         key: "shipping_method",
+        filterKey: "display_shipping_method",
         type: "select",
         align: "center",
         sortable: false,
         filter: true,
         options: getBadgeOptions("shipping_method", [
             "courier_manual", "courier_express", "courier_instant", "pickup",
-        ]),
+        ]).map(option => option.value === "pickup"
+            ? { ...option, label: "Ambil Sendiri / Ambil di Upline" } : option),
         placeholder: "Pilih Metode",
     },
     {
@@ -439,6 +452,10 @@ const printOrder = (
     type: "po" | "invoice" | "resi",
 ) => {
     detailDialogRef.value?.print(id, type);
+};
+
+const refreshTable = () => {
+    dataTable.value?.refresh();
 };
 
 onMounted(() => {

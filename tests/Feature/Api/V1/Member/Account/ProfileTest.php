@@ -23,6 +23,55 @@ class ProfileTest extends TestCase
 {
     use RefreshDatabase;
 
+    #[DataProvider('duplicatePrimaryPhones')]
+    public function test_profile_rejects_another_members_primary_phone_in_equivalent_formats(string $storedPhone): void
+    {
+        $account = $this->createMemberAccount();
+        Member::query()->create([
+            'member_code' => 'OTHER-PHONE', 'member_name' => 'Other', 'member_member_level_id' => 1,
+            'member_mobilephone' => $storedPhone, 'member_status' => 1, 'member_join_datetime' => now(),
+        ]);
+        $this->actingAs($account, 'member_api');
+        $this->putJson('/api/v1/member/profile', ['name' => 'Must Not Save', 'phone' => '081799998888'])
+            ->assertUnprocessable()->assertJsonValidationErrors('phone');
+        $this->assertSame('Test Member', $account->member->fresh()->member_name);
+        $this->assertSame('08123456789', $account->member->fresh()->member_mobilephone);
+    }
+
+    public static function duplicatePrimaryPhones(): array
+    {
+        return ['local' => ['081799998888'], 'country code' => ['6281799998888'], 'international' => ['+6281799998888']];
+    }
+
+    public function test_profile_rejects_a_phone_reserved_by_a_pending_registration(): void
+    {
+        $account = $this->createMemberAccount();
+        MemberRegistration::query()->create([
+            'member_registration_member_level_id' => 1, 'member_registration_name' => 'Applicant',
+            'member_registration_username' => '', 'member_registration_password' => '',
+            'member_registration_mobilephone' => '081799998888', 'member_registration_status' => 'requested',
+            'member_registration_datetime' => now(),
+        ]);
+        $this->actingAs($account, 'member_api');
+        $this->putJson('/api/v1/member/profile', ['name' => 'Test Member', 'phone' => '+6281799998888'])
+            ->assertUnprocessable()->assertJsonValidationErrors('phone');
+        $this->assertSame('08123456789', $account->member->fresh()->member_mobilephone);
+    }
+
+    public function test_profile_allows_own_phone_including_its_approved_registration(): void
+    {
+        $account = $this->createMemberAccount();
+        MemberRegistration::query()->create([
+            'member_registration_member_level_id' => 1, 'member_registration_member_id' => $account->member->getKey(),
+            'member_registration_username' => '', 'member_registration_password' => '',
+            'member_registration_name' => 'Test Member', 'member_registration_mobilephone' => '+628123456789',
+            'member_registration_status' => 'approved', 'member_registration_datetime' => now(),
+        ]);
+        $this->actingAs($account, 'member_api');
+        $this->putJson('/api/v1/member/profile', ['name' => 'Test Member', 'phone' => '628123456789'])->assertOk();
+        $this->assertSame('+628123456789', $account->member->fresh()->member_mobilephone);
+    }
+
     #[DataProvider('validIdentities')]
     public function test_profile_accepts_document_formats(string $type, string $number): void
     {

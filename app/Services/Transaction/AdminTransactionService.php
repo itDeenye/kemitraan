@@ -91,6 +91,12 @@ class AdminTransactionService
             ->select('list_pickup.shipping_pickup_ref_id as transaction_id')
             ->selectRaw('current_pickup_status.shipping_pickup_status_value AS pickup_status');
 
+        $preorderFulfillmentMode = "COALESCE(preorder_root.trx_preorder_fulfillment_mode, preorder_parent.trx_preorder_fulfillment_mode, {$trxTable}.trx_preorder_fulfillment_mode, 'direct')";
+        $displayShippingMethod = "CASE WHEN {$trxTable}.trx_is_preorder = 1
+            AND {$preorderFulfillmentMode} = 'upline_transit'
+            AND COALESCE(preorder_root.trx_shipping_method, preorder_parent.trx_shipping_method, {$trxTable}.trx_shipping_method) = 'pickup'
+            THEN 'pickup' ELSE {$trxTable}.trx_shipping_method END";
+
         $query = DataTable::select([
             "{$trxTable}.trx_id as id",
             "{$trxTable}.trx_code as code",
@@ -131,6 +137,8 @@ class AdminTransactionService
             "{$trxTable}.trx_bill_amount as bill_amount",
             "{$trxTable}.trx_payment_method as payment_method",
             "{$trxTable}.trx_shipping_method as shipping_method",
+            DB::raw($displayShippingMethod.' as display_shipping_method'),
+            DB::raw($preorderFulfillmentMode.' as preorder_fulfillment_mode'),
             "{$trxTable}.trx_status as status",
             "{$trxTable}.trx_status_datetime as status_at",
             "{$trxTable}.trx_datetime as ordered_at",
@@ -261,6 +269,10 @@ class AdminTransactionService
 
         $this->applyDateRange($query, "{$trxTable}.trx_datetime", $params);
         $this->applyBuyerFilters($query, $params, 'buyer_member');
+        if (isset($params['filter']['display_shipping_method'])) {
+            $query->whereFilter(DB::raw($displayShippingMethod), $params['filter']['display_shipping_method']);
+            unset($params['filter']['display_shipping_method']);
+        }
 
         return $query->get($params);
     }

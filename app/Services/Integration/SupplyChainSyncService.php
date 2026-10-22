@@ -10,9 +10,12 @@ use App\Models\MemberSupplyChainSync;
 use App\Models\ShippingDetail;
 use App\Models\Trx;
 use App\Models\TrxSupplyChainSync;
+use App\Support\PhoneNumber;
 use Carbon\CarbonImmutable;
+use Closure;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Throwable;
@@ -30,11 +33,32 @@ class SupplyChainSyncService
 
     public function syncMember(Member $member): MemberSupplyChainSync
     {
+        return $this->withMemberSyncLock($member, fn (): MemberSupplyChainSync => $this->performMemberSync($member->refresh()));
+    }
+
+    public function withMemberSyncLock(Member $member, Closure $callback): mixed
+    {
+        return $this->withSyncLock('member:'.$member->getKey(), $callback);
+    }
+
+    private function performMemberSync(Member $member): MemberSupplyChainSync
+    {
         $sync = MemberSupplyChainSync::query()->firstOrCreate([
             'member_supply_chain_sync_member_id' => $member->getKey(),
         ], [
             'member_supply_chain_sync_status' => 'pending',
         ]);
+
+        if (filled($member->member_supply_chain_code)) {
+            $sync->update([
+                'member_supply_chain_sync_customer_no' => $member->member_supply_chain_code,
+                'member_supply_chain_sync_status' => 'synced',
+                'member_supply_chain_sync_error' => null,
+                'member_supply_chain_sync_synced_datetime' => $sync->member_supply_chain_sync_synced_datetime ?? now(),
+            ]);
+
+            return $sync->refresh();
+        }
 
         if (! $this->enabled()
             || ($sync->member_supply_chain_sync_status === 'synced'
@@ -58,14 +82,15 @@ class SupplyChainSyncService
                 'member_supply_chain_sync_error' => null,
             ]);
             $response = $this->gateway->createCustomer($param);
+            $customerNumber = $this->customerNumber($response['cust_no'] ?? null);
+            $this->persistMemberCode($member, $customerNumber);
             $sync->update([
-                'member_supply_chain_sync_customer_no' => (string) $response['cust_no'],
+                'member_supply_chain_sync_customer_no' => $customerNumber,
                 'member_supply_chain_sync_status' => 'synced',
                 'member_supply_chain_sync_response' => $response,
                 'member_supply_chain_sync_error' => null,
                 'member_supply_chain_sync_synced_datetime' => now(),
             ]);
-            $this->persistMemberCode($member, (string) $response['cust_no']);
 
             return $sync->refresh();
         } catch (Throwable $exception) {
@@ -93,13 +118,28 @@ class SupplyChainSyncService
 
     private function persistMemberCode(Member $member, string $customerNumber): void
     {
+        $customerNumber = $this->customerNumber($customerNumber);
         if ($member->member_supply_chain_code === $customerNumber) {
             return;
+        }
+
+        if (Member::query()->where('member_supply_chain_code', $customerNumber)
+            ->where('member_id', '!=', $member->getKey())->exists()) {
+            throw new ProcessException("Nomor customer '{$customerNumber}' dari Aplikasi Internal sudah digunakan oleh mitra lain.", 409);
         }
 
         $member->forceFill([
             'member_supply_chain_code' => $customerNumber,
         ])->save();
+    }
+
+    private function customerNumber(mixed $number): string
+    {
+        if ((! is_string($number) && ! is_int($number)) || trim((string) $number) === '') {
+            throw new ProcessException('Nomor customer tidak ditemukan pada respons Aplikasi Internal.', 502);
+        }
+
+        return trim((string) $number);
     }
 
     private function persistTransactionCode(Trx $trx, string $saleNumber): void
@@ -116,7 +156,12 @@ class SupplyChainSyncService
 
     public function syncSale(Trx $trx): Trx
     {
-        if (! $this->shouldSyncSale($trx)) {
+        return $this->withSyncLock('sale:'.$trx->getKey(), fn (): Trx => $this->performSaleSync($trx->refresh()));
+    }
+
+    private function performSaleSync(Trx $trx): Trx
+    {
+        if (! $this->shouldSyncSale($trx) || filled($trx->trx_supply_chain_code)) {
             return $trx;
         }
 
@@ -148,7 +193,7 @@ class SupplyChainSyncService
         ]);
 
         if (! $trx->buyer instanceof Member || ! $trx->sellerWarehouse) {
-            throw new ProcessException('Data pembeli atau gudang transaksi Supply Chain tidak lengkap.');
+            throw new ProcessException('Data pembeli atau gudang transaksi Aplikasi Internal tidak lengkap.');
         }
 
         $sync->update([
@@ -180,7 +225,7 @@ class SupplyChainSyncService
 
             $saleNumber = (string) data_get($responses, 'save.jual_no');
             if ($saleNumber === '') {
-                throw new ProcessException('Nomor penjualan Supply Chain tidak tersedia.');
+                throw new ProcessException('Nomor penjualan Aplikasi Internal tidak tersedia.');
             }
             $this->persistTransactionCode($trx, $saleNumber);
 
@@ -233,7 +278,7 @@ class SupplyChainSyncService
     {
         $saleNumber = trim((string) ($payload['invoice_number'] ?? ''));
         if ($saleNumber === '') {
-            throw new ProcessException('Nomor faktur Supply Chain wajib dikirim.', 422);
+            throw new ProcessException('Nomor faktur Aplikasi Internal wajib dikirim.', 422);
         }
 
         return DB::transaction(function () use ($payload, $callbackUrl, $saleNumber): array {
@@ -242,7 +287,7 @@ class SupplyChainSyncService
                 ->lockForUpdate()
                 ->first();
             if (! $trx) {
-                throw new ProcessException('Transaksi Kemitraan untuk faktur Supply Chain tidak ditemukan.', 404);
+                throw new ProcessException('Transaksi Kemitraan untuk faktur Aplikasi Internal tidak ditemukan.', 404);
             }
             if ($trx->trx_seller_type !== 'warehouse'
                 || $trx->trx_type !== 'stock'
@@ -308,6 +353,20 @@ class SupplyChainSyncService
         });
     }
 
+    private function withSyncLock(string $resource, Closure $callback): mixed
+    {
+        $lock = Cache::lock('supply-chain:sync:'.$resource, max(600, (int) config('services.supply_chain.timeout', 30) * 10));
+        if (! $lock->get()) {
+            throw new ProcessException('Sinkronisasi sedang diproses. Silakan tunggu.', 409);
+        }
+
+        try {
+            return $callback();
+        } finally {
+            $lock->release();
+        }
+    }
+
     /** @return array<string, mixed> */
     public function memberPayload(Member $member): array
     {
@@ -319,7 +378,7 @@ class SupplyChainSyncService
         ]);
         $address = $member->defaultAddress;
         if (! $address) {
-            throw new ProcessException('Alamat utama member belum tersedia untuk sinkronisasi Supply Chain.');
+            throw new ProcessException('Alamat utama member belum tersedia untuk sinkronisasi Aplikasi Internal.');
         }
 
         $level = match ($member->level?->member_level_code) {
@@ -329,7 +388,7 @@ class SupplyChainSyncService
             default => null,
         };
         if ($level === null) {
-            throw new ProcessException('Level member belum didukung oleh Supply Chain.');
+            throw new ProcessException('Level member belum didukung oleh Aplikasi Internal.');
         }
 
         return array_filter([
@@ -337,7 +396,7 @@ class SupplyChainSyncService
             'provinsi' => (string) $address->province?->province_name,
             'kabupaten' => (string) $address->city?->city_name,
             'kecamatan' => (string) $address->district?->district_name,
-            'cust_phone1' => (string) ($address->member_address_phone ?: $member->member_mobilephone),
+            'cust_phone1' => PhoneNumber::normalize($member->member_mobilephone),
             'Cust_Addres' => Str::limit((string) $address->member_address_full, 255, ''),
             'cust_birthday' => $member->member_birth_date?->format('Y-m-d'),
             'no_kemitraan' => $this->externalCode((string) $member->member_code),
@@ -390,7 +449,7 @@ class SupplyChainSyncService
     {
         $address = $buyer->defaultAddress;
         if (! $address) {
-            throw new ProcessException('Alamat utama pembeli belum tersedia untuk penjualan Supply Chain.');
+            throw new ProcessException('Alamat utama pembeli belum tersedia untuk penjualan Aplikasi Internal.');
         }
 
         $products = $trx->details->map(function ($detail, int $position): array {
@@ -411,7 +470,7 @@ class SupplyChainSyncService
         })->values()->all();
 
         if ($products === []) {
-            throw new ProcessException('Produk transaksi Supply Chain tidak ditemukan.');
+            throw new ProcessException('Produk transaksi Aplikasi Internal tidak ditemukan.');
         }
 
         return [
@@ -490,7 +549,7 @@ class SupplyChainSyncService
         )));
         $fallbackPosition = array_search($fallback, $testingCodes, true);
         if ($fallbackPosition === false || $testingCodes === []) {
-            throw new ProcessException('Kode produk fallback Supply Chain tidak tersedia pada daftar produk testing.');
+            throw new ProcessException('Kode produk fallback Aplikasi Internal tidak tersedia pada daftar produk testing.');
         }
 
         return $testingCodes[($fallbackPosition + $position) % count($testingCodes)];
@@ -530,10 +589,10 @@ class SupplyChainSyncService
             ['sj_no', 'surat_jalan'],
         );
         if ($replaceDetails && blank($deliveryNote)) {
-            throw new ProcessException('Nomor surat jalan Supply Chain wajib dikirim.', 422);
+            throw new ProcessException('Nomor surat jalan Aplikasi Internal wajib dikirim.', 422);
         }
         if ($replaceDetails && mb_strlen((string) $deliveryNote) > 50) {
-            throw new ProcessException('Nomor surat jalan Supply Chain maksimal 50 karakter.', 422);
+            throw new ProcessException('Nomor surat jalan Aplikasi Internal maksimal 50 karakter.', 422);
         }
         if (filled($deliveryNote)) {
             $header->forceFill([$deliveryNoteColumn => (string) $deliveryNote])->save();
@@ -612,7 +671,7 @@ class SupplyChainSyncService
 
         if ($replaceDetails) {
             if ($preparedRows === []) {
-                throw new ProcessException('Rincian batch Supply Chain wajib dikirim.', 422);
+                throw new ProcessException('Rincian batch Aplikasi Internal wajib dikirim.', 422);
             }
 
             $expectedQuantities = $trx->details

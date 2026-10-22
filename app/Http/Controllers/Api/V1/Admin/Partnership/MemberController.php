@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1\Admin\Partnership;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\V1\Admin\Partnership\ChangeMemberLevelRequest;
 use App\Http\Requests\Api\V1\Admin\Partnership\DeactivateMemberRequest;
 use App\Http\Requests\Api\V1\Admin\Partnership\ListMemberDeactivationOptionsRequest;
 use App\Http\Requests\Api\V1\Admin\Partnership\ListMembersRequest;
@@ -12,8 +13,10 @@ use App\Http\Resources\Api\V1\Admin\AdminMemberResource;
 use App\Http\Resources\DataTableResource;
 use App\Models\Member;
 use App\Models\SiteAdministrator;
+use App\Services\Integration\AdminSupplyChainSyncService;
 use App\Services\Partnership\AdminMemberService;
 use App\Services\Partnership\MemberLifecycleService;
+use App\Services\Partnership\MemberDirectLevelChangeService;
 use Illuminate\Http\JsonResponse;
 
 class MemberController extends Controller
@@ -21,6 +24,8 @@ class MemberController extends Controller
     public function __construct(
         private readonly AdminMemberService $memberService,
         private readonly MemberLifecycleService $lifecycleService,
+        private readonly AdminSupplyChainSyncService $supplyChainSyncService,
+        private readonly MemberDirectLevelChangeService $levelChangeService,
     ) {}
 
     public function index(ListMembersRequest $request): DataTableResource
@@ -41,6 +46,23 @@ class MemberController extends Controller
     {
         return (new AdminMemberResource($this->memberService->update($member, $request->validated())))
             ->additional(['success' => true, 'message' => 'Data mitra berhasil diperbarui.']);
+    }
+
+    public function syncSupplyChain(Member $member): JsonResponse
+    {
+        return response()->json(['success' => true, ...$this->supplyChainSyncService->member($member)]);
+    }
+
+    public function levelChangeOptions(Member $member): JsonResponse
+    {
+        return response()->json(['success' => true, 'data' => $this->levelChangeService->options($member)]);
+    }
+
+    public function changeLevel(ChangeMemberLevelRequest $request, Member $member): AdminMemberResource
+    {
+        $updated = $this->levelChangeService->change($member, $request->user(), $request->validated());
+        return (new AdminMemberResource($this->memberService->detail($updated)))
+            ->additional(['success' => true, 'message' => 'Level mitra berhasil diubah. Kode mitra, username, dan nomor customer tetap.']);
     }
 
     public function deactivationOptions(

@@ -49,6 +49,7 @@ export interface TransactionPreorder {
 export interface TransactionOrder {
     id: number;
     code: string;
+    can_sync_supply_chain?: boolean;
     invoice_number: string | null;
     supply_chain_status:
         | "not_integrated"
@@ -119,6 +120,8 @@ export interface TransactionOrder {
     };
     payment_method: string;
     shipping_method: string;
+    display_shipping_method?: string;
+    preorder_fulfillment_mode?: 'direct' | 'upline_transit';
     status: string;
     actions?: {
         can_approve_stock_screening: boolean;

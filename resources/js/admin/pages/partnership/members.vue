@@ -72,17 +72,15 @@
 
             <template #item.actions="{ item }">
                 <div class="member-actions py-2">
-                    <v-btn
-                        v-tooltip:top="'Jaringan Mitra'"
-                        icon="mdi-family-tree"
-                        variant="outlined"
-                        size="small"
-                        class="rounded"
-                        color="info"
-                        @click="openGenealogyDialog(item.id)"
+                    <SupplyChainSyncButton
+                        :key="`sync-member-${item.id}`"
+                        :endpoint="`/admin/partnership/members/${item.id}/supply-chain/sync`"
+                        :can-sync="item.can_sync_supply_chain"
+                        @processed="refreshTable"
                     />
                     <v-btn
                         v-tooltip:top="'Detail Mitra'"
+                        aria-label="Detail Mitra"
                         icon="mdi-eye-outline"
                         variant="outlined"
                         size="small"
@@ -92,6 +90,7 @@
                     />
                     <v-btn
                         v-tooltip:top="'Edit Mitra'"
+                        aria-label="Edit Mitra"
                         icon="mdi-pencil-outline"
                         variant="outlined"
                         size="small"
@@ -99,25 +98,24 @@
                         color="warning"
                         @click="openEditDialog(item.id)"
                     />
-                    <v-btn
-                        v-tooltip:top="'Reset Password'"
-                        icon="mdi-lock-reset"
-                        variant="outlined"
-                        size="small"
-                        class="rounded"
-                        color="secondary"
-                        @click="openResetPasswordDialog(item)"
-                    />
-                    <v-btn
-                        v-if="item.status?.code === 1"
-                        v-tooltip:top="'Nonaktifkan Mitra'"
-                        icon="mdi-account-off-outline"
-                        variant="outlined"
-                        size="small"
-                        class="rounded"
-                        color="error"
-                        @click="openDeactivationDialog(item)"
-                    />
+                    <v-menu location="bottom end" min-width="240" eager>
+                        <template #activator="{ props }">
+                            <v-btn v-bind="props" v-tooltip:top="'Aksi Lainnya'" aria-label="Aksi Lainnya"
+                                icon="mdi-dots-vertical" variant="outlined" size="small" class="rounded" color="secondary" />
+                        </template>
+                        <v-list density="compact" role="menu" aria-label="Aksi Mitra">
+                            <v-list-item title="Jaringan Mitra" prepend-icon="mdi-family-tree" role="menuitem"
+                                @click="openGenealogyDialog(item.id)" />
+                            <v-list-item v-if="item.can_change_level === true" title="Ubah Level"
+                                prepend-icon="mdi-account-convert-outline" role="menuitem" @click="levelChangeDialogRef?.open(item.id)" />
+                            <v-list-item title="Reset Password" prepend-icon="mdi-lock-reset" role="menuitem"
+                                @click="openResetPasswordDialog(item)" />
+                            <v-divider v-if="item.status?.code === 1" class="my-1" />
+                            <v-list-item v-if="item.status?.code === 1" title="Nonaktifkan Mitra" color="error"
+                                class="text-error" prepend-icon="mdi-account-off-outline" role="menuitem"
+                                @click="openDeactivationDialog(item)" />
+                        </v-list>
+                    </v-menu>
                 </div>
             </template>
         </BaseDataTable>
@@ -125,6 +123,7 @@
         <MemberDetail ref="memberDetailRef" />
         <GenealogyDialog ref="genealogyDialogRef" />
         <MemberEditDialog ref="memberEditDialogRef" @updated="refreshTable" />
+        <MemberLevelChangeDialog ref="levelChangeDialogRef" @updated="refreshTable" />
 
         <v-dialog v-model="deactivationDialog" max-width="620" persistent scrollable>
             <v-card class="rounded-xl">
@@ -290,9 +289,11 @@
 import { computed, ref } from "vue";
 import BaseDataTable from "@/shared/components/BaseDataTable.vue";
 import BaseBadge from "@/shared/components/BaseBadge.vue";
+import SupplyChainSyncButton from "@/shared/components/SupplyChainSyncButton.vue";
 import MemberDetail from "@/admin/components/partnership/MemberDetail.vue";
 import GenealogyDialog from "@/admin/components/partnership/GenealogyDialog.vue";
 import MemberEditDialog from "@/admin/components/partnership/MemberEditDialog.vue";
+import MemberLevelChangeDialog from "@/admin/components/partnership/MemberLevelChangeDialog.vue";
 import memberService from "@/admin/services/member.service";
 import type {
     Member,
@@ -309,6 +310,7 @@ const memberTable = ref<InstanceType<typeof BaseDataTable> | null>(null);
 const memberDetailRef = ref<InstanceType<typeof MemberDetail> | null>(null);
 const genealogyDialogRef = ref<InstanceType<typeof GenealogyDialog> | null>(null);
 const memberEditDialogRef = ref<InstanceType<typeof MemberEditDialog> | null>(null);
+const levelChangeDialogRef = ref<InstanceType<typeof MemberLevelChangeDialog> | null>(null);
 const selectedMember = ref<Member | null>(null);
 const deactivationDialog = ref(false);
 const resetPasswordDialog = ref(false);
@@ -421,7 +423,7 @@ const headers = [
         key: "actions",
         align: "center",
         sortable: false,
-        width: 236,
+        width: 212,
     },
 ];
 
@@ -517,17 +519,17 @@ const refreshTable = () => {
 
 <style scoped>
 .member-actions {
-    display: grid;
-    grid-template-columns: repeat(5, 36px);
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
     justify-content: center;
     gap: 8px;
-    min-width: 212px;
+    min-width: 168px;
 }
 
 @media (max-width: 767.98px) {
     .member-actions {
-        grid-template-columns: repeat(3, 40px);
-        min-width: 136px;
+        min-width: 184px;
     }
 
     .member-actions :deep(.v-btn) {
@@ -536,7 +538,6 @@ const refreshTable = () => {
     }
 
     .member-table :deep(.v-data-table__td) {
-        min-height: 92px;
         padding-top: 10px !important;
         padding-bottom: 10px !important;
         vertical-align: middle;
@@ -544,7 +545,7 @@ const refreshTable = () => {
 
     .member-table :deep(.v-data-table__td:last-child),
     .member-table :deep(.v-data-table__th:last-child) {
-        min-width: 164px;
+        min-width: 212px;
     }
 }
 </style>

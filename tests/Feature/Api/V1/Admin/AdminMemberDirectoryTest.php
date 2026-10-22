@@ -10,15 +10,19 @@ use App\Models\MemberBankAccount;
 use App\Models\MemberGroup;
 use App\Models\MemberRegistration;
 use App\Models\MemberStock;
+use App\Models\MemberSupplyChainSync;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\RewardPointMonthly;
 use App\Models\SiteAdministrator;
 use App\Models\SiteAdministratorGroup;
 use App\Models\Trx;
+use App\Services\Integration\SupplyChainSyncService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Feature\Api\V1\Partnership\MemberRegistrationWorkflowTest;
@@ -27,6 +31,163 @@ use Tests\TestCase;
 class AdminMemberDirectoryTest extends TestCase
 {
     use RefreshDatabase;
+
+    #[DataProvider('duplicatePrimaryPhones')]
+    public function test_admin_edit_rejects_another_members_primary_phone_in_equivalent_formats(string $storedPhone): void
+    {
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $member = $this->createMember('PHONE-EDIT', 'Original', 'reseller', 1);
+        $other = $this->createMember('PHONE-OWNER', 'Other', 'reseller', 2);
+        $other->update(['member_mobilephone' => $storedPhone]);
+
+        $this->putJson("/api/v1/admin/partnership/members/{$member->getKey()}", [
+            ...$this->identityUpdatePayload(), 'name' => 'Must Not Save', 'mobile_phone' => '081799998888',
+        ])->assertUnprocessable()->assertJsonValidationErrors('mobile_phone');
+        $this->assertSame('Original', $member->fresh()->member_name);
+        $this->assertSame('08123456789', $member->member_mobilephone);
+    }
+
+    public static function duplicatePrimaryPhones(): array
+    {
+        return ['local' => ['081799998888'], 'country code' => ['6281799998888'], 'international' => ['+6281799998888']];
+    }
+
+    public function test_admin_edit_rejects_a_phone_reserved_by_a_pending_registration(): void
+    {
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $member = $this->createMember('PHONE-EDIT', 'Original', 'reseller', 1);
+        MemberRegistration::query()->create([
+            'member_registration_member_level_id' => 3, 'member_registration_name' => 'Applicant',
+            'member_registration_username' => '', 'member_registration_password' => '',
+            'member_registration_mobilephone' => '6281799998888', 'member_registration_status' => 'requested',
+            'member_registration_datetime' => now(),
+        ]);
+
+        $this->putJson("/api/v1/admin/partnership/members/{$member->getKey()}", [
+            ...$this->identityUpdatePayload(), 'mobile_phone' => '+6281799998888',
+        ])->assertUnprocessable()->assertJsonValidationErrors('mobile_phone');
+        $this->assertSame('08123456789', $member->fresh()->member_mobilephone);
+    }
+
+    public function test_admin_edit_allows_own_phone_and_shared_recipient_phone(): void
+    {
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $member = $this->createMember('PHONE-EDIT', 'Original', 'reseller', 1);
+        $other = $this->createMember('PHONE-OWNER', 'Other', 'reseller', 1);
+        $other->update(['member_mobilephone' => '+6281799998888']);
+        MemberRegistration::query()->create([
+            'member_registration_member_level_id' => 3, 'member_registration_member_id' => $member->getKey(),
+            'member_registration_username' => '', 'member_registration_password' => '',
+            'member_registration_name' => 'Original', 'member_registration_mobilephone' => '+628123456789',
+            'member_registration_status' => 'approved', 'member_registration_datetime' => now(),
+        ]);
+        $address = $member->addresses()->firstOrFail();
+        $this->putJson("/api/v1/admin/partnership/members/{$member->getKey()}", [
+            ...$this->identityUpdatePayload(), 'mobile_phone' => '628123456789',
+            'addresses' => [[
+                'id' => $address->getKey(), 'recipient' => 'Shared Recipient', 'phone' => '081799998888',
+                'full_address' => 'Jalan Penerima', 'province_id' => '9', 'city_id' => '376',
+                'district_id' => '5218', 'subdistrict_id' => 60281, 'country_id' => 1, 'is_default' => true,
+            ]],
+        ])->assertOk();
+        $this->assertSame('+628123456789', $member->fresh()->member_mobilephone);
+        $this->assertSame('+6281799998888', $address->fresh()->member_address_phone);
+    }
+
+    #[DataProvider('editableCustomerNumbers')]
+    public function test_admin_customer_number_edit_is_trimmed_and_reused_without_creating_a_customer(?string $previous): void
+    {
+        Http::preventStrayRequests();
+        Http::fake();
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $member = $this->createMember('CUSTOMER', 'Customer', 'reseller', 1);
+        $member->update(['member_supply_chain_code' => $previous]);
+        if ($previous !== null) {
+            MemberSupplyChainSync::query()->create([
+                'member_supply_chain_sync_member_id' => $member->getKey(),
+                'member_supply_chain_sync_customer_no' => $previous,
+                'member_supply_chain_sync_status' => 'failed',
+                'member_supply_chain_sync_error' => 'Old error',
+            ]);
+        }
+
+        $url = "/api/v1/admin/partnership/members/{$member->getKey()}";
+        $this->putJson($url, [...$this->identityUpdatePayload(), 'customer_number' => '  0010030900  '])
+            ->assertOk()->assertJsonPath('data.customer_number', '0010030900')
+            ->assertJsonPath('data.can_sync_supply_chain', false);
+        $this->assertSame('0010030900', $member->fresh()->member_supply_chain_code);
+        $this->getJson($url)->assertOk()->assertJsonPath('data.customer_number', '0010030900');
+        $this->getJson('/api/v1/admin/partnership/members')->assertOk()
+            ->assertJsonPath('data.results.0.customer_number', '0010030900');
+        $this->assertDatabaseHas('member_supply_chain_syncs', [
+            'member_supply_chain_sync_member_id' => $member->getKey(),
+            'member_supply_chain_sync_customer_no' => '0010030900',
+            'member_supply_chain_sync_status' => 'synced',
+            'member_supply_chain_sync_error' => null,
+        ]);
+        $sync = $this->app->make(SupplyChainSyncService::class)->syncMember($member);
+        $this->assertSame('0010030900', $sync->member_supply_chain_sync_customer_no);
+        $this->assertSame('synced', $sync->member_supply_chain_sync_status);
+        $this->assertNull($sync->member_supply_chain_sync_error);
+        $this->putJson($url, $this->identityUpdatePayload())->assertOk()
+            ->assertJsonPath('data.customer_number', '0010030900');
+        Http::assertNothingSent();
+    }
+
+    public static function editableCustomerNumbers(): array
+    {
+        return ['first assignment' => [null], 'correction' => ['90000046'], 'unchanged' => ['0010030900']];
+    }
+
+    #[DataProvider('invalidCustomerNumbers')]
+    public function test_admin_customer_number_validation_preserves_the_previous_profile(mixed $number): void
+    {
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $member = $this->createMember('CUSTOMER', 'Original', 'reseller', 1);
+        $member->update(['member_supply_chain_code' => 'OLD-123']);
+        $this->putJson("/api/v1/admin/partnership/members/{$member->getKey()}", [
+            ...$this->identityUpdatePayload(), 'customer_number' => $number,
+        ])->assertUnprocessable()->assertJsonValidationErrors('customer_number');
+        $this->assertSame('OLD-123', $member->fresh()->member_supply_chain_code);
+        $this->assertSame('Original', $member->fresh()->member_name);
+    }
+
+    public static function invalidCustomerNumbers(): array
+    {
+        return ['empty' => [''], 'whitespace' => ['   '], 'null' => [null],
+            'numeric instead of string' => [12345], 'array' => [['12345']],
+            'too long' => [str_repeat('1', 31)]];
+    }
+
+    public function test_admin_cannot_assign_a_customer_number_owned_by_a_different_member(): void
+    {
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $owner = $this->createMember('OWNER', 'Owner', 'reseller', 3);
+        $owner->update(['member_supply_chain_code' => '90000046']);
+        $member = $this->createMember('CUSTOMER', 'Original', 'reseller', 1);
+        $this->putJson("/api/v1/admin/partnership/members/{$member->getKey()}", [
+            ...$this->identityUpdatePayload(), 'customer_number' => '90000046',
+        ])->assertUnprocessable()->assertJsonValidationErrors('customer_number');
+        $this->assertNull($member->fresh()->member_supply_chain_code);
+        $this->assertSame('Original', $member->fresh()->member_name);
+    }
+
+    public function test_manual_customer_number_edit_cannot_overlap_a_running_member_sync(): void
+    {
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $member = $this->createMember('CUSTOMER', 'Original', 'reseller', 1);
+        $lock = Cache::lock('supply-chain:sync:member:'.$member->getKey(), 60);
+        $this->assertTrue($lock->get());
+        try {
+            $this->putJson("/api/v1/admin/partnership/members/{$member->getKey()}", [
+                ...$this->identityUpdatePayload(), 'customer_number' => '90000046',
+            ])->assertStatus(409);
+            $this->assertNull($member->fresh()->member_supply_chain_code);
+            $this->assertSame('Original', $member->fresh()->member_name);
+        } finally {
+            $lock->release();
+        }
+    }
 
     #[DataProvider('validIdentities')]
     public function test_admin_member_updates_accept_document_formats(string $type, string $number): void

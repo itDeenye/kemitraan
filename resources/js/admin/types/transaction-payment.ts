@@ -145,6 +145,8 @@ export interface TransactionPayment {
     totals: TransactionPaymentTotals;
     payment_method: string;
     shipping_method: string;
+    display_shipping_method?: string;
+    preorder_fulfillment_mode?: 'direct' | 'upline_transit';
     status: string;
     actions: TransactionPaymentActions;
     status_at: string | null;

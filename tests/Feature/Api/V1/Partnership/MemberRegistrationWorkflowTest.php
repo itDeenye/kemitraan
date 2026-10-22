@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Api\V1\Partnership;
 
+use App\Jobs\SyncSupplyChainMember;
 use App\Mail\MemberCredentialsMail;
 use App\Mail\MemberRegistrationApprovedMail;
 use App\Mail\MemberRegistrationRejectedMail;
@@ -18,9 +19,13 @@ use App\Services\Dashboard\AdminActionSummaryService;
 use App\Services\Partnership\MemberCodeService;
 use App\Support\MediaUrl;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -29,6 +34,633 @@ use Tests\TestCase;
 class MemberRegistrationWorkflowTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_approval_retry_after_edit_uses_the_latest_registration_phone_and_ktp(): void
+    {
+        $registration = $this->pendingDistributorRegistration();
+        Http::fake([
+            'registration-supply.test/*/login' => Http::response(['success' => true, 'data' => ['api_token' => 'test-token']]),
+            'registration-supply.test/*/tambah-customer' => Http::sequence()
+                ->push(['success' => false, 'message' => 'Nomor telepon sudah terdaftar.'], 422)
+                ->push(['success' => true, 'data' => ['cust_no' => '90000046']]),
+        ]);
+        $url = "/api/v1/admin/partnership/registrations/{$registration->getKey()}";
+        $this->postJson($url.'/approve')->assertStatus(502);
+        $this->assertPendingApprovalHasNoMember($registration);
+        $this->patchJson($url, ['mobile_phone' => '081799998888', 'identity_no' => '0001234567890124'])
+            ->assertOk()->assertJsonPath('data.status.code', 'requested');
+
+        $this->postJson($url.'/approve')->assertOk()->assertJsonPath('data.status.code', 'approved');
+        $requests = Http::recorded(fn (Request $request) => str_ends_with($request->url(), '/tambah-customer'))->values();
+        $this->assertCount(2, $requests);
+        $this->assertSame('+6281234567890', $requests[0][0]['cust_phone1']);
+        $this->assertSame('0001234567890123', $requests[0][0]['NoKTP']);
+        $this->assertSame('+6281799998888', $requests[1][0]['cust_phone1']);
+        $this->assertSame('0001234567890124', $requests[1][0]['NoKTP']);
+        $member = Member::query()->findOrFail($registration->fresh()->member_registration_member_id);
+        $this->assertSame('+6281799998888', $member->member_mobilephone);
+        $this->assertSame('0001234567890124', $member->member_identity_no);
+        $this->assertSame('90000046', $member->member_supply_chain_code);
+        $this->assertDatabaseCount('member', 1);
+        $this->assertDatabaseCount('member_account', 1);
+    }
+
+    public function test_registration_and_edit_reject_a_phone_stored_in_legacy_local_format(): void
+    {
+        $registration = $this->pendingDistributorRegistration();
+        [$member] = $this->createMemberAccount('DST', '0001/0000/0000', 'phone.owner', '081799998888');
+        $payload = $this->registrationPayload('phone.duplicate', '+6281799998888', '0001234567890124', null);
+        $this->postJson('/api/v1/admin/partnership/registrations', $payload)
+            ->assertUnprocessable()->assertJsonValidationErrors('mobile_phone');
+        $this->patchJson("/api/v1/admin/partnership/registrations/{$registration->getKey()}", [
+            'mobile_phone' => '6281799998888',
+        ])->assertUnprocessable()->assertJsonValidationErrors('mobile_phone');
+        $this->assertDatabaseCount('member_registration', 1);
+        $this->assertSame('+6281234567890', $registration->fresh()->member_registration_mobilephone);
+        Http::assertNothingSent();
+    }
+
+    public function test_approval_rechecks_equivalent_phones_before_creating_member_or_calling_internal(): void
+    {
+        $registration = $this->pendingDistributorRegistration();
+        $this->createMemberAccount('DST', '0001/0000/0000', 'phone.owner', '081234567890');
+        $this->postJson("/api/v1/admin/partnership/registrations/{$registration->getKey()}/approve")
+            ->assertUnprocessable()->assertJsonPath('message', 'Nomor WhatsApp calon mitra sudah digunakan.');
+        $this->assertPendingApprovalHasNoMember($registration, 1);
+        Http::assertNothingSent();
+    }
+
+    public function test_registration_can_keep_its_own_pending_phone_but_not_another_pending_phone(): void
+    {
+        $registration = $this->pendingDistributorRegistration();
+        $url = "/api/v1/admin/partnership/registrations/{$registration->getKey()}";
+        $this->patchJson($url, ['mobile_phone' => '6281234567890'])->assertOk();
+        $registration->replicate()->fill(['member_registration_mobilephone' => '081799998888'])->save();
+        $this->patchJson($url, ['mobile_phone' => '+6281799998888'])
+            ->assertUnprocessable()->assertJsonValidationErrors('mobile_phone');
+    }
+
+    public function test_admin_can_edit_requested_registration_without_approving_or_syncing_it(): void
+    {
+        $registration = $this->pendingDistributorRegistration();
+        $url = "/api/v1/admin/partnership/registrations/{$registration->getKey()}";
+        $this->getJson($url)->assertOk()->assertJsonPath('data.can_edit', true);
+        $this->getJson('/api/v1/admin/partnership/registrations')->assertOk()
+            ->assertJsonPath('data.results.0.can_edit', true);
+        $payload = $this->registrationPayload('corrected', '081234567899', '0001234567890999', null);
+        $payload['name'] = 'Pemohon Dikoreksi';
+        $payload['address'] = 'Jalan Koreksi';
+        $payload['bank_accounts'] = [[
+            'bank_id' => 1, 'account_name' => 'Nama Rekening Baru', 'account_number' => '00123456',
+            'city' => 'Surabaya', 'branch' => 'Cabang Baru', 'is_active' => true, 'is_default' => true,
+        ]];
+        $payload['nib'] = '123456';
+        $payload['npwp'] = '0012345678901234';
+
+        $this->patchJson($url, $payload)->assertOk()
+            ->assertJsonPath('data.applicant.name', 'Pemohon Dikoreksi')
+            ->assertJsonPath('data.applicant.mobile_phone', '+6281234567899')
+            ->assertJsonPath('data.identity.number', '0001234567890999')
+            ->assertJsonPath('data.address.address', 'Jalan Koreksi')
+            ->assertJsonPath('data.bank.account_number', '00123456')
+            ->assertJsonPath('data.bank_accounts.0.branch', 'Cabang Baru')
+            ->assertJsonPath('data.status.code', 'requested')
+            ->assertJsonPath('data.can_edit', true);
+        $this->assertSame('DST', $registration->fresh()->level->member_level_code);
+        $this->assertSame(0, (int) $registration->fresh()->member_registration_upline_member_id);
+        $this->assertDatabaseCount('member_registration', 1);
+        $this->assertDatabaseCount('member', 0);
+        $this->assertDatabaseCount('member_account', 0);
+        Http::assertNothingSent();
+        Mail::assertNothingOutgoing();
+    }
+
+    #[DataProvider('emptyRegistrationMedia')]
+    public function test_registration_edit_preserves_unreplaced_photos_and_unrelated_data(array $media): void
+    {
+        $registration = $this->pendingDistributorRegistration();
+        $registration->update([
+            'member_registration_image' => 'https://cdn.example.test/profile.jpg',
+            'member_registration_identity_image' => 'https://cdn.example.test/identity.jpg',
+            'member_registration_payment_proof_image' => 'https://cdn.example.test/payment.jpg',
+        ]);
+        $this->patchJson("/api/v1/admin/partnership/registrations/{$registration->getKey()}", ['name' => 'Nama Baru', ...$media])
+            ->assertOk()->assertJsonPath('data.applicant.name', 'Nama Baru');
+        $registration->refresh();
+        $this->assertSame('https://cdn.example.test/profile.jpg', $registration->member_registration_image);
+        $this->assertSame('https://cdn.example.test/identity.jpg', $registration->member_registration_identity_image);
+        $this->assertSame('https://cdn.example.test/payment.jpg', $registration->member_registration_payment_proof_image);
+        $this->assertSame('0001234567890123', $registration->member_registration_identity_no);
+        $this->assertSame('Jalan DNY Nomor 1', $registration->member_registration_address);
+        $this->assertSame('1234567890', $registration->member_registration_bank_account_no);
+    }
+
+    public static function emptyRegistrationMedia(): array
+    {
+        return ['omitted' => [[]], 'null' => [['image_url' => null, 'identity_image_url' => null, 'payment_proof_image_url' => null]],
+            'empty' => [['image_url' => '', 'identity_image_url' => '', 'payment_proof_image_url' => '']]];
+    }
+
+    public function test_admin_registration_edit_can_replace_documents_without_persisting_signatures(): void
+    {
+        $registration = $this->pendingDistributorRegistration();
+        $path = '/api/v1/admin/media/uploads/12345678-1234-1234-1234-123456789012/content.jpg';
+        $this->patchJson("/api/v1/admin/partnership/registrations/{$registration->getKey()}", [
+            'image_url' => 'https://cdn.example.test/new-profile.jpg',
+            'identity_image_url' => url($path).'?signature=temporary',
+            'payment_proof_image_url' => url($path).'?signature=temporary',
+        ])->assertOk();
+        $registration->refresh();
+        $this->assertSame('https://cdn.example.test/new-profile.jpg', $registration->member_registration_image);
+        $this->assertStringEndsWith($path, $registration->member_registration_identity_image);
+        $this->assertStringEndsWith($path, $registration->member_registration_payment_proof_image);
+        $this->assertStringNotContainsString('signature=', $registration->member_registration_identity_image);
+        $this->assertStringNotContainsString('signature=', $registration->member_registration_payment_proof_image);
+    }
+
+    #[DataProvider('immutableRegistrationFields')]
+    public function test_admin_registration_edit_cannot_change_approval_or_network_fields(string $field, mixed $value): void
+    {
+        $registration = $this->pendingDistributorRegistration();
+        $this->patchJson("/api/v1/admin/partnership/registrations/{$registration->getKey()}", ['name' => 'Must Not Save', $field => $value])
+            ->assertUnprocessable()->assertJsonValidationErrors($field);
+        $this->assertSame('Calon Mitra', $registration->fresh()->member_registration_name);
+        $this->assertSame('requested', $registration->member_registration_status);
+        Http::assertNothingSent();
+    }
+
+    public static function immutableRegistrationFields(): array
+    {
+        return ['sponsor' => ['sponsor_id', 9],
+            'status' => ['status', 'approved'], 'member' => ['member_id', 9], 'customer' => ['customer_number', '999'],
+            'code' => ['code', '0001/0000/0000'], 'username' => ['username', 'other'], 'password' => ['password', 'Secret123'],
+            'distributor approval' => ['distributor_approval_status', 'approved']];
+    }
+
+    #[DataProvider('nonEditableRegistrationStates')]
+    public function test_admin_registration_edit_requires_requested_and_ready_for_admin(string $status, string $distributorStatus): void
+    {
+        $registration = $this->pendingDistributorRegistration();
+        $registration->update(['member_registration_status' => $status, 'member_registration_distributor_approval_status' => $distributorStatus]);
+        $this->patchJson("/api/v1/admin/partnership/registrations/{$registration->getKey()}", ['name' => 'Must Not Save'])
+            ->assertUnprocessable();
+        $this->assertSame('Calon Mitra', $registration->fresh()->member_registration_name);
+        Http::assertNothingSent();
+    }
+
+    public static function nonEditableRegistrationStates(): array
+    {
+        return ['approved' => ['approved', 'not_required'], 'rejected' => ['rejected', 'not_required'],
+            'awaiting distributor' => ['requested', 'pending']];
+    }
+
+    #[DataProvider('registrationEditCollisions')]
+    public function test_admin_registration_edit_rejects_another_member_or_registration_identity(string $owner): void
+    {
+        $registration = $this->pendingDistributorRegistration();
+        if ($owner === 'member') {
+            [$member] = $this->createMemberAccount('DST', '0001/0000/0000', 'existing');
+            $member->update(['member_identity_no' => '0001234567890999']);
+        } else {
+            MemberRegistration::query()->create([
+                ...$registration->getAttributes(), 'member_registration_id' => 2,
+                'member_registration_identity_no' => '0001234567890999', 'member_registration_status' => $owner,
+                'member_registration_mobilephone' => '+6281234567899',
+            ]);
+        }
+        $this->patchJson("/api/v1/admin/partnership/registrations/{$registration->getKey()}", ['identity_no' => '0001234567890999'])
+            ->assertUnprocessable()->assertJsonValidationErrors('identity_no');
+        $this->assertSame('0001234567890123', $registration->fresh()->member_registration_identity_no);
+    }
+
+    public static function registrationEditCollisions(): array
+    {
+        return ['member' => ['member'], 'requested application' => ['requested'], 'approved application' => ['approved']];
+    }
+
+    public function test_registration_edit_accepts_own_identity_and_unchanged_legacy_document(): void
+    {
+        $registration = $this->pendingDistributorRegistration();
+        $url = "/api/v1/admin/partnership/registrations/{$registration->getKey()}";
+        $this->patchJson($url, ['identity_type' => 'KTP', 'identity_no' => '0001234567890123'])->assertOk();
+        $registration->update(['member_registration_identity_type' => 'SIM', 'member_registration_identity_no' => '001234567890']);
+        $this->patchJson($url, ['identity_type' => 'SIM', 'identity_no' => '001234567890'])->assertOk();
+        $this->patchJson($url, ['identity_no' => '123'])->assertUnprocessable()->assertJsonValidationErrors('identity_no');
+    }
+
+    public function test_registration_edit_uses_the_same_lock_as_approve_and_reject(): void
+    {
+        $registration = $this->pendingDistributorRegistration();
+        $lock = Cache::lock('partnership:registration:'.$registration->getKey(), 60);
+        $this->assertTrue($lock->get());
+        try {
+            $url = "/api/v1/admin/partnership/registrations/{$registration->getKey()}";
+            $this->patchJson($url, ['name' => 'Busy'])->assertStatus(409);
+            $this->postJson($url.'/approve')->assertStatus(409);
+            $this->postJson($url.'/reject', ['note' => 'Busy'])->assertStatus(409);
+            $this->assertSame('Calon Mitra', $registration->fresh()->member_registration_name);
+            Http::assertNothingSent();
+        } finally {
+            $lock->release();
+        }
+    }
+
+    public function test_admin_approval_uses_corrected_registration_fields_for_internal_customer_creation(): void
+    {
+        $registration = $this->pendingDistributorRegistration();
+        Http::fake([
+            'registration-supply.test/*/login' => Http::response(['success' => true, 'data' => ['api_token' => 'test-token']]),
+            'registration-supply.test/*/tambah-customer' => Http::response(['success' => true, 'data' => ['cust_no' => '10030900']]),
+        ]);
+        $url = "/api/v1/admin/partnership/registrations/{$registration->getKey()}";
+        $this->patchJson($url, ['name' => 'Pemohon Baru', 'identity_no' => '0001234567890999', 'mobile_phone' => '081234567899'])
+            ->assertOk();
+        Http::assertNothingSent();
+        $this->postJson($url.'/approve')->assertOk()->assertJsonPath('data.can_edit', false);
+        Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/tambah-customer')
+            && $request['NoKTP'] === '0001234567890999');
+        $member = Member::query()->sole();
+        $this->assertSame('Pemohon Baru', $member->member_name);
+        $this->assertSame('10030900', $member->member_supply_chain_code);
+    }
+
+    public function test_registration_edit_requires_admin_authentication(): void
+    {
+        $this->patchJson('/api/v1/admin/partnership/registrations/1', ['name' => 'Unauthorized'])->assertUnauthorized();
+    }
+
+    public function test_registration_edit_can_correct_level_and_upline_before_approval(): void
+    {
+        $registration = $this->pendingDistributorRegistration();
+        [$distributor] = $this->createMemberAccount('DST', '0080/0000/0000', 'sponsor');
+        $url = "/api/v1/admin/partnership/registrations/{$registration->getKey()}";
+        $options = $this->getJson('/api/v1/admin/partnership/registrations/options')->assertOk();
+        $options->assertJsonCount(1, 'data.levels')->assertJsonCount(3, 'data.edit_levels')
+            ->assertJsonPath('data.edit_uplines.0.id', $distributor->getKey())
+            ->assertJsonPath('data.edit_uplines.0.level_name', 'Distributor')
+            ->assertJsonPath('data.edit_uplines.0.label', $distributor->member_code.' - '.$distributor->member_name.' (Distributor)');
+        $this->patchJson($url, ['level_id' => $this->level('AGT')->getKey(), 'upline_member_id' => $distributor->getKey()])
+            ->assertOk()->assertJsonPath('data.level.code', 'AGT')->assertJsonPath('data.sponsor.id', $distributor->getKey())
+            ->assertJsonPath('data.status.code', 'requested');
+        Http::assertNothingSent();
+        Http::fake(['registration-supply.test/*' => fn (Request $request) => Http::response([
+            'success' => true, 'data' => str_ends_with($request->url(), '/login') ? ['api_token' => 'test-token'] : ['cust_no' => 'TEST-CUSTOMER'],
+        ])]);
+        $this->postJson($url.'/approve')->assertOk();
+        $created = Member::query()->whereKey($registration->fresh()->member_registration_member_id)->firstOrFail();
+        $this->assertSame('0080/0001/0000', $created->member_code);
+        $this->assertSame((int) $distributor->getKey(), (int) $created->member_parent_member_id);
+        $this->patchJson($url, ['level_id' => $this->level('DST')->getKey(), 'upline_member_id' => null])
+            ->assertUnprocessable();
+        $this->assertSame('AGT', $created->fresh()->level->member_level_code);
+    }
+
+    public function test_registration_edit_rejects_invalid_or_inactive_upline_and_requires_consistent_pair(): void
+    {
+        $registration = $this->pendingDistributorRegistration();
+        [$reseller] = $this->createMemberAccount('RSL', '0080/0000/0001', 'reseller');
+        $url = "/api/v1/admin/partnership/registrations/{$registration->getKey()}";
+        foreach ([['level_id' => $this->level('AGT')->getKey(), 'upline_member_id' => null],
+            ['level_id' => $this->level('AGT')->getKey(), 'upline_member_id' => $reseller->getKey()],
+            ['level_id' => $this->level('DST')->getKey(), 'upline_member_id' => $reseller->getKey()],
+            ['level_id' => 999, 'upline_member_id' => null]] as $payload) {
+            $this->patchJson($url, $payload)->assertUnprocessable();
+        }
+        $reseller->update(['member_status' => 0]);
+        $this->patchJson($url, ['level_id' => $this->level('RSL')->getKey(), 'upline_member_id' => $reseller->getKey()])->assertUnprocessable();
+        $this->assertSame('DST', $registration->fresh()->level->member_level_code);
+        $this->assertSame(0, (int) $registration->member_registration_upline_member_id);
+        Http::assertNothingSent();
+    }
+
+    public function test_registration_edit_invalidates_old_distributor_review_when_agent_upline_changes(): void
+    {
+        $registration = $this->pendingDistributorRegistration();
+        [$oldDistributor] = $this->createMemberAccount('DST', '0080/0000/0000', 'old.dist');
+        [$newDistributor] = $this->createMemberAccount('DST', '0081/0000/0000', 'new.dist');
+        [$agent] = $this->createMemberAccount('AGT', '0081/0001/0000', 'new.agent');
+        $agent->update(['member_parent_member_id' => $newDistributor->getKey()]);
+        $registration->update(['member_registration_member_level_id' => $this->level('RSL')->getKey(),
+            'member_registration_distributor_approval_status' => 'approved',
+            'member_registration_distributor_member_id' => $oldDistributor->getKey(),
+            'member_registration_distributor_approval_note' => 'Old review', 'member_registration_distributor_approval_datetime' => now()]);
+        $url = "/api/v1/admin/partnership/registrations/{$registration->getKey()}";
+        $this->patchJson($url, ['upline_member_id' => $agent->getKey()])->assertOk()
+            ->assertJsonPath('data.status.code', 'requested')->assertJsonPath('data.next_approval', 'distributor')
+            ->assertJsonPath('data.distributor_approval.distributor.id', $newDistributor->getKey())
+            ->assertJsonPath('data.distributor_approval.note', null)->assertJsonPath('data.can_edit', false);
+        $this->postJson($url.'/approve')->assertUnprocessable();
+        Http::assertNothingSent();
+    }
+
+    public function test_registration_edit_rejects_duplicate_phone_after_normalization(): void
+    {
+        $registration = $this->pendingDistributorRegistration();
+        [$member] = $this->createMemberAccount('DST', '0001/0000/0000', 'existing');
+        $member->update(['member_mobilephone' => '+6281234567899']);
+        $this->patchJson("/api/v1/admin/partnership/registrations/{$registration->getKey()}", [
+            'mobile_phone' => '081234567899', 'name' => 'Must Not Save',
+        ])->assertUnprocessable()->assertJsonValidationErrors('mobile_phone');
+        $this->assertSame('Calon Mitra', $registration->fresh()->member_registration_name);
+        Http::assertNothingSent();
+    }
+
+    public function test_registration_edit_validates_partial_region_against_the_saved_address(): void
+    {
+        $registration = $this->pendingDistributorRegistration();
+        DB::table('ref_province')->insert(['province_id' => '12', 'province_name' => 'Provinsi Lain']);
+        $this->patchJson("/api/v1/admin/partnership/registrations/{$registration->getKey()}", ['province_id' => '12'])
+            ->assertUnprocessable()->assertJsonValidationErrors('province_id');
+        $this->assertSame('11', (string) $registration->fresh()->member_registration_province_id);
+    }
+
+    public function test_registration_edit_keeps_bank_fields_when_omitted_and_can_explicitly_clear_them(): void
+    {
+        $registration = $this->pendingDistributorRegistration();
+        $url = "/api/v1/admin/partnership/registrations/{$registration->getKey()}";
+        $banks = [[
+            'bank_id' => 1, 'account_name' => 'Nama Utama', 'account_number' => '001234',
+            'is_active' => true, 'is_default' => true,
+        ], [
+            'bank_id' => 1, 'account_name' => 'Nama Kedua', 'account_number' => '005678',
+            'is_active' => true, 'is_default' => false,
+        ]];
+        $this->patchJson($url, ['bank_accounts' => $banks])->assertOk()->assertJsonCount(2, 'data.bank_accounts');
+        $this->patchJson($url, ['name' => 'Nama Baru'])->assertOk()
+            ->assertJsonCount(2, 'data.bank_accounts')->assertJsonPath('data.bank.account_number', '001234');
+        $this->patchJson($url, ['bank_accounts' => [$banks[0], [...$banks[1], 'is_default' => true]]])
+            ->assertUnprocessable()->assertJsonValidationErrors('bank_accounts');
+        $this->patchJson($url, ['bank_accounts' => null])->assertUnprocessable()->assertJsonValidationErrors('bank_accounts');
+        $this->patchJson($url, ['bank_accounts' => []])->assertOk()->assertJsonCount(0, 'data.bank_accounts')
+            ->assertJsonPath('data.bank', null);
+        $this->assertSame(0, $registration->fresh()->member_registration_bank_id);
+        Http::assertNothingSent();
+    }
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config()->set('services.supply_chain.enabled', true);
+        config()->set('services.supply_chain.base_url', 'https://registration-default.test');
+        config()->set('services.supply_chain.username', 'registration-test');
+        config()->set('services.supply_chain.password', 'test-secret');
+        Http::preventStrayRequests();
+        Http::fake(['registration-default.test/*' => fn (Request $request) => Http::response([
+            'success' => true,
+            'data' => str_ends_with($request->url(), '/login')
+                ? ['api_token' => 'registration-token']
+                : ['cust_no' => 'CUST-'.($request['NoKTP'] ?? 'DEFAULT')],
+        ])]);
+    }
+
+    #[DataProvider('supplyChainApprovalFailures')]
+    public function test_approval_waits_for_a_customer_number_and_preserves_the_supply_chain_message(
+        array $body,
+        int $status,
+        string $message,
+    ): void {
+        $registration = $this->pendingDistributorRegistration();
+        Queue::fake();
+        Http::fake([
+            'registration-supply.test/*/login' => Http::response(['success' => true, 'data' => ['api_token' => 'test-token']]),
+            'registration-supply.test/*/tambah-customer' => Http::response($body, $status),
+        ]);
+
+        $this->postJson("/api/v1/admin/partnership/registrations/{$registration->getKey()}/approve")
+            ->assertStatus(502)
+            ->assertJsonPath('message', 'Error pada Aplikasi Internal: '.$message);
+
+        $this->assertPendingApprovalHasNoMember($registration);
+        Queue::assertNotPushed(SyncSupplyChainMember::class);
+        Mail::assertNothingOutgoing();
+    }
+
+    public static function supplyChainApprovalFailures(): array
+    {
+        return [
+            'business rejection' => [
+                ['success' => false, 'message' => 'Nomor KTP sudah terdaftar di customer lain.'],
+                200, 'Nomor KTP sudah terdaftar di customer lain.',
+            ],
+            'http rejection' => [
+                ['success' => false, 'message' => 'Data customer tidak lengkap: NoKTP.'],
+                422, 'Data customer tidak lengkap: NoKTP.',
+            ],
+            'duplicate phone' => [
+                ['success' => false, 'message' => "Customer dengan nomor telepon '+628179254440' sudah terdaftar pada sistem (data kembar)."],
+                200, "Customer dengan nomor telepon '+628179254440' sudah terdaftar pada sistem (data kembar).",
+            ],
+            'duplicate customer with a number and HTTP 200' => [
+                [
+                    'success' => false,
+                    'message' => "Customer dengan No KTP '3171012345670001' sudah terdaftar pada sistem (data kembar).",
+                    'data' => ['nama' => 'Budi Santoso', 'Cust_no' => '10030900 ', 'no_kemitraan' => 'KM-2026-002'],
+                ],
+                200, "Customer dengan No KTP '3171012345670001' sudah terdaftar pada sistem (data kembar).",
+            ],
+            'duplicate customer with a number and HTTP 400' => [
+                [
+                    'success' => false,
+                    'message' => "Customer dengan No KTP '3171012345670001' sudah terdaftar pada sistem (data kembar).",
+                    'data' => ['nama' => 'Budi Santoso', 'Cust_no' => '10030900 ', 'no_kemitraan' => 'KM-2026-002'],
+                ],
+                400, "Customer dengan No KTP '3171012345670001' sudah terdaftar pada sistem (data kembar).",
+            ],
+            'access rejected' => [
+                ['success' => false, 'message' => 'Akun tidak memiliki akses tambah customer.'],
+                403, 'Akun tidak memiliki akses tambah customer.',
+            ],
+            'missing number' => [
+                ['success' => true, 'data' => []],
+                200, 'Nomor customer tidak ditemukan pada respons Aplikasi Internal.',
+            ],
+            'empty number with provider message' => [
+                ['success' => true, 'message' => 'Customer belum mendapatkan nomor.', 'data' => ['cust_no' => '']],
+                200, 'Customer belum mendapatkan nomor.',
+            ],
+            'whitespace number' => [
+                ['success' => true, 'data' => ['cust_no' => '   ']],
+                200, 'Nomor customer tidak ditemukan pada respons Aplikasi Internal.',
+            ],
+            'malformed number' => [
+                ['success' => true, 'data' => ['cust_no' => ['90000046']]],
+                200, 'Nomor customer tidak ditemukan pada respons Aplikasi Internal.',
+            ],
+        ];
+    }
+
+    public function test_approval_is_held_when_supply_chain_is_disabled(): void
+    {
+        $registration = $this->pendingDistributorRegistration();
+        config()->set('services.supply_chain.enabled', false);
+
+        $this->postJson("/api/v1/admin/partnership/registrations/{$registration->getKey()}/approve")
+            ->assertStatus(503)
+            ->assertJsonPath('message', 'Layanan Aplikasi Internal belum diaktifkan.');
+
+        $this->assertPendingApprovalHasNoMember($registration);
+        Http::assertNothingSent();
+        Mail::assertNothingOutgoing();
+    }
+
+    public function test_approval_is_held_when_supply_chain_cannot_be_reached(): void
+    {
+        $registration = $this->pendingDistributorRegistration();
+        Http::fake(['registration-supply.test/*' => Http::failedConnection()]);
+
+        $this->postJson("/api/v1/admin/partnership/registrations/{$registration->getKey()}/approve")
+            ->assertStatus(503)
+            ->assertJsonPath('message', 'Layanan Aplikasi Internal sedang tidak dapat dihubungi.');
+
+        $this->assertPendingApprovalHasNoMember($registration);
+        Mail::assertNothingOutgoing();
+    }
+
+    public function test_approval_preserves_the_login_rejection_message(): void
+    {
+        $registration = $this->pendingDistributorRegistration();
+        Http::fake(['registration-supply.test/*/login' => Http::response([
+            'success' => false, 'message' => 'Username atau password salah.', 'data' => [],
+        ])]);
+
+        $this->postJson("/api/v1/admin/partnership/registrations/{$registration->getKey()}/approve")
+            ->assertStatus(502)
+            ->assertJsonPath('message', 'Error pada Aplikasi Internal: Username atau password salah.');
+
+        $this->assertPendingApprovalHasNoMember($registration);
+        Mail::assertNothingOutgoing();
+    }
+
+    public function test_approval_rejects_a_customer_number_owned_by_another_member(): void
+    {
+        $registration = $this->pendingDistributorRegistration();
+        [$owner] = $this->createMemberAccount('DST', '0001/0000/0000', 'customer.owner', '+6281111111111');
+        $owner->update(['member_supply_chain_code' => '90000046']);
+        Http::fake([
+            'registration-supply.test/*/login' => Http::response(['success' => true, 'data' => ['api_token' => 'test-token']]),
+            'registration-supply.test/*/tambah-customer' => Http::response(['success' => true, 'data' => ['cust_no' => '90000046']]),
+        ]);
+
+        $this->postJson("/api/v1/admin/partnership/registrations/{$registration->getKey()}/approve")
+            ->assertStatus(409)
+            ->assertJsonPath('message', "Nomor customer '90000046' dari Aplikasi Internal sudah digunakan oleh mitra lain.");
+
+        $this->assertPendingApprovalHasNoMember($registration, 1);
+        $this->assertSame('90000046', $owner->fresh()->member_supply_chain_code);
+        Mail::assertNothingOutgoing();
+    }
+
+    public function test_approval_retry_uses_the_existing_customer_and_commits_only_once(): void
+    {
+        $registration = $this->pendingDistributorRegistration();
+        Queue::fake();
+        Http::fake([
+            'registration-supply.test/*/login' => Http::response(['success' => true, 'data' => ['api_token' => 'test-token']]),
+            'registration-supply.test/*/tambah-customer' => Http::sequence()
+                ->push(['success' => false, 'message' => 'Customer belum siap.'], 422)
+                ->push(['success' => false, 'message' => 'Customer sudah terdaftar (data kembar).', 'data' => ['Cust_no' => ' 90000046 ']], 400)
+                ->push(['success' => true, 'message' => 'Customer berhasil diproses.', 'data' => ['Cust_no' => ' 90000046 ']]),
+        ]);
+
+        $url = "/api/v1/admin/partnership/registrations/{$registration->getKey()}/approve";
+        $this->postJson($url)->assertStatus(502)->assertJsonPath('message', 'Error pada Aplikasi Internal: Customer belum siap.');
+        $this->assertPendingApprovalHasNoMember($registration);
+        Mail::assertNothingOutgoing();
+
+        $this->postJson($url)->assertStatus(502)->assertJsonPath('message', 'Error pada Aplikasi Internal: Customer sudah terdaftar (data kembar).');
+        $this->assertPendingApprovalHasNoMember($registration);
+        Mail::assertNothingOutgoing();
+
+        $this->postJson($url)->assertOk()->assertJsonPath('data.status.code', 'approved');
+        $member = Member::query()->findOrFail($registration->fresh()->member_registration_member_id);
+        $this->assertSame('90000046', $member->member_supply_chain_code);
+        $this->assertDatabaseCount('member', 1);
+        $this->assertDatabaseCount('member_account', 1);
+        $this->assertDatabaseCount('member_history', 1);
+        $this->assertDatabaseHas('member_supply_chain_syncs', [
+            'member_supply_chain_sync_member_id' => $member->getKey(),
+            'member_supply_chain_sync_customer_no' => '90000046',
+            'member_supply_chain_sync_status' => 'synced',
+        ]);
+        Queue::assertNotPushed(SyncSupplyChainMember::class);
+        Mail::assertSent(MemberRegistrationApprovedMail::class, 1);
+
+        $this->postJson($url)->assertUnprocessable();
+        Http::assertSentCount(4);
+        $this->assertDatabaseCount('member_account', 1);
+        Mail::assertSent(MemberRegistrationApprovedMail::class, 1);
+    }
+
+    #[DataProvider('identityRegistrationSources')]
+    public function test_registration_rejects_an_identity_used_by_an_existing_member(bool $admin): void
+    {
+        $this->createReferenceData();
+        $this->createMemberGroups();
+        [$member, $account] = $this->createMemberAccount('DST', '0001/0000/0000', 'identity.owner');
+        $member->update(['member_identity_no' => '0001234567890123']);
+        $this->actingAs($admin ? $this->createAdministrator() : $account, $admin ? 'admin_api' : 'member_api');
+        $url = $admin ? '/api/v1/admin/partnership/registrations' : '/api/v1/member/network/registrations';
+
+        $this->postJson($url, $this->registrationPayload('identity.duplicate', '081234567890', '0001234567890123', $admin ? null : 'AGT'))
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('identity_no')
+            ->assertJsonPath('message', 'Nomor identitas sudah digunakan atau masih dalam proses pendaftaran.');
+
+        $this->assertDatabaseCount('member_registration', 0);
+    }
+
+    #[DataProvider('identityRegistrationSources')]
+    public function test_registration_rejects_an_identity_reserved_by_a_pending_application(bool $admin): void
+    {
+        Mail::fake();
+        $this->createReferenceData();
+        $this->createMemberGroups();
+        [, $account] = $this->createMemberAccount('DST', '0001/0000/0000', 'identity.sponsor');
+        $this->actingAs($admin ? $this->createAdministrator() : $account, $admin ? 'admin_api' : 'member_api');
+        $url = $admin ? '/api/v1/admin/partnership/registrations' : '/api/v1/member/network/registrations';
+        $levelCode = $admin ? null : 'AGT';
+        $this->postJson($url, $this->registrationPayload('identity.first', '081234567891', '0001234567890123', $levelCode))
+            ->assertSuccessful();
+
+        $this->postJson($url, $this->registrationPayload('identity.second', '081234567892', '0001234567890123', $levelCode))
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('identity_no');
+
+        $this->assertDatabaseCount('member_registration', 1);
+    }
+
+    public static function identityRegistrationSources(): array
+    {
+        return ['admin' => [true], 'member' => [false]];
+    }
+
+    private function pendingDistributorRegistration(): MemberRegistration
+    {
+        Mail::fake();
+        config()->set('services.supply_chain.base_url', 'https://registration-supply.test');
+        $this->createReferenceData();
+        $this->createMemberGroups();
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $id = $this->postJson('/api/v1/admin/partnership/registrations',
+            $this->registrationPayload('sync.applicant', '081234567890', '0001234567890123', null)
+        )->assertSuccessful()->json('data.id');
+
+        return MemberRegistration::query()->findOrFail($id);
+    }
+
+    private function assertPendingApprovalHasNoMember(MemberRegistration $registration, int $existingMembers = 0): void
+    {
+        $registration->refresh();
+        $this->assertSame('requested', $registration->member_registration_status);
+        $this->assertSame(0, (int) $registration->member_registration_member_id);
+        $this->assertDatabaseCount('member', $existingMembers);
+        $this->assertDatabaseCount('member_account', $existingMembers);
+        $this->assertDatabaseCount('member_history', 0);
+        $this->assertDatabaseCount('member_address', 0);
+        $this->assertDatabaseCount('member_bank_account', 0);
+        $this->assertDatabaseCount('member_supply_chain_syncs', 0);
+    }
 
     public function test_identity_type_rollback_preserves_members_using_new_types(): void
     {
@@ -470,6 +1102,121 @@ class MemberRegistrationWorkflowTest extends TestCase
         $this->createNetworkMember('0001/0000/0001', $resellerLevel, $distributor);
 
         $this->assertSame('0001/0000/0002', $service->next($resellerLevel, $distributor));
+    }
+
+    #[DataProvider('reservedMemberCodeUsernames')]
+    public function test_member_codes_skip_reserved_usernames_without_changing_existing_accounts(
+        string $targetLevelCode,
+        ?string $sponsorCode,
+        array $reservedUsernames,
+        string $expectedCode,
+    ): void {
+        $distributor = $this->createNetworkMember('0080/0000/0000', $this->level('DST'), null);
+        $sponsor = match ($sponsorCode) {
+            null => null,
+            '0080/0000/0000' => $distributor,
+            default => $this->createNetworkMember($sponsorCode, $this->level('AGT'), $distributor),
+        };
+        foreach ($reservedUsernames as $index => $username) {
+            MemberAccount::query()->create([
+                'member_account_member_id' => 9000 + $index,
+                'member_account_member_group_id' => $this->level($targetLevelCode)->getKey(),
+                'member_account_username' => $username,
+                'member_account_password' => Hash::make('Legacy123'),
+                'member_account_pin' => '123456',
+            ]);
+        }
+        $originalAccounts = MemberAccount::query()->get()->toArray();
+        $originalMemberCount = Member::query()->count();
+
+        $this->assertSame($expectedCode, app(MemberCodeService::class)->next($this->level($targetLevelCode), $sponsor));
+
+        $this->assertSame($originalAccounts, MemberAccount::query()->get()->toArray());
+        $this->assertDatabaseCount('member', $originalMemberCount);
+    }
+
+    /** @return array<string, array{string, ?string, list<string>, string}> */
+    public static function reservedMemberCodeUsernames(): array
+    {
+        return [
+            'distributor' => ['DST', null, ['0081/0000/0000'], '0082/0000/0000'],
+            'agent' => ['AGT', '0080/0000/0000', ['0080/0001/0000'], '0080/0002/0000'],
+            'standalone agent' => ['AGT', null, ['0000/0001/0000'], '0000/0002/0000'],
+            'direct reseller' => ['RSL', '0080/0000/0000', ['0080/0000/0001'], '0080/0000/0002'],
+            'agent reseller' => ['RSL', '0080/0001/0000', ['0080/0001/0001'], '0080/0001/0002'],
+            'consecutive reservations' => ['RSL', '0080/0000/0000', ['0080/0000/0001', '0080/0000/0002'], '0080/0000/0003'],
+            'consecutive distributor reservations' => ['DST', null, ['0081/0000/0000', '0082/0000/0000'], '0083/0000/0000'],
+            'consecutive agent reservations' => ['AGT', '0080/0000/0000', ['0080/0001/0000', '0080/0002/0000'], '0080/0003/0000'],
+            'consecutive standalone agent reservations' => ['AGT', null, ['0000/0001/0000', '0000/0002/0000'], '0000/0003/0000'],
+            'consecutive agent reseller reservations' => ['RSL', '0080/0001/0000', ['0080/0001/0001', '0080/0001/0002'], '0080/0001/0003'],
+            'unused lower number' => ['RSL', '0080/0000/0000', ['0080/0000/9999'], '0080/0000/0001'],
+            'another branch' => ['RSL', '0080/0000/0000', ['0081/0000/0001'], '0080/0000/0001'],
+        ];
+    }
+
+    public function test_admin_approval_skips_a_username_belonging_to_a_different_member_code(): void
+    {
+        Mail::fake();
+        $this->createReferenceData();
+        $this->createMemberGroups();
+        [, $distributorAccount] = $this->createMemberAccount('DST', '0080/0000/0000', 'distributor.sponsor');
+        [$legacyMember, $legacyAccount] = $this->createMemberAccount(
+            'RSL', 'LEGACY-RESELLER', '0080/0000/0001', '081234567899',
+        );
+        $originalMember = $legacyMember->fresh()->getAttributes();
+        $originalAccount = $legacyAccount->fresh()->getAttributes();
+        $administrator = $this->createAdministrator();
+
+        foreach ([2, 3] as $sequence) {
+            $this->actingAs($distributorAccount, 'member_api');
+            $registrationId = $this->postJson('/api/v1/member/network/registrations', $this->registrationPayload(
+                'reserved.username.'.$sequence, '08123456781'.$sequence, '357801010101001'.$sequence, 'RSL',
+            ))->assertSuccessful()->json('data.id');
+            $this->actingAs($administrator, 'admin_api');
+
+            $this->postJson("/api/v1/admin/partnership/registrations/{$registrationId}/approve")
+                ->assertOk()->assertJsonPath('data.status.code', 'approved');
+
+            $registration = MemberRegistration::query()->findOrFail($registrationId);
+            $member = Member::query()->findOrFail($registration->member_registration_member_id);
+            $this->assertSame('0080/0000/000'.$sequence, $member->member_code);
+            $this->assertDatabaseHas('member_account', [
+                'member_account_member_id' => $member->getKey(),
+                'member_account_username' => $member->member_code,
+            ]);
+            $this->assertSame($originalMember, $legacyMember->fresh()->getAttributes());
+            $this->assertSame($originalAccount, $legacyAccount->fresh()->getAttributes());
+
+            $this->postJson("/api/v1/admin/partnership/registrations/{$registrationId}/approve")
+                ->assertUnprocessable()->assertJsonPath('error_code', 'process_error');
+        }
+
+        $this->assertDatabaseCount('member', 4);
+        $this->assertDatabaseCount('member_account', 4);
+    }
+
+    public function test_approval_with_the_last_available_code_reserved_preserves_the_pending_registration(): void
+    {
+        Mail::fake();
+        $this->createReferenceData();
+        $this->createMemberGroups();
+        [$distributor, $distributorAccount] = $this->createMemberAccount('DST', '0080/0000/0000', 'distributor.sponsor');
+        $this->createMemberAccount('RSL', 'LEGACY-RESELLER', '0080/0000/9999', '081234567899');
+        $this->createNetworkMember('0080/0000/9998', $this->level('RSL'), $distributor);
+        $this->actingAs($distributorAccount, 'member_api');
+        $registrationId = $this->postJson('/api/v1/member/network/registrations', $this->registrationPayload(
+            'reserved.exhausted', '081234567812', '3578010101010012', 'RSL',
+        ))->assertSuccessful()->json('data.id');
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+
+        $this->postJson("/api/v1/admin/partnership/registrations/{$registrationId}/approve")
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'Nomor urut kode mitra telah mencapai batas maksimum.');
+
+        $this->assertDatabaseCount('member', 3);
+        $this->assertDatabaseCount('member_account', 2);
+        $this->assertSame('requested', MemberRegistration::query()->findOrFail($registrationId)->member_registration_status);
+        Mail::assertNotSent(MemberRegistrationApprovedMail::class);
     }
 
     public function test_registration_workflow_requires_authentication(): void

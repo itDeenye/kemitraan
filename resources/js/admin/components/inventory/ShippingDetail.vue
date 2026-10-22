@@ -108,7 +108,7 @@
                         icon="mdi-link-variant"
                     >
                         <div class="font-weight-bold">
-                            Terintegrasi Supply &amp; Chain
+                            Terintegrasi Aplikasi Internal
                         </div>
                         <div class="text-body-2 mt-1">
                             Nomor Faktur:
@@ -326,6 +326,17 @@
                         </v-card>
                     </div>
                     <div v-if="order.shipping">
+                        <div class="d-flex align-center ga-3 mb-3">
+                            <span class="text-body-2 text-medium-emphasis">Metode Penerimaan</span>
+                            <BaseBadge
+                                type="shipping_method"
+                                :value="order.display_shipping_method || order.shipping?.method || order.shipping_method"
+                            >
+                                <template v-if="order.is_preorder && order.preorder_fulfillment_mode === 'upline_transit' && (order.display_shipping_method || order.shipping?.method || order.shipping_method) === 'pickup'">
+                                    Ambil di Upline
+                                </template>
+                            </BaseBadge>
+                        </div>
                         <h3
                             class="text-subtitle-1 font-weight-bold mb-3 d-flex align-center ga-2"
                         >
@@ -350,7 +361,7 @@
                                     <div
                                         class="text-caption text-medium-emphasis"
                                     >
-                                        Kurir & Layanan
+                                        {{ order.display_shipping_method === 'pickup' ? 'Kurir ke Lokasi Pengambilan' : 'Kurir & Layanan' }}
                                     </div>
                                     <div
                                         class="font-weight-medium text-capitalize"
@@ -368,6 +379,7 @@
                                     v-if="
                                         order.shipping.method ===
                                             'courier_express' &&
+                                        order.shipping.courier?.trim() &&
                                         order.shipping.pickup_method
                                     "
                                 >
@@ -738,7 +750,7 @@ const printDocument = async (
                         <strong style="color: red; font-size: 12px;">PERHATIAN :</strong><br>
                         1. Surat Jalan ini merupakan bukti resmi pengiriman produk dan bukan bukti penjualan.<br>
                         2. Batas keluhan terhadap produk, max. 3 hari setelah produk diterima.<br>
-                        3. Surat Jalan Asli kembali ke Supply and Chain, max. 3 hari setelah produk diterima (bisa berupa soft file)
+                        3. Surat Jalan Asli kembali ke Aplikasi Internal, max. 3 hari setelah produk diterima (bisa berupa soft file)
                     </div>
                     
                     <table style="width: 100%; border: none; font-size: 11px;" cellpadding="0" cellspacing="0">

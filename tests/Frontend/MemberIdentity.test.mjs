@@ -76,6 +76,7 @@ async function fields({ context, descriptor }) {
     });
     await renderToString(app);
     return {
+        customer: result.find(item => item.tag === 'v-text-field' && /Nomor Customer/.test(item.label)),
         number: result.find(item => item.tag === 'v-text-field' && /Nomor (Identitas|Paspor)/.test(item.label)),
         type: result.find(item => item.tag === 'v-select' && /Jenis Identitas/.test(item.label)),
         uploads: result.filter(item => item.tag === 'MediaUpload'),
@@ -83,6 +84,45 @@ async function fields({ context, descriptor }) {
 }
 
 const isValid = (field, value) => field.rules.every(rule => rule(value) === true);
+
+test('admin customer input loads the current number and saves a trimmed manual correction', async () => {
+    let saved;
+    const page = setup(paths[1], undefined, {
+        referenceService: { getProvinces: async () => [], getBanks: async () => [] },
+        memberService: { getMember: async () => ({ customer_number: 'OLD-123' }),
+            updateMember: async (id, payload) => { saved = structuredClone({ id, payload }); } },
+    });
+    await page.context.open(7);
+    const { customer } = await fields(page);
+    assert.ok(customer, 'The manual customer input must be rendered');
+    assert.equal(customer.modelValue, 'OLD-123');
+    assert.notEqual(customer.disabled, true);
+    assert.equal(Number(customer.maxlength), 30);
+    assert.equal(isValid(customer, ''), false);
+    assert.equal(isValid(customer, '   '), false);
+    assert.equal(isValid(customer, '1'.repeat(31)), false);
+    customer['onUpdate:modelValue']('  0010030900  ');
+    page.context.formRef.value = { validate: async () => ({ valid: true }), resetValidation() {} };
+    await page.context.submit();
+    assert.equal(saved.id, 7);
+    assert.equal(saved.payload.customer_number, '0010030900');
+    assert.equal(page.context.form.value.customer_number, '');
+});
+
+test('editing an unsynchronized profile does not send a blank customer number', async () => {
+    let saved;
+    const page = setup(paths[1], undefined, {
+        referenceService: { getProvinces: async () => [], getBanks: async () => [] },
+        memberService: { getMember: async () => ({}), updateMember: async (id, payload) => { saved = payload; } },
+    });
+    await page.context.open(7);
+    const { customer } = await fields(page);
+    assert.ok(customer);
+    assert.equal(isValid(customer, ''), true);
+    page.context.formRef.value = { validate: async () => ({ valid: true }), resetValidation() {} };
+    await page.context.submit();
+    assert.equal('customer_number' in saved, false);
+});
 
 for (const path of paths) {
     test(`${path}: health insurance enforces 13 numeric digits`, async () => {

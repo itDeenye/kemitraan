@@ -507,6 +507,12 @@ class MemberSalesService
         $member = $this->member($account)->loadMissing('level');
 
         return DB::transaction(function () use ($account, $member, $data): Trx {
+            $currentMember = Member::query()->whereKey($member->getKey())->lockForUpdate()->firstOrFail();
+            if ((int) $currentMember->member_member_level_id !== (int) $member->member_member_level_id
+                || (int) $currentMember->member_parent_member_id !== (int) $member->member_parent_member_id
+                || (int) $currentMember->member_status !== 1) {
+                throw new ProcessException('Level atau jaringan mitra berubah. Muat ulang halaman sebelum membuat transaksi.');
+            }
             $this->ensurePosOrderContract($data['payment_method'], $data['shipping_method']);
             $customer = $this->customer($member, (int) $data['customer_id']);
             $items = collect($data['items']);

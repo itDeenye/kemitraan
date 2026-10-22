@@ -185,6 +185,48 @@ const transactionPages = [
     'admin/components/transactions/StockScreeningDialog.vue',
 ];
 
+for (const path of [...transactionPages.filter(path => path.startsWith('admin/')), 'admin/components/inventory/ShippingDetail.vue']) {
+    test(`${path} hides courier pickup type until a courier is selected without hiding final receiving method`, async () => {
+        for (const courier of [undefined, null, '', '   ', 'JNE']) {
+            const data = { ...order, is_preorder: true, preorder_fulfillment_mode: 'upline_transit', display_shipping_method: 'pickup', shipping_method: 'courier_express',
+                shipping: { method: 'courier_express', courier, pickup_method: 'PICKUP', items: [] } };
+            const text = await render(path, {
+                order: data, payment: data, isLoading: false, loading: false, dialog: true,
+                isPickup: false, isPickupOrder: false, form: {}, courierForm: {}, getShippingItems: () => [],
+                shippingCourierLabel: courier,
+                spreadUpload: { isUploading: { value: false } }, availableCouriers: [], $route: { query: {} },
+            });
+            assert.match(text, /Ambil di Upline/);
+            assert.equal(/Tipe Pickup Kurir/.test(text), courier === 'JNE', `courier=${String(courier)}`);
+        }
+    });
+    for (const [displayMethod, expected, mode, method] of [
+        ['pickup', 'pickup', 'upline_transit', 'courier_express'],
+        [undefined, 'courier_express', 'upline_transit', 'courier_express'],
+        ['pickup', 'pickup', 'direct', 'pickup'],
+    ]) {
+        test(`${path} shows final shipping ${String(displayMethod)} (${mode}) separately from the operational courier`, async () => {
+            const data = { ...order, is_preorder: true, preorder_fulfillment_mode: mode, display_shipping_method: displayMethod, shipping_method: method,
+                shipping: { method: 'courier_express', courier: 'JNE', service: 'REG', items: [] } };
+            const text = await render(path, {
+                order: data, payment: data, isLoading: false, loading: false, dialog: true,
+                isPickup: false, isPickupOrder: false, form: {}, courierForm: {}, getShippingItems: () => [],
+                shippingCourierLabel: 'JNE - REG',
+                spreadUpload: { isUploading: { value: false } }, availableCouriers: [], $route: { query: {} },
+            }, { BaseBadge: { props: ['type', 'value'], setup: (props, { slots }) => () => props.type === 'shipping_method'
+                ? Vue.h('span', [`Metode:${props.value}`, slots.default?.()]) : null } });
+            assert.match(text, new RegExp(`Metode:${expected}`));
+            assert.match(text, /JNE/);
+            if (displayMethod === 'pickup' && mode === 'upline_transit') {
+                assert.match(text, /Ambil di Upline/);
+                assert.match(text, /Kurir ke Lokasi Pengambilan/);
+            } else {
+                assert.doesNotMatch(text, /Ambil di Upline/);
+            }
+        });
+    }
+}
+
 for (const path of transactionPages) {
     test(`${path} renders line snapshots and two summary totals without duplicating them`, async () => {
         const text = await render(path, {

@@ -13,6 +13,7 @@ use App\Models\RefProvince;
 use App\Models\RefSubdistrict;
 use App\Support\MediaUrl;
 use App\Support\MemberIdentity;
+use App\Support\MemberPhoneNumber;
 use App\Support\PhoneNumber;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -33,6 +34,10 @@ class SaveMemberRequest extends FormRequest
 
         return [
             'name' => ['required', 'string', 'max:100'],
+            'customer_number' => [
+                'sometimes', 'required', 'string', 'max:30',
+                Rule::unique((new Member)->getTable(), 'member_supply_chain_code')->ignore($memberId, 'member_id'),
+            ],
             'email' => ['nullable', 'email:rfc', 'max:100'],
             'mobile_phone' => ['required', 'string', 'regex:/^\+62[0-9]{8,13}$/'],
             'gender' => ['required', Rule::in(['Laki-laki', 'Perempuan'])],
@@ -105,6 +110,7 @@ class SaveMemberRequest extends FormRequest
     {
         return [
             'name' => 'nama mitra',
+            'customer_number' => 'nomor customer Aplikasi Internal',
             'email' => 'email mitra',
             'mobile_phone' => 'nomor ponsel',
             'gender' => 'jenis kelamin',
@@ -143,6 +149,9 @@ class SaveMemberRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        if (is_string($this->input('customer_number'))) {
+            $this->merge(['customer_number' => trim($this->input('customer_number'))]);
+        }
         if (is_string($this->input('identity_type'))) {
             $this->merge(['identity_type' => strtoupper(trim($this->input('identity_type')))]);
         }
@@ -174,6 +183,11 @@ class SaveMemberRequest extends FormRequest
         return [
             function (Validator $validator): void {
                 $member = $this->route('member');
+                if (! $validator->errors()->has('mobile_phone') && MemberPhoneNumber::isUsed(
+                    $this->input('mobile_phone'), $member instanceof Member ? $member : null,
+                )) {
+                    $validator->errors()->add('mobile_phone', 'Nomor WhatsApp sudah digunakan atau masih dalam proses pendaftaran.');
+                }
                 if ($member instanceof Member) {
                     MemberIdentity::validateNumber($validator,
                         $this->input('identity_type', $member->member_identity_type),

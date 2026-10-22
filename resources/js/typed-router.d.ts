@@ -261,6 +261,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    '/admin/stc/shipping-cost-report': RouteRecordInfo<
+      '/admin/stc/shipping-cost-report',
+      '/admin/stc/shipping-cost-report',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     '/admin/stc/topup': RouteRecordInfo<
       '/admin/stc/topup',
       '/admin/stc/topup',
@@ -881,6 +888,12 @@ declare module 'vue-router/auto-routes' {
     'resources/js/admin/pages/stc/saldo.vue': {
       routes:
         | '/admin/stc/saldo'
+      views:
+        | never
+    }
+    'resources/js/admin/pages/stc/shipping-cost-report.vue': {
+      routes:
+        | '/admin/stc/shipping-cost-report'
       views:
         | never
     }

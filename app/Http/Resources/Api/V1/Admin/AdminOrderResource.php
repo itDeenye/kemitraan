@@ -5,6 +5,7 @@ namespace App\Http\Resources\Api\V1\Admin;
 use App\Http\Resources\ApiResource;
 use App\Models\Trx;
 use App\Support\MediaUrl;
+use App\Support\SupplyChainSyncEligibility;
 use Illuminate\Http\Request;
 
 class AdminOrderResource extends ApiResource
@@ -25,6 +26,12 @@ class AdminOrderResource extends ApiResource
             && ! $hasChildTransaction;
         $fulfillmentTrx = $trx ? $this->fulfillmentTransaction($trx) : null;
         $originTrx = $trx ? $this->originTransaction($trx) : null;
+        $preorderFulfillmentMode = $originTrx?->trx_preorder_fulfillment_mode
+            ?? $this->resource->preorder_fulfillment_mode ?? 'direct';
+        $displayShippingMethod = $isPreorder
+            && $preorderFulfillmentMode === 'upline_transit'
+            && ($originTrx?->trx_shipping_method ?? $this->resource->display_shipping_method ?? $shippingMethod) === 'pickup'
+                ? 'pickup' : $shippingMethod;
         $requiresInitialCourierSelection = $status === 'processing'
             && ! $hasChildTransaction
             && $shippingMethod === 'courier_express'
@@ -69,6 +76,9 @@ class AdminOrderResource extends ApiResource
             'code' => $trx?->trx_code ?? $this->resource->code,
             'invoice_number' => $invoiceNumber,
             'supply_chain_status' => $supplyChainStatus,
+            'can_sync_supply_chain' => SupplyChainSyncEligibility::sale(
+                $sellerType, $buyerType, (string) ($trx?->trx_type ?? $this->resource->type), $status, $invoiceNumber,
+            ),
             'type' => $trx?->trx_type ?? $this->resource->type,
             'order_type' => [
                 'code' => $isPreorder ? 'preorder' : 'regular',
@@ -111,6 +121,8 @@ class AdminOrderResource extends ApiResource
             ],
             'payment_method' => $trx?->trx_payment_method ?? $this->resource->payment_method,
             'shipping_method' => $shippingMethod,
+            'display_shipping_method' => $displayShippingMethod,
+            'preorder_fulfillment_mode' => $preorderFulfillmentMode,
             'status' => $status,
             'stock_screening' => $this->when(
                 $trx !== null,

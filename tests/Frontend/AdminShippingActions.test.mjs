@@ -30,7 +30,7 @@ for (const [status, canShip, canReship] of [
         app.component('BaseDataTable', { setup: (_, { slots }) => () => Vue.h('div', slots['item.actions']({ item })) });
         app.component('v-btn', { setup: (_, { attrs }) => () => Vue.h('button', { 'data-icon': attrs.icon }) });
         app.component('v-menu', { setup: (_, { slots }) => () => slots.activator({ props: {} }) });
-        for (const name of ['ShippingDetail', 'ShippingTrackingDialog', 'ShippingActionDialog', 'ShippingReshipDialog', 'v-chip', 'BaseBadge', 'v-list', 'v-list-item']) {
+        for (const name of ['SupplyChainSyncButton', 'ShippingDetail', 'ShippingTrackingDialog', 'ShippingActionDialog', 'ShippingReshipDialog', 'v-chip', 'BaseBadge', 'v-list', 'v-list-item']) {
             app.component(name, { render: () => null });
         }
         app.directive('tooltip', {});

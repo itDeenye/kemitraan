@@ -7,6 +7,7 @@ use App\Http\Requests\Api\V1\Admin\Partnership\ApproveRegistrationRequest;
 use App\Http\Requests\Api\V1\Admin\Partnership\ListRegistrationsRequest;
 use App\Http\Requests\Api\V1\Admin\Partnership\RejectRegistrationRequest;
 use App\Http\Requests\Api\V1\Admin\Partnership\StoreDistributorRegistrationRequest;
+use App\Http\Requests\Api\V1\Admin\Partnership\UpdateRegistrationRequest;
 use App\Http\Resources\Api\V1\Partnership\MemberRegistrationResource;
 use App\Http\Resources\DataTableResource;
 use App\Models\MemberRegistration;
@@ -48,6 +49,16 @@ class RegistrationController extends Controller
         return (new MemberRegistrationResource(
             $this->registrationService->createDistributor($request->validated())
         ))->additional(['success' => true, 'message' => 'Pendaftaran Distributor berhasil diajukan.']);
+    }
+
+    public function update(UpdateRegistrationRequest $request, MemberRegistration $registration): MemberRegistrationResource
+    {
+        $updated = $this->registrationService->updateRegistration($registration, $request->validated());
+        return (new MemberRegistrationResource($updated))->additional(['success' => true,
+            'message' => $updated->member_registration_distributor_approval_status === 'pending'
+                ? 'Data pengajuan diperbarui. Perubahan upline perlu persetujuan Distributor kembali.'
+                : 'Data pengajuan mitra berhasil diperbarui.',
+        ]);
     }
 
     public function approve(

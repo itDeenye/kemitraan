@@ -3,7 +3,6 @@
 namespace App\Services\Partnership;
 
 use App\Exceptions\ProcessException;
-use App\Jobs\SyncSupplyChainMember;
 use App\Libraries\DataTable;
 use App\Models\Member;
 use App\Models\MemberAccount;
@@ -14,10 +13,14 @@ use App\Models\MemberNetworkSwitch;
 use App\Models\MemberRegistration;
 use App\Models\RefBank;
 use App\Models\SiteAdministrator;
+use App\Services\Integration\SupplyChainSyncService;
 use App\Services\Notification\PartnershipEmailService;
 use App\Support\MediaUrl;
 use App\Support\MemberIdentity;
+use App\Support\MemberPhoneNumber;
+use Closure;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
@@ -28,6 +31,8 @@ class MemberRegistrationService
         private readonly MemberPasswordService $memberPasswordService,
         private readonly PartnershipEmailService $partnershipEmailService,
         private readonly MemberOnboardingContacts $onboardingContacts,
+        private readonly SupplyChainSyncService $supplyChainSyncService,
+        private readonly MemberPlacementService $placementService,
     ) {}
 
     /**
@@ -99,7 +104,9 @@ class MemberRegistrationService
 
     public function adminOptions(): array
     {
-        return $this->registrationOptions(['DST']);
+        $placement = $this->placementService->options();
+
+        return [...$this->registrationOptions(['DST']), 'edit_levels' => $placement['levels'], 'edit_uplines' => $placement['uplines']];
     }
 
     public function memberRegistration(
@@ -118,6 +125,104 @@ class MemberRegistrationService
     public function adminRegistration(MemberRegistration $registration): MemberRegistration
     {
         return $this->detailQuery()->readyForAdmin()->findOrFail($registration->getKey());
+    }
+
+    /** @param array<string, mixed> $data */
+    public function updateRegistration(MemberRegistration $registration, array $data): MemberRegistration
+    {
+        return $this->withRegistrationLock($registration, fn (): MemberRegistration => DB::transaction(function () use ($registration, $data): MemberRegistration {
+            $locked = MemberRegistration::query()->whereKey($registration->getKey())->lockForUpdate()->firstOrFail();
+            $this->ensureRequested($locked);
+            $this->ensureReadyForAdmin($locked);
+            $attributes = [];
+            if (array_key_exists('level_id', $data) || array_key_exists('upline_member_id', $data)) {
+                [$level, $upline] = $this->placementService->resolve(
+                    (int) ($data['level_id'] ?? $locked->member_registration_member_level_id),
+                    array_key_exists('upline_member_id', $data) ? (int) $data['upline_member_id'] : (int) $locked->member_registration_upline_member_id,
+                );
+                $networkChanged = (int) $level->getKey() !== (int) $locked->member_registration_member_level_id
+                    || (int) ($upline?->getKey() ?? 0) !== (int) $locked->member_registration_upline_member_id;
+                if ($networkChanged) {
+                    $attributes['member_registration_member_level_id'] = $level->getKey();
+                    $attributes['member_registration_upline_member_id'] = $upline?->getKey() ?? 0;
+                    if ($locked->member_registration_distributor_approval_status === 'approved') {
+                        $reviewDistributor = $level->member_level_code === 'RSL' && $upline?->level?->member_level_code === 'AGT'
+                            ? Member::query()->with('level')->whereKey($upline->member_parent_member_id)->lockForUpdate()->first() : null;
+                        if ($level->member_level_code === 'RSL' && $upline?->level?->member_level_code === 'AGT') {
+                            if ($reviewDistributor?->level?->member_level_code !== 'DST') {
+                                throw new ProcessException('Distributor upline tidak aktif atau tidak tersedia.');
+                            }
+                            $this->ensureMemberCanRecruit($reviewDistributor);
+                        }
+                        $attributes = [...$attributes,
+                            'member_registration_distributor_member_id' => $reviewDistributor?->getKey() ?? 0,
+                            'member_registration_distributor_approval_status' => $reviewDistributor === null ? 'not_required' : 'pending',
+                            'member_registration_distributor_approval_note' => null,
+                            'member_registration_distributor_approval_datetime' => null,
+                        ];
+                    }
+                }
+            }
+            foreach ([
+                'name' => 'name', 'email' => 'email', 'mobile_phone' => 'mobilephone', 'gender' => 'gender',
+                'birth_date' => 'birth_date', 'address' => 'address', 'province_id' => 'province_id',
+                'city_id' => 'city_id', 'district_id' => 'district_id', 'subdistrict_id' => 'subdistrict_id',
+                'country_id' => 'country_id', 'identity_type' => 'identity_type', 'identity_no' => 'identity_no',
+                'nib' => 'nib', 'npwp' => 'npwp',
+            ] as $input => $column) {
+                if (array_key_exists($input, $data)) {
+                    $attributes['member_registration_'.$column] = $data[$input];
+                }
+            }
+            foreach (['image_url' => 'image', 'identity_image_url' => 'identity_image', 'payment_proof_image_url' => 'payment_proof_image'] as $input => $column) {
+                if (filled($data[$input] ?? null)) {
+                    $attributes['member_registration_'.$column] = $input === 'image_url'
+                        ? $data[$input] : MediaUrl::canonicalPrivateUrl($data[$input]);
+                }
+            }
+            if (filled($data['identity_image_url'] ?? null)) {
+                $attributes['member_registration_identity_image_filename'] = basename((string) parse_url($attributes['member_registration_identity_image'], PHP_URL_PATH));
+            }
+            if (array_intersect(array_keys($data), ['bank_accounts', 'bank_id', 'bank_account_name', 'bank_account_number', 'bank_city', 'bank_branch']) !== []) {
+                $banks = $this->onboardingContacts->bankAccounts([
+                    'bank_id' => $locked->member_registration_bank_id,
+                    'bank_account_name' => $locked->member_registration_bank_account_name,
+                    'bank_account_number' => $locked->member_registration_bank_account_no,
+                    'bank_city' => $locked->member_registration_bank_city,
+                    'bank_branch' => $locked->member_registration_bank_branch,
+                    ...$data,
+                ]);
+                $bank = collect($banks)->firstWhere('is_default', true);
+                $attributes = [...$attributes,
+                    'member_registration_bank_accounts' => $banks,
+                    'member_registration_bank_id' => $bank['bank_id'] ?? 0,
+                    'member_registration_bank_name' => $bank === null ? null : RefBank::query()->where('bank_id', $bank['bank_id'])->value('bank_name'),
+                    'member_registration_bank_account_name' => $bank['account_name'] ?? null,
+                    'member_registration_bank_account_no' => $bank['account_number'] ?? null,
+                    'member_registration_bank_city' => $bank['city'] ?? null,
+                    'member_registration_bank_branch' => $bank['branch'] ?? null,
+                ];
+            }
+            $locked->update($attributes);
+            if (($attributes['member_registration_distributor_approval_status'] ?? null) === 'pending') {
+                DB::afterCommit(fn () => $this->partnershipEmailService->sendDistributorRegistrationReview($locked, $reviewDistributor, $upline));
+            }
+
+            return $this->detailQuery()->findOrFail($locked->getKey());
+        }));
+    }
+
+    private function withRegistrationLock(MemberRegistration $registration, Closure $callback): MemberRegistration
+    {
+        $lock = Cache::lock('partnership:registration:'.$registration->getKey(), max(600, (int) config('services.supply_chain.timeout', 30) * 10));
+        if (! $lock->get()) {
+            throw new ProcessException('Pengajuan sedang diproses. Silakan tunggu.', 409);
+        }
+        try {
+            return $callback();
+        } finally {
+            $lock->release();
+        }
     }
 
     public function approveByDistributor(MemberRegistration $registration, MemberAccount $account, ?string $note): MemberRegistration
@@ -219,6 +324,11 @@ class MemberRegistrationService
         SiteAdministrator $administrator,
         ?string $note
     ): MemberRegistration {
+        return $this->withRegistrationLock($registration, fn (): MemberRegistration => $this->approveRequestedRegistration($registration, $administrator, $note));
+    }
+
+    private function approveRequestedRegistration(MemberRegistration $registration, SiteAdministrator $administrator, ?string $note): MemberRegistration
+    {
         /** @var array{registration: MemberRegistration, member: Member, password: string} $result */
         $result = DB::transaction(function () use ($registration, $administrator, $note): array {
             $lockedRegistration = MemberRegistration::query()
@@ -249,6 +359,10 @@ class MemberRegistrationService
                 throw new ProcessException('Grup akses untuk tingkat mitra belum tersedia atau tidak aktif.');
             }
 
+            if (! $this->supplyChainSyncService->enabled()) {
+                throw new ProcessException('Layanan Aplikasi Internal belum diaktifkan.', 503);
+            }
+
             $plainPassword = $this->memberPasswordService->approvalPassword(
                 $lockedRegistration->member_registration_birth_date,
             );
@@ -269,6 +383,7 @@ class MemberRegistrationService
                 $this->legacyAddresses($lockedRegistration),
                 $lockedRegistration->member_registration_bank_accounts ?? $this->legacyBankAccounts($lockedRegistration),
             );
+            $this->supplyChainSyncService->syncMember($member);
             MemberHistory::query()->create([
                 'member_history_member_id' => $member->getKey(),
                 'member_history_action' => 'register',
@@ -297,9 +412,6 @@ class MemberRegistrationService
                 'password' => $plainPassword,
             ];
         });
-        if (config('services.supply_chain.enabled')) {
-            SyncSupplyChainMember::dispatch((int) $result['member']->getKey());
-        }
         $this->partnershipEmailService->sendRegistrationApproved(
             $result['registration'],
             $result['member'],
@@ -315,6 +427,11 @@ class MemberRegistrationService
         SiteAdministrator $administrator,
         string $note
     ): MemberRegistration {
+        return $this->withRegistrationLock($registration, fn (): MemberRegistration => $this->rejectRequestedRegistration($registration, $administrator, $note));
+    }
+
+    private function rejectRequestedRegistration(MemberRegistration $registration, SiteAdministrator $administrator, string $note): MemberRegistration
+    {
         $rejectedRegistration = DB::transaction(function () use ($registration, $administrator, $note): MemberRegistration {
             $lockedRegistration = MemberRegistration::query()
                 ->whereKey($registration->getKey())
@@ -713,10 +830,7 @@ class MemberRegistrationService
 
     private function ensureApplicantStillUnique(MemberRegistration $registration): void
     {
-        if (Member::query()
-            ->where('member_mobilephone', $registration->member_registration_mobilephone)
-            ->where('member_status', '!=', 3)
-            ->exists()) {
+        if (MemberPhoneNumber::isUsed($registration->member_registration_mobilephone, registration: $registration)) {
             throw new ProcessException('Nomor WhatsApp calon mitra sudah digunakan.');
         }
 

@@ -55,6 +55,18 @@
                                     </v-col>
                                     <v-col cols="12" md="6">
                                         <v-text-field
+                                            v-model="form.customer_number"
+                                            label="Nomor Customer Aplikasi Internal"
+                                            variant="outlined"
+                                            density="comfortable"
+                                            maxlength="30"
+                                            :rules="[validateCustomerNumber]"
+                                            hint="Isi nomor customer yang sudah terdaftar di Aplikasi Internal."
+                                            persistent-hint
+                                        />
+                                    </v-col>
+                                    <v-col cols="12" md="6">
+                                        <v-text-field
                                             v-model="form.name"
                                             label="Nama Mitra"
                                             variant="outlined"
@@ -726,6 +738,7 @@ const currentId = ref<number | null>(null);
 const canUpdatePaymentProof = ref(false);
 const mediaUploads = reactive({ profile: false, identity: false, paymentProof: false });
 const originalIdentity = ref({ type: "KTP", number: "" });
+const originalCustomerNumber = ref("");
 const isUploadingMedia = computed(() => Object.values(mediaUploads).some(Boolean));
 
 const provinces = ref<any[]>([]);
@@ -733,6 +746,7 @@ const banks = ref<any[]>([]);
 
 const form = ref({
     username: "",
+    customer_number: "",
     name: "",
     email: "",
     mobile_phone: "",
@@ -756,6 +770,9 @@ const identityOptions = memberIdentityOptions();
 const identitySettings = computed(() => identityNumberSettings(form.value.identity_type));
 const validateIdentityNumber = (value: unknown) =>
     identityNumberRule(form.value.identity_type, value, originalIdentity.value);
+const validateCustomerNumber = (value: string) =>
+    (value.trim().length <= 30 && (!originalCustomerNumber.value || !!value.trim())) ||
+    "Nomor customer wajib diisi, maksimal 30 karakter.";
 
 const open = async (id: number) => {
     currentId.value = id;
@@ -767,8 +784,10 @@ const close = () => {
     dialog.value = false;
     currentId.value = null;
     canUpdatePaymentProof.value = false;
+    originalCustomerNumber.value = "";
     form.value = {
         username: "",
+        customer_number: "",
         name: "",
         email: "",
         mobile_phone: "",
@@ -806,6 +825,8 @@ const loadInitialData = async (id: number) => {
 
         // Populate Form
         form.value.username = memberData.username || memberData.code || "";
+        form.value.customer_number = memberData.customer_number || "";
+        originalCustomerNumber.value = form.value.customer_number;
         form.value.name = memberData.name || "";
         form.value.email = memberData.email || "";
 
@@ -1001,11 +1022,14 @@ const submit = async () => {
 
     submitting.value = true;
     try {
-        const { username, identity_type, identity_no, ...memberData } =
+        const { username, customer_number, identity_type, identity_no, ...memberData } =
             form.value;
         const identityNumber = identity_no.trim();
         const payload = {
             ...memberData,
+            ...(customer_number.trim() || originalCustomerNumber.value
+                ? { customer_number: customer_number.trim() }
+                : {}),
             ...(identityNumber
                 ? { identity_type, identity_no: identityNumber }
                 : {}),

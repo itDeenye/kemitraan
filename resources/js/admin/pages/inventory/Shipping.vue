@@ -59,8 +59,12 @@
             <template #item.shipping_method="{ item }">
                 <BaseBadge
                     type="shipping_method"
-                    :value="item.shipping_method"
-                />
+                    :value="item.display_shipping_method || item.shipping_method"
+                >
+                    <template v-if="item.is_preorder && item.preorder_fulfillment_mode === 'upline_transit' && (item.display_shipping_method || item.shipping_method) === 'pickup'">
+                        Ambil di Upline
+                    </template>
+                </BaseBadge>
             </template>
 
             <template #item.status="{ item }">
@@ -69,6 +73,12 @@
 
             <template #item.actions="{ item }">
                 <div class="d-flex ga-2 justify-center">
+                    <SupplyChainSyncButton
+                        :key="`sync-shipment-${item.id}`"
+                        :endpoint="`/admin/transactions/orders/${item.id}/supply-chain/sync`"
+                        :can-sync="item.can_sync_supply_chain"
+                        @processed="shippingTable?.refresh()"
+                    />
                     <v-btn
                         v-tooltip:top="'Detail Pengiriman'"
                         icon="mdi-eye-outline"
@@ -182,6 +192,7 @@ import { useBadge } from "@/shared/composables/useBadge";
 import { ref, computed } from "vue";
 import BaseDataTable from "@/shared/components/BaseDataTable.vue";
 import BaseBadge from "@/shared/components/BaseBadge.vue";
+import SupplyChainSyncButton from "@/shared/components/SupplyChainSyncButton.vue";
 import ShippingDetail from "@/admin/components/inventory/ShippingDetail.vue";
 import ShippingActionDialog from "@/admin/components/inventory/ShippingActionDialog.vue";
 import ShippingReshipDialog from "@/admin/components/inventory/ShippingReshipDialog.vue";
@@ -262,13 +273,15 @@ const headers = [
     {
         title: "Metode Pengiriman",
         key: "shipping_method",
+        filterKey: "display_shipping_method",
         type: "select",
         align: "center",
         sortable: false,
         filter: true,
         options: getBadgeOptions("shipping_method", [
             "courier_manual", "courier_express", "courier_instant", "pickup",
-        ]),
+        ]).map(option => option.value === "pickup"
+            ? { ...option, label: "Ambil Sendiri / Ambil di Upline" } : option),
         placeholder: "Pilih Metode",
     },
     {
@@ -310,13 +323,13 @@ const shippingActionTooltip = (item: any) => {
     const status = supplyChainStatus(item);
 
     if (status === "completed") {
-        return "Kirim Pesanan - Data Supply & Chain sudah terisi";
+        return "Kirim Pesanan - Data Aplikasi Internal sudah terisi";
     }
     if (status === "awaiting_callback") {
-        return "Kirim Pesanan - Terintegrasi, menunggu callback Supply & Chain";
+        return "Kirim Pesanan - Terintegrasi, menunggu callback Aplikasi Internal";
     }
 
-    return "Kirim Pesanan - Belum terintegrasi Supply & Chain";
+    return "Kirim Pesanan - Belum terintegrasi Aplikasi Internal";
 };
 
 const openDetail = (id: number) => {

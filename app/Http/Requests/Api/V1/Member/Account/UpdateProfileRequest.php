@@ -5,6 +5,7 @@ namespace App\Http\Requests\Api\V1\Member\Account;
 use App\Models\MemberAccount;
 use App\Support\MediaUrl;
 use App\Support\MemberIdentity;
+use App\Support\MemberPhoneNumber;
 use App\Support\PhoneNumber;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -44,6 +45,9 @@ class UpdateProfileRequest extends FormRequest
             $account = $this->user();
             if ($account instanceof MemberAccount && $account->member !== null) {
                 $member = $account->member;
+                if (! $validator->errors()->has('phone') && MemberPhoneNumber::isUsed($this->input('phone'), $member)) {
+                    $validator->errors()->add('phone', 'Nomor WhatsApp sudah digunakan atau masih dalam proses pendaftaran.');
+                }
                 MemberIdentity::validateNumber($validator,
                     $this->input('identity_type') ?? $member->member_identity_type,
                     $this->input('identity_no', $member->member_identity_no), $member);

@@ -98,7 +98,7 @@
                         icon="mdi-link-variant"
                     >
                         <div class="font-weight-bold">
-                            Terintegrasi Supply &amp; Chain
+                            Terintegrasi Aplikasi Internal
                         </div>
                         <div class="text-body-2 mt-1">
                             Nomor Faktur:
@@ -572,17 +572,22 @@
                                         <div class="d-flex align-center ga-3">
                                             <span
                                                 class="text-medium-emphasis flex-shrink-0 text-no-wrap"
-                                                >Metode Kirim</span
+                                                >Metode Penerimaan</span
                                             >
                                             <BaseBadge
                                                 class="ml-auto"
                                                 type="shipping_method"
                                                 :value="
+                                                    order.display_shipping_method ||
                                                     order.shipping?.method ||
                                                     order.shipping_method
                                                 "
                                                 align="end"
-                                            />
+                                            >
+                                                <template v-if="order.is_preorder && order.preorder_fulfillment_mode === 'upline_transit' && (order.display_shipping_method || order.shipping?.method || order.shipping_method) === 'pickup'">
+                                                    Ambil di Upline
+                                                </template>
+                                            </BaseBadge>
                                         </div>
                                         <div
                                             class="d-flex align-start ga-3"
@@ -590,7 +595,7 @@
                                         >
                                             <span
                                                 class="text-medium-emphasis flex-shrink-0 text-no-wrap"
-                                                >Kurir</span
+                                                >{{ order.display_shipping_method === 'pickup' ? 'Kurir ke Lokasi Pengambilan' : 'Kurir' }}</span
                                             >
                                             <span
                                                 class="font-weight-medium text-capitalize text-right ml-auto"
@@ -606,7 +611,7 @@
                                         </div>
                                         <div
                                             class="d-flex align-center ga-3"
-                                            v-if="order.shipping?.pickup_method"
+                                            v-if="order.shipping?.courier?.trim() && order.shipping?.pickup_method"
                                         >
                                             <span
                                                 class="text-medium-emphasis flex-shrink-0 text-no-wrap"

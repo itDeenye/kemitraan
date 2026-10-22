@@ -11,6 +11,7 @@ use App\Models\RefDistrict;
 use App\Models\RefProvince;
 use App\Models\RefSubdistrict;
 use App\Support\MemberIdentity;
+use App\Support\MemberPhoneNumber;
 use App\Support\PhoneNumber;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -215,14 +216,8 @@ class StoreDistributorRequest extends FormRequest
         $mobilePhone = $this->input('mobile_phone');
         $identityNo = $this->input('identity_no');
 
-        if (is_string($mobilePhone) && $mobilePhone !== '') {
-            $exists = Member::query()
-                ->where('member_mobilephone', $mobilePhone)
-                ->where('member_status', '!=', 3)
-                ->exists();
-            if ($exists) {
-                $validator->errors()->add('mobile_phone', 'Nomor WhatsApp sudah digunakan.');
-            }
+        if (! $validator->errors()->has('mobile_phone') && MemberPhoneNumber::isUsed($mobilePhone)) {
+            $validator->errors()->add('mobile_phone', 'Nomor WhatsApp sudah digunakan atau masih dalam proses pendaftaran.');
         }
 
         if (is_string($identityNo) && $identityNo !== '') {

@@ -11,6 +11,7 @@ use App\Models\RefDistrict;
 use App\Models\RefProvince;
 use App\Models\RefSubdistrict;
 use App\Support\MemberIdentity;
+use App\Support\MemberPhoneNumber;
 use App\Support\PhoneNumber;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -85,13 +86,17 @@ trait HasMemberRegistrationRules
     }
 
     /** @return array<int, callable> */
-    protected function registrationValidators(): array
+    protected function registrationValidators(?MemberRegistration $editing = null): array
     {
         return [
-            function (Validator $validator): void {
-                MemberIdentity::validateNumber($validator, $this->input('identity_type'), $this->input('identity_no'));
-                $this->validateRegion($validator);
-                $this->validateUniqueApplicant($validator);
+            function (Validator $validator) use ($editing): void {
+                $type = $this->input('identity_type', $editing?->member_registration_identity_type);
+                $number = $this->input('identity_no', $editing?->member_registration_identity_no);
+                if ($editing === null || $type !== $editing->member_registration_identity_type || $number !== $editing->member_registration_identity_no) {
+                    MemberIdentity::validateNumber($validator, $type, $number);
+                }
+                $this->validateRegion($validator, $editing);
+                $this->validateUniqueApplicant($validator, $editing);
                 $this->validateOnboardingContacts($validator);
             },
         ];
@@ -140,12 +145,15 @@ trait HasMemberRegistrationRules
         ];
     }
 
-    private function validateRegion(Validator $validator): void
+    private function validateRegion(Validator $validator, ?MemberRegistration $editing = null): void
     {
-        $provinceId = $this->input('province_id');
-        $cityId = $this->input('city_id');
-        $districtId = $this->input('district_id');
-        $subdistrictId = $this->input('subdistrict_id');
+        if ($editing !== null && ! $this->hasAny(['province_id', 'city_id', 'district_id', 'subdistrict_id'])) {
+            return;
+        }
+        $provinceId = $this->input('province_id', $editing === null ? null : (string) $editing->member_registration_province_id);
+        $cityId = $this->input('city_id', $editing === null ? null : (string) $editing->member_registration_city_id);
+        $districtId = $this->input('district_id', $editing === null ? null : (string) $editing->member_registration_district_id);
+        $subdistrictId = $this->input('subdistrict_id', $editing?->member_registration_subdistrict_id);
 
         if (! is_string($provinceId) || ! is_string($cityId) || ! is_string($districtId)
             || ! is_numeric($subdistrictId)) {
@@ -173,16 +181,14 @@ trait HasMemberRegistrationRules
         }
     }
 
-    private function validateUniqueApplicant(Validator $validator): void
+    private function validateUniqueApplicant(Validator $validator, ?MemberRegistration $editing = null): void
     {
+        if (! $validator->errors()->has('mobile_phone') && MemberPhoneNumber::isUsed($this->input('mobile_phone'), registration: $editing)) {
+            $validator->errors()->add('mobile_phone', 'Nomor WhatsApp sudah digunakan atau masih dalam proses pendaftaran.');
+        }
         $pendingStatuses = ['requested', 'approved'];
 
         $checks = [
-            'mobile_phone' => [
-                'member' => 'member_mobilephone',
-                'registration_column' => 'member_registration_mobilephone',
-                'message' => 'Nomor WhatsApp sudah digunakan atau masih dalam proses pendaftaran.',
-            ],
             'identity_no' => [
                 'member' => 'member_identity_no',
                 'registration_column' => 'member_registration_identity_no',
@@ -205,6 +211,7 @@ trait HasMemberRegistrationRules
             $existsInRegistration = MemberRegistration::query()
                 ->where($check['registration_column'], $value)
                 ->whereIn('member_registration_status', $pendingStatuses)
+                ->when($editing !== null, fn ($query) => $query->where('member_registration_id', '!=', $editing->getKey()))
                 ->exists();
 
             if ($existsInMember || $existsInRegistration) {
