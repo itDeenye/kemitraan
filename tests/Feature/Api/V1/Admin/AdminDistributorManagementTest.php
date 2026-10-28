@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Api\V1\Admin;
 
+use App\Jobs\SyncSupplyChainMember;
 use App\Mail\MemberCredentialsMail;
 use App\Models\Member;
 use App\Models\MemberGroup;
@@ -15,13 +16,206 @@ use App\Models\RefSubdistrict;
 use App\Models\SiteAdministrator;
 use App\Models\SiteAdministratorGroup;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Queue;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class AdminDistributorManagementTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_direct_distributor_waits_for_internal_customer_number_before_returning_success(): void
+    {
+        $payload = $this->prepareInternalDistributorCreation();
+        Http::fake([
+            'distributor-supply.test/*/login' => Http::response(['success' => true, 'data' => ['api_token' => 'test-token']]),
+            'distributor-supply.test/*/tambah-customer' => Http::response(['success' => true, 'data' => ['Cust_no' => ' 90000072 ']]),
+        ]);
+
+        $id = $this->postJson('/api/v1/admin/partnership/distributors', $payload)
+            ->assertCreated()->assertJsonPath('success', true)->json('data.id');
+
+        $member = Member::query()->findOrFail($id);
+        $this->assertSame('90000072', $member->member_supply_chain_code);
+        $this->assertDatabaseHas('member_supply_chain_syncs', [
+            'member_supply_chain_sync_member_id' => $id,
+            'member_supply_chain_sync_customer_no' => '90000072',
+            'member_supply_chain_sync_status' => 'synced',
+        ]);
+        $this->assertDatabaseHas('member_account', [
+            'member_account_member_id' => $id, 'member_account_username' => $member->member_code,
+        ]);
+        Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/tambah-customer')
+            && $request->method() === 'POST'
+            && $request['Cust_Name'] === 'Doni Internal'
+            && $request['cust_phone1'] === '+6281234567890'
+            && $request['NoKTP'] === '0001234567890123'
+            && $request['level'] === 'DU'
+            && $request['no_kemitraan'] === 'DEV-DIST/0001/0000/0000');
+        Http::assertSentCount(2);
+        Queue::assertNotPushed(SyncSupplyChainMember::class);
+        Mail::assertSent(MemberCredentialsMail::class, 1);
+
+        $this->postJson('/api/v1/admin/partnership/distributors', $payload)->assertUnprocessable();
+        $this->assertDatabaseCount('member', 1);
+        $this->assertDatabaseCount('member_account', 1);
+        Http::assertSentCount(2);
+        Mail::assertSent(MemberCredentialsMail::class, 1);
+    }
+
+    #[DataProvider('internalDistributorFailures')]
+    public function test_direct_distributor_rolls_back_all_local_data_when_internal_rejects_customer(
+        array $body, int $httpStatus, string $message,
+    ): void {
+        $payload = $this->prepareInternalDistributorCreation();
+        Http::fake([
+            'distributor-supply.test/*/login' => Http::response(['success' => true, 'data' => ['api_token' => 'test-token']]),
+            'distributor-supply.test/*/tambah-customer' => Http::response($body, $httpStatus),
+        ]);
+
+        $this->postJson('/api/v1/admin/partnership/distributors', $payload)
+            ->assertStatus(502)->assertJsonPath('error_code', 'process_error')
+            ->assertJsonPath('message', 'Error pada Aplikasi Internal: '.$message);
+
+        $this->assertNoDistributorWrites();
+    }
+
+    public static function internalDistributorFailures(): array
+    {
+        return [
+            'rejected phone' => [
+                ['success' => false, 'message' => 'Customer dengan nomor telepon sudah terdaftar.'],
+                200, 'Customer dengan nomor telepon sudah terdaftar.',
+            ],
+            'rejected despite returned number' => [
+                ['success' => false, 'message' => 'Customer data kembar.', 'data' => ['Cust_no' => '90000072']],
+                200, 'Customer data kembar.',
+            ],
+            'HTTP rejection' => [
+                ['success' => false, 'message' => 'Nomor KTP sudah digunakan.'],
+                422, 'Nomor KTP sudah digunakan.',
+            ],
+            'missing number' => [
+                ['success' => true, 'data' => []],
+                200, 'Nomor customer tidak ditemukan pada respons Aplikasi Internal.',
+            ],
+            'blank number' => [
+                ['success' => true, 'data' => ['cust_no' => '   ']],
+                200, 'Nomor customer tidak ditemukan pada respons Aplikasi Internal.',
+            ],
+            'malformed number' => [
+                ['success' => true, 'data' => ['cust_no' => ['90000072']]],
+                200, 'Nomor customer tidak ditemukan pada respons Aplikasi Internal.',
+            ],
+        ];
+    }
+
+    public function test_direct_distributor_rolls_back_when_internal_is_unreachable(): void
+    {
+        $payload = $this->prepareInternalDistributorCreation();
+        Http::fake(['distributor-supply.test/*' => Http::failedConnection()]);
+        $this->postJson('/api/v1/admin/partnership/distributors', $payload)
+            ->assertStatus(503)->assertJsonPath('message', 'Layanan Aplikasi Internal sedang tidak dapat dihubungi.');
+        $this->assertNoDistributorWrites();
+    }
+
+    public function test_direct_distributor_rolls_back_when_internal_customer_number_belongs_to_another_member(): void
+    {
+        $payload = $this->prepareInternalDistributorCreation();
+        $owner = $this->createDistributor('0001/0000/0000', 'Owner', 1);
+        $owner->update(['member_supply_chain_code' => '90000072']);
+        Http::fake([
+            'distributor-supply.test/*/login' => Http::response(['success' => true, 'data' => ['api_token' => 'test-token']]),
+            'distributor-supply.test/*/tambah-customer' => Http::response(['success' => true, 'data' => ['cust_no' => '90000072']]),
+        ]);
+        $this->postJson('/api/v1/admin/partnership/distributors', $payload)
+            ->assertStatus(409)->assertJsonPath('message', "Nomor customer '90000072' dari Aplikasi Internal sudah digunakan oleh mitra lain.");
+        $this->assertNoDistributorWrites(1);
+        $this->assertSame('90000072', $owner->fresh()->member_supply_chain_code);
+    }
+
+    public function test_direct_distributor_retry_after_correction_uses_latest_phone_and_identity(): void
+    {
+        $payload = $this->prepareInternalDistributorCreation();
+        Http::fake([
+            'distributor-supply.test/*/login' => Http::response(['success' => true, 'data' => ['api_token' => 'test-token']]),
+            'distributor-supply.test/*/tambah-customer' => Http::sequence()
+                ->push(['success' => false, 'message' => 'Nomor telepon sudah digunakan.'])
+                ->push(['success' => true, 'data' => ['cust_no' => '90000073']]),
+        ]);
+        $this->postJson('/api/v1/admin/partnership/distributors', $payload)->assertStatus(502);
+        $this->assertNoDistributorWrites();
+        $this->postJson('/api/v1/admin/partnership/distributors', [
+            ...$payload, 'mobile_phone' => '081799998888', 'identity_no' => '0001234567890124',
+        ])->assertCreated();
+        $member = Member::query()->sole();
+        $this->assertSame('+6281799998888', $member->member_mobilephone);
+        $this->assertSame('0001234567890124', $member->member_identity_no);
+        $this->assertSame('90000073', $member->member_supply_chain_code);
+        $requests = Http::recorded(fn (Request $request): bool => str_ends_with($request->url(), '/tambah-customer'))->values();
+        $this->assertCount(2, $requests);
+        $this->assertSame('+6281234567890', $requests[0][0]['cust_phone1']);
+        $this->assertSame('+6281799998888', $requests[1][0]['cust_phone1']);
+        $this->assertSame('0001234567890124', $requests[1][0]['NoKTP']);
+        $this->assertDatabaseCount('member_account', 1);
+        $this->assertDatabaseCount('member_history', 1);
+        Mail::assertSent(MemberCredentialsMail::class, 1);
+        Queue::assertNotPushed(SyncSupplyChainMember::class);
+    }
+
+    public function test_direct_distributor_skips_internal_entirely_when_integration_is_disabled(): void
+    {
+        $payload = $this->prepareInternalDistributorCreation();
+        config()->set('services.supply_chain.enabled', false);
+        $id = $this->postJson('/api/v1/admin/partnership/distributors', $payload)
+            ->assertCreated()->json('data.id');
+        $this->assertNull(Member::query()->findOrFail($id)->member_supply_chain_code);
+        $this->assertDatabaseCount('member_account', 1);
+        $this->assertDatabaseCount('member_history', 1);
+        $this->assertDatabaseCount('member_supply_chain_syncs', 0);
+        Http::assertNothingSent();
+        Queue::assertNotPushed(SyncSupplyChainMember::class);
+        Mail::assertSent(MemberCredentialsMail::class, 1);
+    }
+
+    private function prepareInternalDistributorCreation(): array
+    {
+        Mail::fake();
+        Queue::fake();
+        Http::preventStrayRequests();
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $this->setupRegion();
+        MemberGroup::query()->create(['member_group_name' => 'Distributor', 'member_group_is_active' => 1]);
+        RefBank::query()->create(['bank_id' => 1, 'bank_code' => 'BCA', 'bank_name' => 'BCA', 'bank_is_active' => 1]);
+        config()->set('services.supply_chain.enabled', true);
+        config()->set('services.supply_chain.base_url', 'https://distributor-supply.test');
+        config()->set('services.supply_chain.username', 'distributor-test');
+        config()->set('services.supply_chain.password', 'test-secret');
+        config()->set('services.supply_chain.member_prefix', 'DEV-DIST');
+
+        return [
+            'name' => 'Doni Internal', 'email' => 'doni@example.test', 'mobile_phone' => '081234567890',
+            'gender' => 'Laki-laki', 'birth_date' => '1990-01-01', 'status' => 1,
+            'identity_type' => 'KTP', 'identity_no' => '0001234567890123',
+            'address' => 'Jl. KTP', 'domicile_address' => 'Jl. Domisili',
+            'province_id' => '35', 'city_id' => '3578', 'district_id' => '357801', 'subdistrict_id' => 3578010001,
+            'bank_accounts' => [['bank_id' => 1, 'account_name' => 'Doni Internal', 'account_number' => '0012345678']],
+        ];
+    }
+
+    private function assertNoDistributorWrites(int $existingMembers = 0): void
+    {
+        $this->assertDatabaseCount('member', $existingMembers);
+        foreach (['member_account', 'member_address', 'member_bank_account', 'member_history', 'member_supply_chain_syncs'] as $table) {
+            $this->assertDatabaseCount($table, 0);
+        }
+        Mail::assertNothingOutgoing();
+        Queue::assertNotPushed(SyncSupplyChainMember::class);
+    }
 
     public function test_direct_distributor_creation_rejects_legacy_member_and_pending_registration_phones(): void
     {

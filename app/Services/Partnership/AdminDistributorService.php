@@ -3,13 +3,13 @@
 namespace App\Services\Partnership;
 
 use App\Exceptions\ProcessException;
-use App\Jobs\SyncSupplyChainMember;
 use App\Libraries\DataTable;
 use App\Models\Member;
 use App\Models\MemberAccount;
 use App\Models\MemberGroup;
 use App\Models\MemberHistory;
 use App\Models\MemberLevel;
+use App\Services\Integration\SupplyChainSyncService;
 use App\Services\Notification\PartnershipEmailService;
 use App\Support\MediaUrl;
 use Illuminate\Support\Collection;
@@ -23,6 +23,7 @@ class AdminDistributorService
         private readonly MemberPasswordService $memberPasswordService,
         private readonly PartnershipEmailService $partnershipEmailService,
         private readonly MemberOnboardingContacts $onboardingContacts,
+        private readonly SupplyChainSyncService $supplyChainSyncService,
     ) {}
 
     /**
@@ -145,6 +146,10 @@ class AdminDistributorService
                 $this->onboardingContacts->bankAccounts($data),
             );
 
+            if ($this->supplyChainSyncService->enabled()) {
+                $this->supplyChainSyncService->syncMember($member);
+            }
+
             MemberHistory::query()->create([
                 'member_history_member_id' => $member->getKey(),
                 'member_history_action' => 'register_by_admin',
@@ -164,9 +169,6 @@ class AdminDistributorService
                 'password' => $plainPassword,
             ];
         });
-        if (config('services.supply_chain.enabled')) {
-            SyncSupplyChainMember::dispatch((int) $result['member']->getKey());
-        }
         $this->partnershipEmailService->sendMemberCredentials(
             $result['member'],
             $result['username'],
