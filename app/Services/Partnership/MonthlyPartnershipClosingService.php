@@ -98,8 +98,9 @@ class MonthlyPartnershipClosingService
                 $result['achievements']++;
 
                 // 5. Reward bulanan hanya bernilai jika minimum poin level tercapai.
-                $this->storeMonthlyReward($member, $period, $quantity);
-                $result['monthly_rewards']++;
+                if ($this->storeMonthlyReward($member, $period, $quantity)) {
+                    $result['monthly_rewards']++;
+                }
 
                 // 6. Reward stokis memakai total nilai pembelian yang sudah sah.
                 if ($this->storeStockistReward($member, $period, $purchaseAmount)) {
@@ -220,7 +221,7 @@ class MonthlyPartnershipClosingService
             ->map(fn (mixed $value): int => (int) $value);
     }
 
-    private function storeMonthlyReward(Member $member, CarbonImmutable $period, int $quantity): void
+    private function storeMonthlyReward(Member $member, CarbonImmutable $period, int $quantity): bool
     {
         $minimumQuantity = $this->integerConfig(
             'reward_monthly.reward_monthly_min_qty_'.strtolower($this->levelName($member->level->member_level_code)),
@@ -231,21 +232,30 @@ class MonthlyPartnershipClosingService
                 default => PHP_INT_MAX,
             },
         );
+        $bonusValue = $quantity >= $minimumQuantity
+            ? PointCalculation::multiply($quantity, (int) $member->level->member_level_point_value)
+            : 0;
         $existing = RewardPointMonthly::query()->firstOrNew([
             'reward_point_monthly_member_id' => $member->getKey(),
             'reward_point_monthly_year' => $period->year,
             'reward_point_monthly_month' => $period->month,
         ]);
 
+        if ($bonusValue <= 0) {
+            if ($existing->exists && ! $existing->reward_point_monthly_is_processed) {
+                $existing->delete();
+            }
+
+            return false;
+        }
+
         if ($existing->exists && $existing->reward_point_monthly_is_processed) {
-            return;
+            return true;
         }
 
         $existing->fill([
             'reward_point_monthly_total_qty' => $quantity,
-            'reward_point_monthly_bonus_value' => $quantity >= $minimumQuantity
-                ? PointCalculation::multiply($quantity, (int) $member->level->member_level_point_value)
-                : 0,
+            'reward_point_monthly_bonus_value' => $bonusValue,
         ]);
         if (! $existing->exists) {
             $existing->fill([
@@ -258,6 +268,8 @@ class MonthlyPartnershipClosingService
             ]);
         }
         $existing->save();
+
+        return true;
     }
 
     private function storeStockistReward(Member $member, CarbonImmutable $period, int $amount): bool

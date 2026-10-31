@@ -6,6 +6,7 @@ use App\Exceptions\ProcessException;
 use App\Models\Member;
 use App\Models\MemberLevel;
 use App\Models\MemberPointTransaction;
+use App\Models\RewardPointMonthly;
 use App\Models\RewardStockist;
 use App\Models\Stockist;
 use App\Models\Trx;
@@ -150,10 +151,8 @@ class MonthlyPartnershipClosingTest extends TestCase
 
         $this->assertSame(0, Artisan::call('rewards:close-month', ['--period' => '2026-07']));
 
-        $this->assertDatabaseHas('reward_point_monthly', [
+        $this->assertDatabaseMissing('reward_point_monthly', [
             'reward_point_monthly_member_id' => $reseller->getKey(),
-            'reward_point_monthly_total_qty' => 50,
-            'reward_point_monthly_bonus_value' => 0,
         ]);
         $this->assertDatabaseHas('trx_spread_payment', [
             'trx_spread_payment_upline_id' => $distributor->getKey(),
@@ -161,6 +160,31 @@ class MonthlyPartnershipClosingTest extends TestCase
             'trx_spread_payment_percentage' => 2,
             'trx_spread_payment_amount' => 100_000,
         ]);
+    }
+
+    public function test_monthly_closing_removes_unprocessed_monthly_reward_when_bonus_is_zero(): void
+    {
+        Carbon::setTestNow('2026-08-01 00:05:00');
+        [$distributorLevel] = $this->levels();
+        $distributor = $this->member(1, 'DST-001', $distributorLevel);
+        RewardPointMonthly::query()->create([
+            'reward_point_monthly_upline_id' => 0,
+            'reward_point_monthly_upline_level_id' => 0,
+            'reward_point_monthly_member_id' => $distributor->getKey(),
+            'reward_point_monthly_member_level_id' => $distributorLevel->getKey(),
+            'reward_point_monthly_year' => 2026,
+            'reward_point_monthly_month' => 7,
+            'reward_point_monthly_total_qty' => 0,
+            'reward_point_monthly_bonus_value' => 0,
+            'reward_point_monthly_admin_id' => 0,
+            'reward_point_monthly_is_processed' => 0,
+        ]);
+
+        $result = app(MonthlyPartnershipClosingService::class)->close(Carbon::parse('2026-07-01'));
+
+        $this->assertSame(1, $result['achievements']);
+        $this->assertSame(0, $result['monthly_rewards']);
+        $this->assertDatabaseCount('reward_point_monthly', 0);
     }
 
     public function test_monthly_closing_uses_product_point_snapshots_instead_of_item_quantity(): void
