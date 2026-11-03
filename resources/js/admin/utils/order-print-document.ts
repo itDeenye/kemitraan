@@ -43,9 +43,10 @@ export const buildOrderPrintDocument = (
                     <div style="width: 48%;">
                         <table style="width: 100%; font-size: 12px;">
                             <tr><td colspan="3"><strong>Data Pemesan (Sarana):</strong></td></tr>
-                            <tr><td style="width: 140px;">Nama Toko / Klinik</td><td style="width: 10px;">:</td><td>${escapeHtml(data.buyer?.name)}</td></tr>
+                            <tr><td style="width: 140px;">Nama Toko / Klinik</td><td style="width: 10px;">:</td><td>........................................................</td></tr>
                             <tr><td>NIB / Izin Usaha</td><td>:</td><td>........................................................</td></tr>
-                            <tr><td>Nama Penanggung Jawab</td><td>:</td><td>${escapeHtml(data.buyer?.destination?.name || "-")}</td></tr>
+                            <tr><td>Nama Penanggung Jawab</td><td>:</td><td>${escapeHtml(data.buyer?.name || "-")}</td></tr>
+                            <tr><td>ID Penanggung Jawab</td><td>:</td><td>Distibutor(${escapeHtml(data.buyer?.code || "-")})</td></tr>
                             <tr><td style="vertical-align: top;">Alamat Lengkap</td><td style="vertical-align: top;">:</td><td>${escapeHtml(data.buyer?.destination?.address || "-")}, ${escapeHtml(data.buyer?.destination?.subdistrict?.name || "-")}, ${escapeHtml(data.buyer?.destination?.district?.name || "-")}, ${escapeHtml(data.buyer?.destination?.city?.name || "-")}, ${escapeHtml(data.buyer?.destination?.province?.name || "-")}</td></tr>
                             <tr><td>No. Telp / WA</td><td>:</td><td>${escapeHtml(data.buyer?.destination?.phone || "-")}</td></tr>
                         </table>

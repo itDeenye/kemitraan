@@ -55,7 +55,7 @@
                     </div>
 
                     <div
-                        class="rounded-lg px-4 py-2 mb-6 text-center border border-primary"
+                        class="rounded-lg px-4 py-2 mb-4 text-center border border-primary"
                     >
                         <div
                             class="d-flex align-center justify-space-between mb-2"
@@ -109,19 +109,99 @@
                                 inline
                             />
                         </div>
-                        <v-divider class="my-2"></v-divider>
-                        <div
-                            class="d-flex align-center justify-space-between"
-                            v-if="reward.is_processed"
-                        >
-                            <span class="text-body-2 text-medium-emphasis"
-                                >Waktu Proses</span
+                        <template v-if="reward.is_processed">
+                            <v-divider class="my-2"></v-divider>
+                            <div
+                                class="d-flex align-center justify-space-between"
                             >
-                            <span class="text-caption font-weight-medium">{{
-                                reward.processed_at
-                                    ? formatDateTime(reward.processed_at)
-                                    : "-"
-                            }}</span>
+                                <span class="text-body-2 text-medium-emphasis"
+                                    >Waktu Proses</span
+                                >
+                                <span class="text-caption font-weight-medium">{{
+                                    reward.processed_at
+                                        ? formatDateTime(reward.processed_at)
+                                        : "-"
+                                }}</span>
+                            </div>
+                        </template>
+                    </div>
+
+                    <!-- Informasi Rekening Bank -->
+                    <div
+                        class="rounded-lg px-4 py-3 mb-4 bg-grey-lighten-4 border"
+                    >
+                        <div
+                            class="d-flex align-center justify-space-between mb-2"
+                        >
+                            <div
+                                class="d-flex align-center ga-2 font-weight-bold text-caption text-uppercase text-medium-emphasis"
+                            >
+                                <v-icon size="16">mdi-bank</v-icon>
+                                <span>Rekening Bank</span>
+                            </div>
+                            <v-btn
+                                v-if="
+                                    reward.bank?.account_number &&
+                                    reward.bank.account_number !== '-'
+                                "
+                                size="x-small"
+                                variant="text"
+                                color="primary"
+                                class="text-caption font-weight-medium px-1"
+                                prepend-icon="mdi-content-copy"
+                                @click="
+                                    copyAccountNumber(
+                                        reward.bank.account_number,
+                                    )
+                                "
+                            >
+                                Salin
+                            </v-btn>
+                        </div>
+                        <template
+                            v-if="
+                                reward.bank &&
+                                reward.bank.account_number &&
+                                reward.bank.account_number !== '-'
+                            "
+                        >
+                            <div
+                                class="d-flex align-center justify-space-between mb-1"
+                            >
+                                <span class="text-body-2 text-medium-emphasis"
+                                    >Bank</span
+                                >
+                                <span class="font-weight-medium text-body-2">{{
+                                    reward.bank.name || reward.bank.code
+                                }}</span>
+                            </div>
+                            <div
+                                class="d-flex align-center justify-space-between mb-1"
+                            >
+                                <span class="text-body-2 text-medium-emphasis"
+                                    >Nomor Rekening</span
+                                >
+                                <span
+                                    class="font-weight-bold text-body-2 font-mono"
+                                    >{{ reward.bank.account_number }}</span
+                                >
+                            </div>
+                            <div
+                                class="d-flex align-center justify-space-between"
+                            >
+                                <span class="text-body-2 text-medium-emphasis"
+                                    >Atas Nama</span
+                                >
+                                <span class="font-weight-medium text-body-2">{{
+                                    reward.bank.account_name
+                                }}</span>
+                            </div>
+                        </template>
+                        <div
+                            v-else
+                            class="text-caption text-medium-emphasis py-1 text-center"
+                        >
+                            Rekening bank belum diatur oleh mitra
                         </div>
                     </div>
 
@@ -192,6 +272,15 @@ const open = async (id: number) => {
 
 const close = () => {
     dialog.value = false;
+};
+
+const copyAccountNumber = async (num: string) => {
+    try {
+        await navigator.clipboard.writeText(num);
+        snackbar.showMessage("Nomor rekening berhasil disalin", "success");
+    } catch {
+        snackbar.showMessage("Gagal menyalin nomor rekening", "error");
+    }
 };
 
 defineExpose({

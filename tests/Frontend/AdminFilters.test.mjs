@@ -109,10 +109,11 @@ function table(pageHeaders) {
     const script = parse(source('shared/components/BaseDataTable.vue')).descriptor.scriptSetup.content;
     const file = ts.createSourceFile('table.ts', script, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
     const code = file.statements.filter(item => !ts.isImportDeclaration(item)).map(item => item.getText(file)).join('\n');
-    const component = new Function('ref', 'computed', 'watch', 'defineProps', 'defineEmits', 'defineExpose', 'api', 'console', `${transpile(code)}
+    const component = new Function('ref', 'computed', 'watch', 'defineProps', 'defineEmits', 'defineExpose', 'api', 'console', 'useSnackbarStore', `${transpile(code)}
         return { loadServerItems, handleApplyFilters, currentFilters, serverItems, totalItems, internalLoading, getFilterDisplayValue };`)(
         Vue.ref, Vue.computed, Vue.watch, () => props, () => (...args) => events.push(args), () => {}, api,
         { error: (...args) => errors.push(args) },
+        () => ({ showMessage: () => {}, showError: (...args) => errors.push(args) }),
     );
     return { ...component, requests, events, errors };
 }

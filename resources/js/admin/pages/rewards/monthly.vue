@@ -12,6 +12,8 @@
         url="/admin/rewards/monthly"
         :headers="headers"
         :query-params="extraParams"
+        show-export
+        :export-file-name="exportFileName"
     >
         <template #header-actions>
             <div class="d-flex align-center ga-3">
@@ -103,6 +105,7 @@
                     size="small"
                     class="rounded"
                     color="success"
+                    :loading="loadingDetailId === item.id"
                     @click="openProcessConfirm(item)"
                 />
                 <v-btn
@@ -148,12 +151,25 @@ const extraParams = computed(() => ({
     "filter[month]": selectedMonth.value,
 }));
 
+const exportFileName = (scope: "current" | "all") => {
+    const today = new Date().toISOString().slice(0, 10);
+    if (scope === "all") {
+        return `reward-bulanan-semua-diexport-pada-${today}`;
+    }
+    const month =
+        getMonthName(selectedMonth.value)?.toLowerCase() ||
+        String(selectedMonth.value);
+    return `reward-bulanan-${month}-${selectedYear.value}-diexport-pada-${today}`;
+};
+
 const headers = [
     {
         title: "Periode",
         key: "period",
         align: "start",
         sortable: false,
+        export: true,
+        exportValue: (item: any) => `${getMonthName(item.month)} ${item.year}`,
     },
     {
         title: "Mitra",
@@ -164,6 +180,8 @@ const headers = [
         filter: true,
         filterLabel: "Nama Mitra",
         placeholder: "Masukkan Nama Mitra",
+        export: true,
+        exportValue: (item: any) => item.member?.name || "-",
     },
     {
         title: "Kode Mitra",
@@ -174,6 +192,8 @@ const headers = [
         sortable: false,
         filter: true,
         placeholder: "Masukkan Kode Mitra",
+        export: true,
+        exportValue: (item: any) => item.member?.code || "-",
     },
     {
         title: "Level",
@@ -188,24 +208,32 @@ const headers = [
             { value: "Reseller", label: "Reseller" },
         ],
         placeholder: "Pilih Level",
+        export: true,
+        exportValue: (item: any) => item.member?.level?.name || "-",
     },
     {
         title: "Poin",
         key: "total_points",
         align: "right",
         sortable: true,
+        export: true,
+        exportValue: (item: any) => item.total_points ?? 0,
     },
     {
         title: "Nilai Poin (Rp)",
         key: "point_value",
         align: "right",
         sortable: false,
+        export: true,
+        exportValue: (item: any) => item.point_value ?? 0,
     },
     {
         title: "Total Reward (Rp)",
         key: "reward_value",
         align: "right",
         sortable: true,
+        export: true,
+        exportValue: (item: any) => item.reward_value ?? 0,
     },
     {
         title: "Status",
@@ -215,10 +243,40 @@ const headers = [
         sortable: false,
         filter: true,
         options: [
-            { value: "1", label: "Diproses" },
+            { value: "1", label: "Sudah Ditransfer" },
             { value: "0", label: "Menunggu" },
         ],
         placeholder: "Pilih Status",
+        export: true,
+        exportValue: (item: any) =>
+            item.is_processed ? "Sudah Ditransfer" : "Menunggu",
+    },
+    {
+        title: "Nama Bank",
+        key: "bank.name",
+        align: "start",
+        visible: false,
+        sortable: false,
+        export: true,
+        exportValue: (item: any) => item.bank?.name || "-",
+    },
+    {
+        title: "Nomor Rekening",
+        key: "bank.account_number",
+        align: "start",
+        visible: false,
+        sortable: false,
+        export: true,
+        exportValue: (item: any) => item.bank?.account_number || "-",
+    },
+    {
+        title: "Nama Pemilik Rekening",
+        key: "bank.account_name",
+        align: "start",
+        visible: false,
+        sortable: false,
+        export: true,
+        exportValue: (item: any) => item.bank?.account_name || "-",
     },
     {
         title: "Waktu Proses",
@@ -227,33 +285,92 @@ const headers = [
         align: "start",
         sortable: true,
         filter: true,
+        export: true,
+        exportValue: (item: any) =>
+            item.processed_at ? formatDateTime(item.processed_at) : "-",
     },
     {
         title: "Aksi",
         key: "actions",
         sortable: false,
         align: "center",
+        export: false,
     },
 ];
 
 // Process logic
 const confirmDialog = ref<InstanceType<typeof BaseConfirm> | null>(null);
 const processing = ref(false);
+const loadingDetailId = ref<number | null>(null);
 const selectedItem = ref<MonthlyReward | null>(null);
 
 const openProcessConfirm = async (item: MonthlyReward) => {
-    selectedItem.value = item;
-    const isConfirmed = await confirmDialog.value?.open({
-        title: "Proses Reward",
-        message: `Apakah Anda yakin ingin memproses reward bulanan untuk mitra ${item.member?.name} sebesar Rp${formatPrice(item.reward_value || 0)}?`,
-        confirmText: "Proses",
-        confirmColor: "success",
-    });
+    loadingDetailId.value = item.id;
+    try {
+        const detail = await rewardService.getMonthlyDetail(item.id);
+        selectedItem.value = detail;
 
-    if (isConfirmed) {
-        processReward();
-    } else {
-        selectedItem.value = null;
+        let bankInfoHtml = "";
+        if (
+            detail.bank &&
+            detail.bank.account_number &&
+            detail.bank.account_number !== "-"
+        ) {
+            bankInfoHtml = `
+                <div class="rounded-lg pa-3 mt-3 bg-grey-lighten-4 border text-body-2 text-left">
+                    <div class="text-caption font-weight-bold text-uppercase text-medium-emphasis mb-2 d-flex align-center">
+                        <i class="mdi mdi-bank mr-1" style="font-size: 16px;"></i> Rekening Tujuan Transfer
+                    </div>
+                    <div class="d-flex justify-space-between mb-1">
+                        <span class="text-medium-emphasis">Bank:</span>
+                        <span class="font-weight-medium text-right">${detail.bank.name || detail.bank.code}</span>
+                    </div>
+                    <div class="d-flex justify-space-between mb-1">
+                        <span class="text-medium-emphasis">No. Rekening:</span>
+                        <span class="font-weight-bold font-mono">${detail.bank.account_number}</span>
+                    </div>
+                    <div class="d-flex justify-space-between">
+                        <span class="text-medium-emphasis">Atas Nama:</span>
+                        <span class="font-weight-medium text-right">${detail.bank.account_name}</span>
+                    </div>
+                </div>
+            `;
+        } else {
+            bankInfoHtml = `
+                <div class="rounded-lg pa-3 mt-3 bg-warning-lighten-5 border text-body-2 text-left d-flex align-center ga-2">
+                    <i class="mdi mdi-alert-circle-outline text-warning" style="font-size: 20px;"></i>
+                    <span class="text-caption text-warning-darken-3 font-weight-medium">
+                        Perhatian: Mitra belum memiliki rekening bank terdaftar.
+                    </span>
+                </div>
+            `;
+        }
+
+        const isConfirmed = await confirmDialog.value?.open({
+            title: "Proses Reward",
+            message: `
+                <div>
+                    Apakah Anda yakin ingin memproses reward bulanan untuk mitra <strong>${detail.member?.name}</strong> sebesar <strong>Rp${formatPrice(detail.reward_value || 0)}</strong>?
+                </div>
+                ${bankInfoHtml}
+            `,
+            confirmText: "Proses",
+            confirmColor: "success",
+            icon: "mdi-help-circle-outline",
+            iconColor: "success",
+            maxWidth: 480,
+        });
+
+        if (isConfirmed) {
+            processReward();
+        } else {
+            selectedItem.value = null;
+        }
+    } catch (e: any) {
+        console.error(e);
+        snackbar.showMessage("Gagal mengambil detail reward", "error");
+    } finally {
+        loadingDetailId.value = null;
     }
 };
 

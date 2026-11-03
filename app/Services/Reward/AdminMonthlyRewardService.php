@@ -6,7 +6,9 @@ use App\Exceptions\ProcessException;
 use App\Libraries\DataTable;
 use App\Models\Member;
 use App\Models\MemberAchievement;
+use App\Models\MemberBankAccount;
 use App\Models\MemberLevel;
+use App\Models\RefBank;
 use App\Models\RewardPointMonthly;
 use App\Models\RewardStockist;
 use App\Models\SiteAdministrator;
@@ -22,6 +24,15 @@ class AdminMonthlyRewardService
         $rewardTable = (new RewardPointMonthly)->getTable();
         $memberTable = (new Member)->getTable();
         $levelTable = (new MemberLevel)->getTable();
+        $bankAccountTable = (new MemberBankAccount)->getTable();
+        $bankTable = (new RefBank)->getTable();
+        $defaultBankAccounts = DB::query()
+            ->from($bankAccountTable)
+            ->select("{$bankAccountTable}.member_bank_account_member_id")
+            ->selectRaw("MIN({$bankAccountTable}.member_bank_account_id) as bank_account_id")
+            ->where("{$bankAccountTable}.member_bank_account_is_default", 1)
+            ->where("{$bankAccountTable}.member_bank_account_is_active", 1)
+            ->groupBy("{$bankAccountTable}.member_bank_account_member_id");
 
         return DataTable::select([
             "{$rewardTable}.reward_point_monthly_id as id",
@@ -32,6 +43,11 @@ class AdminMonthlyRewardService
             "{$levelTable}.member_level_code as member_level_code",
             "{$levelTable}.member_level_name as member_level_name",
             "{$levelTable}.member_level_point_value as point_value",
+            "{$bankAccountTable}.member_bank_account_bank_id as bank_id",
+            "{$bankTable}.bank_code as bank_code",
+            "{$bankTable}.bank_name as bank_name",
+            "{$bankAccountTable}.member_bank_account_name as bank_account_name",
+            "{$bankAccountTable}.member_bank_account_number as bank_account_number",
             "{$rewardTable}.reward_point_monthly_upline_id as upline_id",
             "{$rewardTable}.reward_point_monthly_year as year",
             "{$rewardTable}.reward_point_monthly_month as month",
@@ -44,6 +60,9 @@ class AdminMonthlyRewardService
             ->from($rewardTable)
             ->leftJoin($memberTable, "{$memberTable}.member_id = {$rewardTable}.reward_point_monthly_member_id")
             ->leftJoin($levelTable, "{$levelTable}.member_level_id = {$rewardTable}.reward_point_monthly_member_level_id")
+            ->leftJoinSub($defaultBankAccounts, 'default_bank_account', "default_bank_account.member_bank_account_member_id = {$memberTable}.member_id")
+            ->leftJoin($bankAccountTable, "{$bankAccountTable}.member_bank_account_id = default_bank_account.bank_account_id")
+            ->leftJoin($bankTable, "{$bankTable}.bank_id = {$bankAccountTable}.member_bank_account_bank_id")
             ->where("{$rewardTable}.reward_point_monthly_upline_id", 0)
             ->search(['member_code', 'member_name', 'member_level_code', 'member_level_name'])
             ->defaultSort('-year,-month,-id')
@@ -59,7 +78,7 @@ class AdminMonthlyRewardService
             );
         }
 
-        return $reward->load(['member', 'memberLevel', 'upline']);
+        return $reward->load(['member.defaultBankAccount.bank', 'memberLevel', 'upline']);
     }
 
     public function processMonthlyReward(

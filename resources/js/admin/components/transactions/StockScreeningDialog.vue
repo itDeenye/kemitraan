@@ -118,14 +118,13 @@
                                     >
                                     {{ formatLocation(order.seller?.origin) }}
                                 </div>
-                                <v-chip
+                                <BaseBadge
+                                    type="level"
+                                    :value="order.seller?.type || '-'"
                                     size="x-small"
-                                    variant="tonal"
-                                    color="primary"
-                                    class="mt-1 font-weight-medium text-capitalize"
-                                >
-                                    {{ order.seller?.type || "Unknown" }}
-                                </v-chip>
+                                    class="mt-1"
+                                    inline
+                                />
                             </v-card>
                         </v-col>
                         <v-col cols="12" sm="6">
@@ -149,14 +148,13 @@
                                 >
                                     {{ order.buyer?.code || "-" }}
                                 </div>
-                                <v-chip
+                                <BaseBadge
+                                    type="level"
+                                    :value="order.buyer?.type || '-'"
                                     size="x-small"
-                                    variant="tonal"
-                                    color="info"
-                                    class="mt-1 font-weight-medium text-capitalize"
-                                >
-                                    {{ order.buyer?.type || "Unknown" }}
-                                </v-chip>
+                                    class="mt-1"
+                                    inline
+                                />
                                 <div
                                     v-if="order.buyer?.destination?.address"
                                     class="text-caption text-medium-emphasis mt-2 mb-1 d-flex"
@@ -175,21 +173,6 @@
                                                         ?.name || "-"
                                                 }}
                                             </span>
-                                            <v-chip
-                                                v-if="
-                                                    order.buyer?.destination
-                                                        ?.type
-                                                "
-                                                size="x-small"
-                                                variant="tonal"
-                                                color="info"
-                                                class="font-weight-medium text-capitalize"
-                                            >
-                                                {{
-                                                    order.buyer.destination
-                                                        .type
-                                                }}
-                                            </v-chip>
                                         </div>
                                         {{
                                             formatLocation(
@@ -543,9 +526,7 @@
                                         </div>
                                     </template>
                                     <template v-else>
-                                        <div
-                                            class="d-flex align-center ga-3"
-                                        >
+                                        <div class="d-flex align-center ga-3">
                                             <span
                                                 class="text-medium-emphasis flex-shrink-0 text-no-wrap"
                                             >
@@ -561,7 +542,18 @@
                                                 "
                                                 align="end"
                                             >
-                                                <template v-if="order.is_preorder && order.preorder_fulfillment_mode === 'upline_transit' && (order.display_shipping_method || order.shipping?.method || order.shipping_method) === 'pickup'">
+                                                <template
+                                                    v-if="
+                                                        order.is_preorder &&
+                                                        order.preorder_fulfillment_mode ===
+                                                            'upline_transit' &&
+                                                        (order.display_shipping_method ||
+                                                            order.shipping
+                                                                ?.method ||
+                                                            order.shipping_method) ===
+                                                            'pickup'
+                                                    "
+                                                >
                                                     Ambil di Upline
                                                 </template>
                                             </BaseBadge>
@@ -573,7 +565,12 @@
                                             <span
                                                 class="text-medium-emphasis flex-shrink-0 text-no-wrap"
                                             >
-                                                {{ order.display_shipping_method === 'pickup' ? 'Kurir ke Lokasi Pengambilan' : 'Kurir' }}
+                                                {{
+                                                    order.display_shipping_method ===
+                                                    "pickup"
+                                                        ? "Kurir ke Lokasi Pengambilan"
+                                                        : "Kurir"
+                                                }}
                                             </span>
                                             <span
                                                 class="font-weight-medium text-capitalize text-right ml-auto"
@@ -588,7 +585,10 @@
                                             </span>
                                         </div>
                                         <div
-                                            v-if="order.shipping?.courier?.trim() && order.shipping?.pickup_method"
+                                            v-if="
+                                                order.shipping?.courier?.trim() &&
+                                                order.shipping?.pickup_method
+                                            "
                                             class="d-flex align-center ga-3"
                                         >
                                             <span

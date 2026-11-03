@@ -317,6 +317,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    '/admin/transactions/payment-verification-history': RouteRecordInfo<
+      '/admin/transactions/payment-verification-history',
+      '/admin/transactions/payment-verification-history',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     '/admin/transactions/sales-orders': RouteRecordInfo<
       '/admin/transactions/sales-orders',
       '/admin/transactions/sales-orders',
@@ -936,6 +943,12 @@ declare module 'vue-router/auto-routes' {
     'resources/js/admin/pages/transactions/payment-verification.vue': {
       routes:
         | '/admin/transactions/payment-verification'
+      views:
+        | never
+    }
+    'resources/js/admin/pages/transactions/payment-verification-history.vue': {
+      routes:
+        | '/admin/transactions/payment-verification-history'
       views:
         | never
     }

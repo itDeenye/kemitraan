@@ -8,7 +8,7 @@ class PaymentActionRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        return $this->user()?->canAccessMenu('/transactions/payment-verification') ?? false;
     }
 
     /** @return array<string, mixed> */

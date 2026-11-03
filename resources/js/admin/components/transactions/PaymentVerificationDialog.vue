@@ -10,7 +10,11 @@
                     </v-avatar>
                     <div>
                         <div class="text-h6 font-weight-bold">
-                            Detail Verifikasi Pembayaran
+                            {{
+                                isReadOnly
+                                    ? "Detail Riwayat Verifikasi Pembayaran"
+                                    : "Detail Verifikasi Pembayaran"
+                            }}
                         </div>
                         <div class="text-caption text-medium-emphasis">
                             {{ payment?.code || "Memuat..." }}
@@ -110,14 +114,13 @@
                                         }}
                                     </div>
                                 </div>
-                                <v-chip
+                                <BaseBadge
+                                    type="level"
+                                    :value="payment.seller?.type || '-'"
                                     size="x-small"
-                                    variant="tonal"
-                                    color="primary"
-                                    class="mt-1 font-weight-medium text-capitalize"
-                                >
-                                    {{ payment.seller?.type || "-" }}
-                                </v-chip>
+                                    class="mt-1"
+                                    inline
+                                />
                             </v-card>
                         </v-col>
 
@@ -142,14 +145,13 @@
                                 >
                                     {{ payment.buyer?.code || "-" }}
                                 </div>
-                                <v-chip
+                                <BaseBadge
+                                    type="level"
+                                    :value="payment.buyer?.type || '-'"
                                     size="x-small"
-                                    variant="tonal"
-                                    color="info"
-                                    class="mt-1 font-weight-medium text-capitalize"
-                                >
-                                    {{ payment.buyer?.type || "-" }}
-                                </v-chip>
+                                    class="mt-1"
+                                    inline
+                                />
                                 <div
                                     v-if="payment.buyer?.destination"
                                     class="text-caption text-medium-emphasis mt-2 mb-1 d-flex"
@@ -168,21 +170,6 @@
                                                         .name || "-"
                                                 }}
                                             </span>
-                                            <v-chip
-                                                v-if="
-                                                    payment.buyer.destination
-                                                        .type
-                                                "
-                                                size="x-small"
-                                                variant="tonal"
-                                                color="info"
-                                                class="font-weight-medium text-capitalize"
-                                            >
-                                                {{
-                                                    payment.buyer.destination
-                                                        .type
-                                                }}
-                                            </v-chip>
                                         </div>
                                         {{
                                             formatLocation(
@@ -549,9 +536,7 @@
                                         </div>
                                     </template>
                                     <template v-else>
-                                        <div
-                                            class="d-flex align-center ga-3"
-                                        >
+                                        <div class="d-flex align-center ga-3">
                                             <span
                                                 class="text-medium-emphasis flex-shrink-0 text-no-wrap"
                                             >
@@ -567,7 +552,18 @@
                                                 "
                                                 align="end"
                                             >
-                                                <template v-if="payment.is_preorder && payment.preorder_fulfillment_mode === 'upline_transit' && (payment.display_shipping_method || payment.shipping?.method || payment.shipping_method) === 'pickup'">
+                                                <template
+                                                    v-if="
+                                                        payment.is_preorder &&
+                                                        payment.preorder_fulfillment_mode ===
+                                                            'upline_transit' &&
+                                                        (payment.display_shipping_method ||
+                                                            payment.shipping
+                                                                ?.method ||
+                                                            payment.shipping_method) ===
+                                                            'pickup'
+                                                    "
+                                                >
                                                     Ambil di Upline
                                                 </template>
                                             </BaseBadge>
@@ -595,7 +591,12 @@
                                             <span
                                                 class="text-medium-emphasis flex-shrink-0 text-no-wrap"
                                             >
-                                                {{ payment.display_shipping_method === 'pickup' ? 'Kurir ke Lokasi Pengambilan' : 'Kurir' }}
+                                                {{
+                                                    payment.display_shipping_method ===
+                                                    "pickup"
+                                                        ? "Kurir ke Lokasi Pengambilan"
+                                                        : "Kurir"
+                                                }}
                                             </span>
                                             <span
                                                 class="font-weight-medium text-capitalize text-right ml-auto"
@@ -606,7 +607,8 @@
                                         </div>
                                         <div
                                             v-if="
-                                                payment.shipping?.courier?.trim() && payment.shipping?.pickup_method
+                                                payment.shipping?.courier?.trim() &&
+                                                payment.shipping?.pickup_method
                                             "
                                             class="d-flex align-center ga-3"
                                         >
@@ -752,7 +754,10 @@
                                         <span class="font-weight-bold"
                                             >Rp{{
                                                 formatPrice(
-                                                    payment.payment.bill_amount,
+                                                    isReadOnly
+                                                        ? payment.payment.amount
+                                                        : payment.payment
+                                                              .bill_amount,
                                                 )
                                             }}</span
                                         >
@@ -868,6 +873,27 @@
                         </v-col>
                     </v-row>
 
+                    <div v-if="isReadOnly" class="rounded-lg border pa-4">
+                        <div class="text-subtitle-1 font-weight-bold mb-3">
+                            Hasil Verifikasi
+                        </div>
+                        <div
+                            class="d-flex align-center justify-space-between flex-wrap ga-2"
+                        >
+                            <BaseBadge
+                                type="payment_status"
+                                :value="payment.payment?.status"
+                                inline
+                            />
+                            <span class="text-body-2">
+                                Waktu Verifikasi:
+                                {{
+                                    formatDateTime(payment.payment?.verified_at)
+                                }}
+                            </span>
+                        </div>
+                    </div>
+
                     <div v-if="payment.payment?.note">
                         <h3
                             class="text-subtitle-1 font-weight-bold mb-2 d-flex align-center ga-2"
@@ -890,7 +916,7 @@
 
             <v-card-actions
                 class="pa-4"
-                v-if="payment?.payment.status === 'submitted'"
+                v-if="!isReadOnly && payment?.payment.status === 'submitted'"
             >
                 <v-spacer></v-spacer>
                 <v-btn
@@ -926,7 +952,12 @@
         </v-card>
     </v-dialog>
 
-    <v-dialog v-model="actionDialog" max-width="500" persistent>
+    <v-dialog
+        v-if="!isReadOnly"
+        v-model="actionDialog"
+        max-width="500"
+        persistent
+    >
         <v-card class="rounded-xl pa-2">
             <v-card-title class="text-h6 font-weight-bold text-center pt-4">
                 {{
@@ -1040,6 +1071,8 @@ import { useSnackbarStore } from "@/shared/stores/snackbar";
 const { formatDateTime, formatPrice, formatLocation } = useFormatter();
 const snackbar = useSnackbarStore();
 const emit = defineEmits(["updated"]);
+const props = defineProps({ readOnly: { type: Boolean, default: false } });
+const isReadOnly = computed(() => props.readOnly);
 
 const dialog = ref(false);
 const loading = ref(false);
@@ -1143,7 +1176,9 @@ const close = () => {
 const fetchDetail = async (id: number | string) => {
     loading.value = true;
     try {
-        const data = await transactionPaymentService.getDetail(id);
+        const data = isReadOnly.value
+            ? await transactionPaymentService.getHistoryDetail(id)
+            : await transactionPaymentService.getDetail(id);
         if (data) {
             payment.value = data;
             void loadReceiptImage(data.payment?.receipt_url ?? null);
@@ -1157,6 +1192,7 @@ const fetchDetail = async (id: number | string) => {
 };
 
 const openActionDialog = (type: "approve" | "reject") => {
+    if (isReadOnly.value) return;
     actionType.value = type;
     actionNote.value = type === "approve" ? "" : "";
     actionDialog.value = true;
@@ -1168,7 +1204,7 @@ const closeActionDialog = () => {
 };
 
 const submitAction = async () => {
-    if (!payment.value?.payment.id) return;
+    if (isReadOnly.value || !payment.value?.payment.id) return;
 
     submitting.value = true;
     try {

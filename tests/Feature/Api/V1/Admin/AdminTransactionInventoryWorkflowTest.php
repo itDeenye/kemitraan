@@ -723,6 +723,106 @@ class AdminTransactionInventoryWorkflowTest extends TestCase
         }
     }
 
+    #[DataProvider('preorderDestinationParties')]
+    public function test_preorder_destination_identity_matches_the_physical_recipient(int $depth, string $mode, string $originMethod, string $status): void
+    {
+        Http::preventStrayRequests();
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $this->createData();
+        foreach ([2 => ['AGT-002', 2, 1, 'Agen Upline'], 3 => ['RSL-003', 3, $depth === 1 ? 1 : 2, 'Reseller Pemesan']] as $id => [$code, $levelId, $parentId, $name]) {
+            Member::query()->create([
+                'member_id' => $id,
+                'member_code' => $code,
+                'member_member_level_id' => $levelId,
+                'member_parent_member_id' => $parentId,
+                'member_name' => $name,
+                'member_join_datetime' => '2026-07-01 08:00:00',
+                'member_status' => 1,
+            ]);
+        }
+        $uplineId = $depth === 1 ? 1 : 2;
+        $uplineType = $depth === 1 ? 'distributor' : 'agent';
+        $isUplinePickup = $mode === 'upline_transit' && $originMethod === 'pickup';
+        $recipientName = $isUplinePickup ? 'Kontak Alamat Upline' : 'Kontak Alamat Reseller';
+        DB::table('trx')->insert([
+            ...$this->trxPayload(),
+            'trx_id' => 2,
+            'trx_code' => 'PO-ROOT',
+            'trx_parent_trx_id' => 0,
+            'trx_is_preorder' => 1,
+            'trx_preorder_fulfillment_mode' => $mode,
+            'trx_shipping_method' => $originMethod,
+            'trx_seller_type' => $uplineType,
+            'trx_seller_id' => $uplineId,
+            'trx_buyer_type' => 'reseller',
+            'trx_buyer_id' => 3,
+        ]);
+        if ($depth === 2) {
+            DB::table('trx')->insert([
+                ...$this->trxPayload(),
+                'trx_id' => 3,
+                'trx_code' => 'PO-INTERMEDIATE',
+                'trx_parent_trx_id' => 2,
+                'trx_is_preorder' => 1,
+                'trx_buyer_type' => 'agent',
+                'trx_buyer_id' => 2,
+                'trx_seller_type' => 'distributor',
+                'trx_seller_id' => 1,
+            ]);
+        }
+        Trx::query()->findOrFail(1)->update([
+            'trx_parent_trx_id' => $depth === 1 ? 2 : 3,
+            'trx_is_preorder' => true,
+            'trx_status' => $status,
+        ]);
+        DB::table('shipping_courier_manual')->where('shipping_courier_manual_ref_id', 1)->update([
+            'shipping_courier_manual_destination_name' => $recipientName,
+            'shipping_courier_manual_destination_address' => 'Alamat Tujuan Tersimpan',
+        ]);
+        $this->createPayment();
+
+        foreach (['transactions/orders', 'inventory/shipments'] as $route) {
+            $this->getJson('/api/v1/admin/'.$route.'?filter[id]=1')
+                ->assertOk()
+                ->assertJsonCount(1, 'data.results')
+                ->assertJsonPath('data.results.0.buyer.id', 1)
+                ->assertJsonPath('data.results.0.buyer.destination.id', $isUplinePickup ? $uplineId : 3)
+                ->assertJsonPath('data.results.0.buyer.destination.type', $isUplinePickup ? $uplineType : 'reseller')
+                ->assertJsonPath('data.results.0.buyer.destination.code', $isUplinePickup ? ($depth === 1 ? 'DST-001' : 'AGT-002') : 'RSL-003')
+                ->assertJsonPath('data.results.0.buyer.destination.name', $recipientName)
+                ->assertJsonPath('data.results.0.buyer.destination.address', 'Alamat Tujuan Tersimpan')
+                ->assertJsonPath('data.results.0.shipping_method', 'courier_manual')
+                ->assertJsonPath('data.results.0.display_shipping_method', $isUplinePickup ? 'pickup' : 'courier_manual');
+        }
+        foreach (['transactions/orders/1', 'transactions/orders/2', 'inventory/shipments/1', 'transactions/payments/1'] as $route) {
+            $this->getJson('/api/v1/admin/'.$route)
+                ->assertOk()
+                ->assertJsonPath('data.buyer.destination.id', $isUplinePickup ? $uplineId : 3)
+                ->assertJsonPath('data.buyer.destination.type', $isUplinePickup ? $uplineType : 'reseller')
+                ->assertJsonPath('data.buyer.destination.code', $isUplinePickup ? ($depth === 1 ? 'DST-001' : 'AGT-002') : 'RSL-003')
+                ->assertJsonPath('data.buyer.destination.name', $recipientName)
+                ->assertJsonPath('data.buyer.destination.address', 'Alamat Tujuan Tersimpan');
+        }
+        $this->assertDatabaseHas('trx', ['trx_id' => 1, 'trx_shipping_method' => 'courier_manual', 'trx_status' => $status]);
+        $this->assertDatabaseHas('trx', ['trx_id' => 2, 'trx_shipping_method' => $originMethod, 'trx_preorder_fulfillment_mode' => $mode]);
+    }
+
+    /** @return array<string, array{int, string, string, string}> */
+    public static function preorderDestinationParties(): array
+    {
+        return [
+            'pickup at distributor' => [1, 'upline_transit', 'pickup', 'processing'],
+            'pickup at agent through distributor' => [2, 'upline_transit', 'pickup', 'processing'],
+            'direct courier to reseller' => [2, 'direct', 'courier_manual', 'processing'],
+            'legacy direct pickup' => [2, 'direct', 'pickup', 'processing'],
+            'transit mode without pickup does not change recipient' => [2, 'upline_transit', 'courier_manual', 'processing'],
+            'shipped direct courier to reseller' => [2, 'direct', 'courier_manual', 'shipped'],
+            'shipped courier to pickup point' => [2, 'upline_transit', 'pickup', 'shipped'],
+            'completed legacy direct delivery' => [2, 'direct', 'courier_manual', 'completed'],
+            'completed pickup at upline' => [2, 'upline_transit', 'pickup', 'completed'],
+        ];
+    }
+
     #[DataProvider('preorderDisplayShippingMethods')]
     public function test_admin_shipping_information_uses_the_original_pickup_choice_without_changing_the_courier_flow(int $depth, string $originMethod, string $expected, string $mode = 'upline_transit', string $method = 'courier_express'): void
     {

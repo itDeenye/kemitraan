@@ -27,11 +27,36 @@ class AdminRewardReportApiTest extends TestCase
             ->assertOk()
             ->assertJsonCount(1, 'data.results')
             ->assertJsonPath('data.results.0.member.level.code', 'DST')
-            ->assertJsonPath('data.results.0.total_points', 25);
+            ->assertJsonPath('data.results.0.total_points', 25)
+            ->assertJsonPath('data.results.0.bank.code', 'BCA')
+            ->assertJsonPath('data.results.0.bank.name', 'Bank Central Asia')
+            ->assertJsonPath('data.results.0.bank.account_name', 'Distributor Utama')
+            ->assertJsonPath('data.results.0.bank.account_number', '1234567890');
+        $this->getJson('/api/v1/admin/rewards/monthly/1')
+            ->assertOk()
+            ->assertJsonPath('data.bank.code', 'BCA')
+            ->assertJsonPath('data.bank.name', 'Bank Central Asia')
+            ->assertJsonPath('data.bank.account_name', 'Distributor Utama')
+            ->assertJsonPath('data.bank.account_number', '1234567890');
         $this->getJson('/api/v1/admin/rewards/monthly/2')->assertNotFound();
         $this->postJson('/api/v1/admin/rewards/monthly/1/process')
             ->assertOk()
             ->assertJsonPath('data.is_processed', true);
+        DB::table('member_bank_account')->where('member_bank_account_id', 1)->update([
+            'member_bank_account_is_active' => 0,
+        ]);
+        $this->getJson('/api/v1/admin/rewards/monthly/1')
+            ->assertOk()
+            ->assertJsonPath('data.bank.id', 0)
+            ->assertJsonPath('data.bank.code', '-')
+            ->assertJsonPath('data.bank.name', '-')
+            ->assertJsonPath('data.bank.account_name', '-')
+            ->assertJsonPath('data.bank.account_number', '-');
+        $this->getJson('/api/v1/admin/rewards/monthly?filter[year]=2026&filter[month]=7')
+            ->assertOk()
+            ->assertJsonPath('data.results.0.bank.id', 0)
+            ->assertJsonPath('data.results.0.bank.name', '-')
+            ->assertJsonPath('data.results.0.bank.account_number', '-');
 
         $this->getJson('/api/v1/admin/rewards/stockists?filter[year]=2026')
             ->assertOk()
@@ -115,6 +140,20 @@ class AdminRewardReportApiTest extends TestCase
             'member_name' => 'Distributor Utama',
             'member_join_datetime' => '2026-07-01 08:00:00',
             'member_status' => 1,
+        ]);
+        DB::table('ref_bank')->insert([
+            'bank_id' => 1,
+            'bank_code' => 'BCA',
+            'bank_name' => 'Bank Central Asia',
+        ]);
+        DB::table('member_bank_account')->insert([
+            'member_bank_account_id' => 1,
+            'member_bank_account_member_id' => 1,
+            'member_bank_account_bank_id' => 1,
+            'member_bank_account_name' => 'Distributor Utama',
+            'member_bank_account_number' => '1234567890',
+            'member_bank_account_is_active' => 1,
+            'member_bank_account_is_default' => 1,
         ]);
         DB::table('warehouse_stock')->insert([
             'warehouse_stock_id' => 1,

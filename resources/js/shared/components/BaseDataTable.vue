@@ -6,14 +6,19 @@
         <!-- Header (Toolbar) -->
         <div
             class="d-flex align-center justify-space-between mb-4 flex-wrap ga-4"
-            v-if="showSearch || $slots['header-actions'] || showViewColumns"
+            v-if="
+                showSearch ||
+                $slots['header-actions'] ||
+                showViewColumns ||
+                showExport
+            "
         >
             <!-- Left Actions (e.g. Tambah) -->
             <div class="d-flex align-center gap-2 flex-wrap">
                 <slot name="header-actions"></slot>
             </div>
 
-            <!-- Right Actions (Search, Filter, View) -->
+            <!-- Right Actions (Search, Filter, View, Export) -->
             <div class="d-flex align-center gap-3 flex-wrap">
                 <!-- Search Box -->
                 <v-text-field
@@ -76,11 +81,47 @@
                                     :value="col.key"
                                     color="primary"
                                     density="compact"
+                                    hide-details
                                 ></v-checkbox-btn>
                             </template>
                             <v-list-item-title class="text-body-2">{{
                                 col.title
                             }}</v-list-item-title>
+                        </v-list-item>
+                    </v-list>
+                </v-menu>
+
+                <!-- Export Button -->
+                <v-menu v-if="showExport" :close-on-content-click="true">
+                    <template v-slot:activator="{ props: menuProps }">
+                        <v-btn
+                            v-bind="menuProps"
+                            variant="outlined"
+                            color="medium-emphasis"
+                            prepend-icon="mdi-file-excel-outline"
+                            class="text-none bg-surface rounded-lg"
+                            :loading="isExporting"
+                        >
+                            Export
+                            <v-icon end size="small">mdi-chevron-down</v-icon>
+                        </v-btn>
+                    </template>
+                    <v-list density="compact" class="pa-1" min-width="180">
+                        <v-list-item
+                            prepend-icon="mdi-file-document-outline"
+                            @click="exportData('current')"
+                        >
+                            <v-list-item-title class="text-body-2">
+                                Data Halaman Ini
+                            </v-list-item-title>
+                        </v-list-item>
+                        <v-list-item
+                            prepend-icon="mdi-database-export-outline"
+                            @click="exportData('all')"
+                        >
+                            <v-list-item-title class="text-body-2">
+                                Semua Data
+                            </v-list-item-title>
                         </v-list-item>
                     </v-list>
                 </v-menu>
@@ -234,6 +275,8 @@
 <script setup lang="ts">
 import { ref, watch, computed } from "vue";
 import api from "@/shared/services/api";
+import { useSnackbarStore } from "@/shared/stores/snackbar";
+import { downloadXlsx } from "@/shared/utils/simpleXlsx";
 import FilterDialog from "./FilterDialog.vue";
 
 const props = defineProps({
@@ -246,6 +289,12 @@ const props = defineProps({
     showSearch: { type: Boolean, default: true },
     showViewColumns: { type: Boolean, default: true },
     showRefresh: { type: Boolean, default: true },
+    showExport: { type: Boolean, default: false },
+    exportFileName: {
+        type: [String, Function] as any,
+        default: "data-export",
+    },
+    exportAllWithoutFilters: { type: Boolean, default: true },
     search: { type: String, default: "" },
     itemsPerPage: { type: Number, default: 10 },
     tableHeight: { type: [String, Number], default: "calc(100vh - 300px)" },
@@ -267,6 +316,8 @@ const debouncedSearch = ref(props.search);
 const internalSelected = ref([...props.selected]);
 const filterDialogOpen = ref(false);
 const currentFilters = ref<Record<string, string>>({});
+const isExporting = ref(false);
+const snackbar = useSnackbarStore();
 
 const supportedFilterOperators = new Set([
     "eq",
@@ -398,82 +449,89 @@ const onSearchInput = (val: string) => {
     }, 500);
 };
 
-// --- Server Data Loading ---
+// --- Server Data Loading & Query Params ---
+
+const buildQueryParams = (options: any = {}) => {
+    const {
+        page = 1,
+        itemsPerPage = props.itemsPerPage,
+        sortBy = [],
+    } = options;
+    let sortQuery = "";
+    if (sortBy && sortBy.length > 0) {
+        sortQuery = sortBy
+            .map((s: any) => (s.order === "desc" ? "-" : "") + s.key)
+            .join(",");
+    }
+
+    const params: Record<string, any> = {
+        page,
+        limit: itemsPerPage,
+        search: debouncedSearch.value || undefined,
+        sort: sortQuery || undefined,
+        ...props.queryParams,
+    };
+
+    if (itemsPerPage === -1) {
+        params.pagination = false;
+        delete params.limit;
+        delete params.page;
+    }
+
+    // Tambahkan field_search jika ada kolom search: true
+    if (searchableFields.value) {
+        params.field_search = searchableFields.value;
+    }
+
+    // Gunakan kontrak filter DataTable backend: filter[field][operator]=value
+    for (const [key, value] of Object.entries(currentFilters.value)) {
+        const match = key.match(/^(.+)\[(\w+)\]$/);
+        if (!match) continue;
+
+        const colKey = match[1];
+        const col = props.headers.find((h: any) => h.key === colKey);
+        const apiFilterKey = col?.filterKey || colKey;
+        const requestedOperator = match[2] === "lse" ? "like" : match[2];
+        const operator = supportedFilterOperators.has(requestedOperator)
+            ? requestedOperator
+            : "eq";
+
+        if (col?.type === "date") {
+            const rawValue = String(value);
+            const [rawStart, rawEnd] = rawValue.includes("::")
+                ? rawValue.split("::")
+                : [rawValue, rawValue];
+            const dates = [rawStart, rawEnd].filter(Boolean).sort();
+            const start = dates[0];
+            const end = dates[dates.length - 1];
+
+            if (start) params[`filter[${apiFilterKey}][gte]`] = start;
+            if (end) params[`filter[${apiFilterKey}][lt]`] = getNextDate(end);
+            continue;
+        }
+
+        const filterValue =
+            operator === "like" && !String(value).includes("%")
+                ? `%${value}%`
+                : value;
+        if (operator === "eq") {
+            params[`filter[${apiFilterKey}]`] = filterValue;
+        } else {
+            params[`filter[${apiFilterKey}][${operator}]`] = filterValue;
+        }
+    }
+
+    return params;
+};
 
 const loadServerItems = async (options: any) => {
     if (!props.url) return;
     const requestId = ++latestRequest;
     lastOptions.value = options;
-    const { page, itemsPerPage, sortBy } = options;
 
     internalLoading.value = true;
     try {
-        let sortQuery = "";
-        if (sortBy && sortBy.length > 0) {
-            sortQuery = sortBy
-                .map((s: any) => (s.order === "desc" ? "-" : "") + s.key)
-                .join(",");
-        }
-
-        const params: Record<string, any> = {
-            page,
-            limit: itemsPerPage,
-            search: debouncedSearch.value || undefined,
-            sort: sortQuery || undefined,
-            ...props.queryParams,
-        };
-
-        if (itemsPerPage === -1) {
-            params.pagination = false;
-            delete params.limit;
-            delete params.page;
-        }
-
-        // Tambahkan field_search jika ada kolom search: true
-        if (searchableFields.value) {
-            params.field_search = searchableFields.value;
-        }
-
-        // Gunakan kontrak filter DataTable backend:
-        // filter[field][operator]=value.
-        for (const [key, value] of Object.entries(currentFilters.value)) {
-            const match = key.match(/^(.+)\[(\w+)\]$/);
-            if (!match) continue;
-
-            const colKey = match[1];
-            const col = props.headers.find((h: any) => h.key === colKey);
-            const apiFilterKey = col?.filterKey || colKey;
-            const requestedOperator = match[2] === "lse" ? "like" : match[2];
-            const operator = supportedFilterOperators.has(requestedOperator)
-                ? requestedOperator
-                : "eq";
-
-            if (col?.type === "date") {
-                const rawValue = String(value);
-                const [rawStart, rawEnd] = rawValue.includes("::")
-                    ? rawValue.split("::")
-                    : [rawValue, rawValue];
-                const dates = [rawStart, rawEnd].filter(Boolean).sort();
-                const start = dates[0];
-                const end = dates[dates.length - 1];
-
-                if (start) params[`filter[${apiFilterKey}][gte]`] = start;
-                if (end)
-                    params[`filter[${apiFilterKey}][lt]`] = getNextDate(end);
-                continue;
-            }
-
-            const filterValue =
-                operator === "like" && !String(value).includes("%")
-                    ? `%${value}%`
-                    : value;
-            if (operator === "eq") {
-                params[`filter[${apiFilterKey}]`] = filterValue;
-            } else {
-                params[`filter[${apiFilterKey}][${operator}]`] = filterValue;
-            }
-        }
-
+        const params = buildQueryParams(options);
         const { data } = await api.get(props.url, { params });
         if (requestId !== latestRequest) return;
 
@@ -503,7 +561,149 @@ const refresh = () => {
     }
 };
 
-defineExpose({ refresh });
+// --- Export Excel (XLSX) ---
+
+const exportColumns = computed(() => {
+    return props.headers.filter((h: any) => {
+        if (h.export === false) return false;
+        if (h.key === "actions" || h.key === "action") return false;
+        if (h.export === true) return true;
+        return h.visible !== false && visibleColumns.value.includes(h.key);
+    });
+});
+
+const getNestedValue = (obj: any, path: string): any => {
+    if (!obj || !path) return "";
+    return (
+        path
+            .split(".")
+            .reduce(
+                (acc, part) =>
+                    acc !== null && acc !== undefined ? acc[part] : undefined,
+                obj,
+            ) ?? ""
+    );
+};
+
+const exportData = async (scope: "current" | "all" = "current") => {
+    if (exportColumns.value.length === 0) {
+        snackbar.showError("Tidak ada kolom yang dapat diekspor.");
+        return;
+    }
+
+    isExporting.value = true;
+    try {
+        let rows: any[] = [];
+        if (scope === "current") {
+            rows = props.url ? serverItems.value : props.items;
+        } else {
+            if (props.url) {
+                let params: Record<string, any>;
+                if (props.exportAllWithoutFilters) {
+                    params = {
+                        pagination: false,
+                        pagination_bool: false,
+                    };
+                } else {
+                    params = buildQueryParams(
+                        lastOptions.value || {
+                            page: 1,
+                            itemsPerPage: props.itemsPerPage,
+                        },
+                    );
+                    params.pagination = false;
+                    params.pagination_bool = false;
+                    delete params.limit;
+                    delete params.page;
+                }
+
+                const { data } = await api.get(props.url, { params });
+                rows =
+                    data?.data?.results ||
+                    data?.data ||
+                    data?.results ||
+                    (Array.isArray(data) ? data : []);
+            } else {
+                rows = props.items;
+            }
+        }
+
+        if (!rows || rows.length === 0) {
+            snackbar.showMessage("Tidak ada data untuk diekspor.", "warning");
+            return;
+        }
+
+        const xlsxColumns = exportColumns.value.map((col: any) => {
+            let align: "left" | "center" | "right" = "left";
+            if (col.align === "center") align = "center";
+            else if (col.align === "end" || col.align === "right")
+                align = "right";
+
+            return {
+                title: col.title || col.key,
+                align,
+            };
+        });
+
+        const xlsxRows: any[][] = [];
+        for (const row of rows) {
+            const rowValues = exportColumns.value.map((col: any) => {
+                let val: any;
+                if (typeof col.exportValue === "function") {
+                    val = col.exportValue(row);
+                } else if (typeof col.value === "function") {
+                    val = col.value(row);
+                } else {
+                    val = getNestedValue(row, col.key);
+                }
+                return val;
+            });
+            xlsxRows.push(rowValues);
+        }
+
+        let fileName = "";
+        if (typeof props.exportFileName === "function") {
+            fileName = props.exportFileName(scope);
+        } else {
+            const dateStr = new Date().toISOString().slice(0, 10);
+            if (props.exportFileName.includes("diexport-pada")) {
+                fileName = props.exportFileName;
+            } else if (scope === "all") {
+                const baseName = props.exportFileName
+                    .replace(/-\d{4}-\d{2}$/, "")
+                    .replace(
+                        /-(januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember)-\d{4}$/i,
+                        "",
+                    );
+                fileName = `${baseName}-semua-diexport-pada-${dateStr}.xlsx`;
+            } else {
+                fileName = `${props.exportFileName}-diexport-pada-${dateStr}.xlsx`;
+            }
+        }
+
+        downloadXlsx({
+            columns: xlsxColumns,
+            rows: xlsxRows,
+            sheetName: props.title || "Data",
+            fileName,
+        });
+
+        snackbar.showMessage(
+            `${rows.length} data berhasil diekspor ke Excel (.xlsx).`,
+        );
+    } catch (error) {
+        console.error("Export XLSX Error:", error);
+        snackbar.showError("Gagal mengekspor data ke Excel.");
+    } finally {
+        isExporting.value = false;
+    }
+};
+
+const exportCsv = exportData;
+const exportExcel = exportData;
+const exportXlsx = exportData;
+
+defineExpose({ refresh, exportData, exportExcel, exportXlsx, exportCsv });
 
 // --- Cell Alignment Helpers ---
 

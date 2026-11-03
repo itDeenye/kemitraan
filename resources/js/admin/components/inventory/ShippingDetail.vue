@@ -151,18 +151,17 @@
                                         }}
                                     </div>
                                 </div>
-                                <v-chip
-                                    size="x-small"
-                                    variant="tonal"
-                                    color="primary"
-                                    class="mt-1 font-weight-medium text-capitalize"
-                                >
-                                    {{
+                                <BaseBadge
+                                    type="level"
+                                    :value="
                                         order.seller?.origin?.type ||
                                         order.seller?.type ||
-                                        "Unknown"
-                                    }}
-                                </v-chip>
+                                        '-'
+                                    "
+                                    size="x-small"
+                                    class="mt-1"
+                                    inline
+                                />
                             </v-card>
                         </v-col>
                         <v-col cols="12" sm="6">
@@ -170,48 +169,108 @@
                                 variant="outlined"
                                 class="rounded-lg h-100 pa-4"
                             >
-                                <h3
-                                    class="text-subtitle-2 font-weight-bold mb-3 d-flex align-center ga-2 text-info"
-                                >
-                                    <v-icon size="small"
-                                        >mdi-map-marker-outline</v-icon
+                                <template v-if="distributorBuyer && !isPickup">
+                                    <h3
+                                        class="text-subtitle-2 font-weight-bold mb-3 d-flex align-center ga-2 text-info"
                                     >
-                                    {{ isPickup ? "Pembeli" : "Dikirim Ke" }}
-                                </h3>
-                                <div class="text-body-2 font-weight-medium">
-                                    {{ order.buyer?.destination?.name || "-" }}
-                                </div>
-                                <div
-                                    class="text-caption text-medium-emphasis mb-1"
-                                >
-                                    {{ order.buyer?.destination?.code || "-" }}
-                                </div>
-                                <div
-                                    class="text-caption text-medium-emphasis mt-2 mb-1 d-flex"
-                                >
-                                    <v-icon size="x-small" class="mr-1 mt-1"
-                                        >mdi-map-marker-outline</v-icon
+                                        <v-icon size="small"
+                                            >mdi-account-tie-outline</v-icon
+                                        >
+                                        Distributor pembeli
+                                    </h3>
+                                    <div
+                                        class="text-body-2 font-weight-medium text-break"
                                     >
-                                    <div>
+                                        {{ distributorBuyer.name || "-" }}
+                                    </div>
+                                    <div
+                                        class="text-caption text-medium-emphasis mb-1"
+                                    >
+                                        {{ distributorBuyer.code || "-" }}
+                                    </div>
+                                    <BaseBadge
+                                        type="level"
+                                        value="distributor"
+                                        size="x-small"
+                                        inline
+                                    />
+                                    <v-divider class="my-3" />
+                                    <div class="text-caption text-break">
+                                        <div class="font-weight-bold mb-1">
+                                            Tujuan pengiriman
+                                        </div>
+                                        <div>
+                                            {{
+                                                order.buyer?.destination
+                                                    ?.name || "-"
+                                            }}
+                                        </div>
+                                        <div>
+                                            {{
+                                                order.buyer?.destination
+                                                    ?.code || "-"
+                                            }}
+                                        </div>
+                                        <div class="mt-1">
+                                            {{
+                                                formatLocation(
+                                                    order.buyer?.destination,
+                                                )
+                                            }}
+                                        </div>
+                                    </div>
+                                </template>
+                                <template v-else>
+                                    <h3
+                                        class="text-subtitle-2 font-weight-bold mb-3 d-flex align-center ga-2 text-info"
+                                    >
+                                        <v-icon size="small"
+                                            >mdi-map-marker-outline</v-icon
+                                        >
                                         {{
-                                            formatLocation(
-                                                order.buyer?.destination,
-                                            )
+                                            isPickup ? "Pembeli" : "Dikirim Ke"
+                                        }}
+                                    </h3>
+                                    <div class="text-body-2 font-weight-medium">
+                                        {{
+                                            order.buyer?.destination?.name ||
+                                            "-"
                                         }}
                                     </div>
-                                </div>
-                                <v-chip
-                                    size="x-small"
-                                    variant="tonal"
-                                    color="info"
-                                    class="mt-1 font-weight-medium text-capitalize"
-                                >
-                                    {{
-                                        order.buyer?.destination?.type ||
-                                        order.buyer?.type ||
-                                        "Unknown"
-                                    }}
-                                </v-chip>
+                                    <div
+                                        class="text-caption text-medium-emphasis mb-1"
+                                    >
+                                        {{
+                                            order.buyer?.destination?.code ||
+                                            "-"
+                                        }}
+                                    </div>
+                                    <div
+                                        class="text-caption text-medium-emphasis mt-2 mb-1 d-flex"
+                                    >
+                                        <v-icon size="x-small" class="mr-1 mt-1"
+                                            >mdi-map-marker-outline</v-icon
+                                        >
+                                        <div>
+                                            {{
+                                                formatLocation(
+                                                    order.buyer?.destination,
+                                                )
+                                            }}
+                                        </div>
+                                    </div>
+                                    <BaseBadge
+                                        type="level"
+                                        :value="
+                                            order.buyer?.destination?.type ||
+                                            order.buyer?.type ||
+                                            '-'
+                                        "
+                                        size="x-small"
+                                        class="mt-1"
+                                        inline
+                                    />
+                                </template>
                             </v-card>
                         </v-col>
                     </v-row>
@@ -293,9 +352,8 @@
                                                 <span class="mr-3"
                                                     >Expired Date:
                                                     {{
-                                                        formatDate(
-                                                            batch.expiry_date ||
-                                                                "-",
+                                                        formatExpiryDate(
+                                                            batch.expiry_date,
                                                         )
                                                     }}</span
                                                 >
@@ -327,12 +385,27 @@
                     </div>
                     <div v-if="order.shipping">
                         <div class="d-flex align-center ga-3 mb-3">
-                            <span class="text-body-2 text-medium-emphasis">Metode Penerimaan</span>
+                            <span class="text-body-2 text-medium-emphasis"
+                                >Metode Penerimaan</span
+                            >
                             <BaseBadge
                                 type="shipping_method"
-                                :value="order.display_shipping_method || order.shipping?.method || order.shipping_method"
+                                :value="
+                                    order.display_shipping_method ||
+                                    order.shipping?.method ||
+                                    order.shipping_method
+                                "
                             >
-                                <template v-if="order.is_preorder && order.preorder_fulfillment_mode === 'upline_transit' && (order.display_shipping_method || order.shipping?.method || order.shipping_method) === 'pickup'">
+                                <template
+                                    v-if="
+                                        order.is_preorder &&
+                                        order.preorder_fulfillment_mode ===
+                                            'upline_transit' &&
+                                        (order.display_shipping_method ||
+                                            order.shipping?.method ||
+                                            order.shipping_method) === 'pickup'
+                                    "
+                                >
                                     Ambil di Upline
                                 </template>
                             </BaseBadge>
@@ -361,7 +434,12 @@
                                     <div
                                         class="text-caption text-medium-emphasis"
                                     >
-                                        {{ order.display_shipping_method === 'pickup' ? 'Kurir ke Lokasi Pengambilan' : 'Kurir & Layanan' }}
+                                        {{
+                                            order.display_shipping_method ===
+                                            "pickup"
+                                                ? "Kurir ke Lokasi Pengambilan"
+                                                : "Kurir & Layanan"
+                                        }}
                                     </div>
                                     <div
                                         class="font-weight-medium text-capitalize"
@@ -449,8 +527,8 @@
                                     </div>
                                     <div class="font-weight-medium">
                                         {{
-                                            order.shipping.delivery_note_number ||
-                                            "-"
+                                            order.shipping
+                                                .delivery_note_number || "-"
                                         }}
                                     </div>
                                 </v-col>
@@ -562,6 +640,39 @@ const isPickup = computed(
         (order.value?.shipping?.method || order.value?.shipping_method) ===
         "pickup",
 );
+const distributorBuyer = computed(() => {
+    if (order.value?.buyer?.type === "distributor") {
+        return order.value.buyer;
+    }
+
+    const companyStep = order.value?.preorder?.chain?.find(
+        (step: any) =>
+            step.seller?.type === "warehouse" &&
+            step.buyer?.type === "distributor",
+    );
+
+    return companyStep?.buyer ?? null;
+});
+const isDropship = computed(() => {
+    const destination = order.value?.buyer?.destination;
+    if (!distributorBuyer.value || !destination?.type) {
+        return false;
+    }
+
+    return (
+        destination.type !== "distributor" ||
+        (destination.id != null &&
+            distributorBuyer.value.id != null &&
+            String(destination.id) !== String(distributorBuyer.value.id))
+    );
+});
+const formatExpiryDate = (value?: string | null): string => {
+    if (!value || Number.isNaN(new Date(value).getTime())) {
+        return "-";
+    }
+
+    return formatDate(value);
+};
 
 const getShippingItems = (productId: number) => {
     if (!order.value?.shipping?.items) return [];

@@ -145,14 +145,13 @@
                                         }}
                                     </div>
                                 </div>
-                                <v-chip
+                                <BaseBadge
+                                    type="level"
+                                    :value="order.seller?.type || '-'"
                                     size="x-small"
-                                    variant="tonal"
-                                    color="primary"
-                                    class="mt-1 font-weight-medium text-capitalize"
-                                >
-                                    {{ order.seller?.type || "Unknown" }}
-                                </v-chip>
+                                    class="mt-1"
+                                    inline
+                                />
                             </v-card>
                         </v-col>
                         <v-col cols="12" sm="6">
@@ -176,14 +175,13 @@
                                 >
                                     {{ order.buyer?.code || "-" }}
                                 </div>
-                                <v-chip
+                                <BaseBadge
+                                    type="level"
+                                    :value="order.buyer?.type || '-'"
                                     size="x-small"
-                                    variant="tonal"
-                                    color="info"
-                                    class="mt-1 font-weight-medium text-capitalize"
-                                >
-                                    {{ order.buyer?.type || "Unknown" }}
-                                </v-chip>
+                                    class="mt-1"
+                                    inline
+                                />
                                 <div
                                     v-if="order.buyer?.destination?.address"
                                     class="text-caption text-medium-emphasis mt-2 mb-1 d-flex"
@@ -202,20 +200,6 @@
                                                         ?.name || "-"
                                                 }}
                                             </span>
-                                            <v-chip
-                                                v-if="
-                                                    order.buyer?.destination
-                                                        ?.type
-                                                "
-                                                size="x-small"
-                                                variant="tonal"
-                                                color="info"
-                                                class="font-weight-medium text-capitalize"
-                                            >
-                                                {{
-                                                    order.buyer.destination.type
-                                                }}
-                                            </v-chip>
                                         </div>
                                         {{
                                             formatLocation(
@@ -584,7 +568,18 @@
                                                 "
                                                 align="end"
                                             >
-                                                <template v-if="order.is_preorder && order.preorder_fulfillment_mode === 'upline_transit' && (order.display_shipping_method || order.shipping?.method || order.shipping_method) === 'pickup'">
+                                                <template
+                                                    v-if="
+                                                        order.is_preorder &&
+                                                        order.preorder_fulfillment_mode ===
+                                                            'upline_transit' &&
+                                                        (order.display_shipping_method ||
+                                                            order.shipping
+                                                                ?.method ||
+                                                            order.shipping_method) ===
+                                                            'pickup'
+                                                    "
+                                                >
                                                     Ambil di Upline
                                                 </template>
                                             </BaseBadge>
@@ -595,7 +590,12 @@
                                         >
                                             <span
                                                 class="text-medium-emphasis flex-shrink-0 text-no-wrap"
-                                                >{{ order.display_shipping_method === 'pickup' ? 'Kurir ke Lokasi Pengambilan' : 'Kurir' }}</span
+                                                >{{
+                                                    order.display_shipping_method ===
+                                                    "pickup"
+                                                        ? "Kurir ke Lokasi Pengambilan"
+                                                        : "Kurir"
+                                                }}</span
                                             >
                                             <span
                                                 class="font-weight-medium text-capitalize text-right ml-auto"
@@ -611,7 +611,10 @@
                                         </div>
                                         <div
                                             class="d-flex align-center ga-3"
-                                            v-if="order.shipping?.courier?.trim() && order.shipping?.pickup_method"
+                                            v-if="
+                                                order.shipping?.courier?.trim() &&
+                                                order.shipping?.pickup_method
+                                            "
                                         >
                                             <span
                                                 class="text-medium-emphasis flex-shrink-0 text-no-wrap"
@@ -875,9 +878,10 @@ const printDocument = async (
                         <div style="width: 48%;">
                             <table style="width: 100%; font-size: 12px;">
                                 <tr><td colspan="3"><strong>Data Pemesan (Sarana):</strong></td></tr>
-                                <tr><td style="width: 140px;">Nama Toko / Klinik</td><td style="width: 10px;">:</td><td>${escapeHtml(data.buyer?.name)}</td></tr>
+                                <tr><td style="width: 140px;">Nama Toko / Klinik</td><td style="width: 10px;">:</td><td>.......................................................</td></tr>
                                 <tr><td>NIB / Izin Usaha</td><td>:</td><td>........................................................</td></tr>
-                                <tr><td>Nama Penanggung Jawab</td><td>:</td><td>${escapeHtml(data.buyer?.destination?.name || "-")}</td></tr>
+                                <tr><td>Nama Penanggung Jawab</td><td>:</td><td>${escapeHtml(data.buyer?.name || "-")}</td></tr>
+                                <tr><td>ID Penanggung Jawab</td><td>:</td><td>Distibutor(${escapeHtml(data.buyer?.code || "-")})</td></tr>
                                 <tr><td style="vertical-align: top;">Alamat Lengkap</td><td style="vertical-align: top;">:</td><td>${escapeHtml(data.buyer?.destination?.address || "-")}, ${escapeHtml(data.buyer?.destination?.subdistrict?.name || "-")}, ${escapeHtml(data.buyer?.destination?.district?.name || "-")}, ${escapeHtml(data.buyer?.destination?.city?.name || "-")}, ${escapeHtml(data.buyer?.destination?.province?.name || "-")}</td></tr>
                                 <tr><td>No. Telp / WA</td><td>:</td><td>${escapeHtml(data.buyer?.destination?.phone || "-")}</td></tr>
                             </table>

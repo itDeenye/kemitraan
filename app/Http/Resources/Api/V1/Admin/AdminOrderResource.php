@@ -619,10 +619,18 @@ class AdminOrderResource extends ApiResource
         if ($trx) {
             $buyer = $buyerType === 'customer' ? $trx->buyerCustomer : $trx->buyer;
             $recipientTrx = $originTrx ?? $trx;
-            $recipientType = (string) $recipientTrx->trx_buyer_type;
-            $recipient = $recipientType === 'customer'
-                ? $recipientTrx->buyerCustomer
-                : $recipientTrx->buyer;
+            $isUplinePickup = $recipientTrx->trx_is_preorder
+                && $recipientTrx->trx_preorder_fulfillment_mode === 'upline_transit'
+                && $recipientTrx->trx_shipping_method === 'pickup';
+            $recipientType = (string) ($isUplinePickup
+                ? $recipientTrx->trx_seller_type
+                : $recipientTrx->trx_buyer_type);
+            $recipientId = (int) ($isUplinePickup
+                ? $recipientTrx->trx_seller_id
+                : $recipientTrx->trx_buyer_id);
+            $recipient = $isUplinePickup
+                ? $recipientTrx->seller
+                : ($recipientType === 'customer' ? $recipientTrx->buyerCustomer : $recipientTrx->buyer);
             $destinationTrx = $fulfillmentTrx ?? $trx;
 
             return [
@@ -633,11 +641,16 @@ class AdminOrderResource extends ApiResource
                 'destination' => $this->locationWithParty(
                     $this->shipmentLocation($destinationTrx, 'destination', $recipient),
                     $recipientType,
-                    (int) $recipientTrx->trx_buyer_id,
+                    $recipientId,
                     $recipientType === 'customer' ? null : $recipient?->member_code,
                 ),
             ];
         }
+
+        $destinationType = $this->resource->shipment_destination_party_type ?? $buyerType;
+        $destinationMemberCode = property_exists($this->resource, 'shipment_destination_member_code')
+            ? $this->resource->shipment_destination_member_code
+            : $this->resource->buyer_member_code;
 
         return [
             'type' => $buyerType,
@@ -648,9 +661,9 @@ class AdminOrderResource extends ApiResource
                 : $this->resource->buyer_member_name,
             'destination' => $this->locationWithParty(
                 $this->listShipmentLocation('destination'),
-                $buyerType,
-                (int) $this->resource->buyer_id,
-                $buyerType === 'customer' ? null : $this->resource->buyer_member_code,
+                $destinationType,
+                (int) ($this->resource->shipment_destination_party_id ?? $this->resource->buyer_id),
+                $destinationType === 'customer' ? null : $destinationMemberCode,
             ),
         ];
     }

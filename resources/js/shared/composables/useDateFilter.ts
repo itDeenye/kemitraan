@@ -1,19 +1,60 @@
 import { ref } from "vue";
 
-export function useDateFilter() {
+export const PROJECT_START_YEAR = 2026;
+
+/**
+ * Mendapatkan daftar tahun proyek dari tahun berjalan hingga PROJECT_START_YEAR (2026).
+ * Diurutkan secara descending (tahun terbaru di paling atas).
+ * Contoh:
+ * - Tahun 2026 -> [2026]
+ * - Tahun 2027 -> [2027, 2026]
+ */
+export function getProjectYears(startYear: number = PROJECT_START_YEAR): number[] {
+    const currentYear = new Date().getFullYear();
+    const maxYear = Math.max(currentYear, startYear);
+    const count = maxYear - startYear + 1;
+
+    return Array.from({ length: count }, (_, i) => maxYear - i);
+}
+
+/**
+ * Composable terpisah jika hanya membutuhkan daftar tahun proyek
+ */
+export function useProjectYears(startYear: number = PROJECT_START_YEAR) {
+    const currentYear = new Date().getFullYear();
+    const years = getProjectYears(startYear);
+
+    return {
+        startYear,
+        currentYear,
+        years,
+    };
+}
+
+export interface UseDateFilterOptions {
+    startYear?: number;
+    initialYear?: number;
+    initialMonth?: number;
+}
+
+export function useDateFilter(options: UseDateFilterOptions = {}) {
+    const startYear = options.startYear ?? PROJECT_START_YEAR;
     const currentYear = new Date().getFullYear();
     const currentMonth = new Date().getMonth() + 1;
 
-    const selectedYear = ref(currentYear);
-    const selectedMonth = ref(currentMonth);
+    const defaultYear = options.initialYear ?? Math.max(currentYear, startYear);
+    const defaultMonth = options.initialMonth ?? currentMonth;
 
-    const selectedYearFrom = ref(currentYear);
+    const selectedYear = ref(defaultYear);
+    const selectedMonth = ref(defaultMonth);
+
+    const selectedYearFrom = ref(defaultYear);
     const selectedMonthFrom = ref(1);
 
-    const selectedYearTo = ref(currentYear);
-    const selectedMonthTo = ref(currentMonth);
+    const selectedYearTo = ref(defaultYear);
+    const selectedMonthTo = ref(defaultMonth);
 
-    const years = Array.from({ length: 5 }, (_, i) => currentYear - i);
+    const years = getProjectYears(startYear);
     const months = [
         { value: 1, label: "Januari" },
         { value: 2, label: "Februari" },
@@ -34,6 +75,7 @@ export function useDateFilter() {
     };
 
     return {
+        startYear,
         currentYear,
         currentMonth,
         selectedYear,

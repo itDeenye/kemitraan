@@ -45,6 +45,7 @@ use App\Http\Controllers\Api\V1\Admin\System\ProfileController as AdminProfileCo
 use App\Http\Controllers\Api\V1\Admin\System\RoleController as AdminRoleController;
 use App\Http\Controllers\Api\V1\Admin\Transaction\OrderController as AdminOrderController;
 use App\Http\Controllers\Api\V1\Admin\Transaction\PaymentController as AdminPaymentController;
+use App\Http\Controllers\Api\V1\Admin\Transaction\PaymentHistoryController;
 use App\Http\Controllers\Api\V1\Admin\Transaction\ReturnController as AdminReturnController;
 use App\Http\Controllers\Api\V1\Callback\StcShippingController;
 use App\Http\Controllers\Api\V1\Callback\SupplyChainSaleApprovalController;
@@ -250,6 +251,8 @@ Route::prefix('v1')->middleware('throttle:dny-api')->group(function () use ($med
                 'transactions/orders/{trx}/stock-screening/reject',
                 [AdminOrderController::class, 'rejectStockScreening'],
             );
+            Route::get('transactions/payment-history', [PaymentHistoryController::class, 'index']);
+            Route::get('transactions/payment-history/{payment}', [PaymentHistoryController::class, 'show']);
             Route::get('transactions/payments', [AdminPaymentController::class, 'index']);
             Route::get('transactions/payments/{payment}', [AdminPaymentController::class, 'show']);
             Route::post('transactions/payments/{payment}/approve', [AdminPaymentController::class, 'approve']);

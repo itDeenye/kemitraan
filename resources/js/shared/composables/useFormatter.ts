@@ -87,13 +87,11 @@ export function useFormatter() {
         return months[monthNumber - 1] || "Bulan Tidak Diketahui";
     }
 
-    function generateYears(count: number = 5): number[] {
+    function generateYears(startYear: number = 2026): number[] {
         const currentYear = new Date().getFullYear();
-        const years = [];
-        for (let i = 0; i < count; i++) {
-            years.push(currentYear - i);
-        }
-        return years;
+        const maxYear = Math.max(currentYear, startYear);
+        const count = maxYear - startYear + 1;
+        return Array.from({ length: count }, (_, i) => maxYear - i);
     }
 
     function formatLocation(location: any): string {

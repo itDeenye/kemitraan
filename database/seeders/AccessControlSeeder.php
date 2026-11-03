@@ -86,6 +86,9 @@ class AccessControlSeeder extends Seeder
         $reportMenuId = SiteAdministratorMenu::query()->where('administrator_menu_link', '/stc/shipping-cost-report')->value('administrator_menu_id')
             ?? max(165, ((int) SiteAdministratorMenu::query()->max('administrator_menu_id')) + 1);
         $menus[] = [(int) $reportMenuId, 153, 'Laporan Biaya Pengiriman', 'Biaya pengiriman yang tidak ditagihkan kepada pembeli.', '/stc/shipping-cost-report', 'mdi-truck-check-outline', 3];
+        $historyMenuId = SiteAdministratorMenu::query()->where('administrator_menu_link', '/transactions/payment-verification-history')->value('administrator_menu_id')
+            ?? max(166, (int) $reportMenuId + 1, ((int) SiteAdministratorMenu::query()->max('administrator_menu_id')) + 1);
+        $menus[] = [(int) $historyMenuId, 7, 'Riwayat Verifikasi Pembayaran', 'Riwayat pembayaran yang telah disetujui atau ditolak, hanya untuk dilihat.', '/transactions/payment-verification-history', 'mdi-cash-clock', 4];
         $menuIds = array_column($menus, 0);
         $parentIds = array_values(array_unique(array_filter(array_column($menus, 1))));
 

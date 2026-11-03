@@ -9,9 +9,18 @@ export interface RewardMember {
     };
 }
 
+export interface RewardBank {
+    id: number;
+    code: string;
+    name: string;
+    account_name: string;
+    account_number: string;
+}
+
 export interface MonthlyReward {
     id: number;
     member: RewardMember;
+    bank?: RewardBank | null;
     upline_id: number;
     year: number;
     month: number;

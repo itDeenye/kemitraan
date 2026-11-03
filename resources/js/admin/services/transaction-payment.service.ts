@@ -6,6 +6,11 @@ import type {
 } from "@/admin/types/transaction-payment";
 
 class TransactionPaymentService {
+    async getHistoryDetail(id: number | string): Promise<TransactionPayment> {
+        const { data } = await api.get(`/admin/transactions/payment-history/${id}`);
+        return data.data;
+    }
+
     async getDetail(id: number | string): Promise<TransactionPayment> {
         const { data } = await api.get(`/admin/transactions/payments/${id}`);
         return data.data;

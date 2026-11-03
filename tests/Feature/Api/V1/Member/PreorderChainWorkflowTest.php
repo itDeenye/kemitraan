@@ -632,6 +632,11 @@ class PreorderChainWorkflowTest extends TestCase
             ]],
         ])->assertOk()
             ->assertJsonPath('data.status', 'shipped')
+            ->assertJsonPath('data.buyer.destination.type', 'agent')
+            ->assertJsonPath('data.buyer.destination.id', $agent->getKey())
+            ->assertJsonPath('data.buyer.destination.code', $agent->member_code)
+            ->assertJsonPath('data.buyer.destination.name', $agent->member_name)
+            ->assertJsonPath('data.buyer.destination.address', "Jalan {$agent->member_name}")
             ->assertJsonPath('data.shipping.method', 'courier_express');
 
         $this->postJson('/api/v1/callbacks/stc/shipping', [

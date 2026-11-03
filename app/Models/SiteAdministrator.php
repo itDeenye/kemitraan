@@ -59,6 +59,18 @@ class SiteAdministrator extends Authenticatable implements JWTSubject
         );
     }
 
+    public function canAccessMenu(string $link): bool
+    {
+        $group = $this->group;
+        if (! $group?->administrator_group_is_active) {
+            return false;
+        }
+
+        return $group->administrator_group_type === 'superuser'
+            || $group->menus()->where('administrator_menu_link', $link)
+                ->where('administrator_menu_is_active', 1)->exists();
+    }
+
     protected function casts(): array
     {
         return [

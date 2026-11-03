@@ -30,21 +30,6 @@
                 </div>
             </template>
 
-            <template #item.order_type.code="{ item }">
-                <v-chip
-                    :color="
-                        item.order_type?.code === 'preorder'
-                            ? 'warning'
-                            : 'info'
-                    "
-                    size="small"
-                    variant="tonal"
-                    class="font-weight-medium"
-                >
-                    {{ item.order_type?.label || "Reguler" }}
-                </v-chip>
-            </template>
-
             <template #item.buyer.name="{ item }">
                 <div class="d-flex flex-column py-2">
                     <div class="text-body-2 font-weight-bold">
@@ -59,9 +44,19 @@
             <template #item.shipping_method="{ item }">
                 <BaseBadge
                     type="shipping_method"
-                    :value="item.display_shipping_method || item.shipping_method"
+                    :value="
+                        item.display_shipping_method || item.shipping_method
+                    "
                 >
-                    <template v-if="item.is_preorder && item.preorder_fulfillment_mode === 'upline_transit' && (item.display_shipping_method || item.shipping_method) === 'pickup'">
+                    <template
+                        v-if="
+                            item.is_preorder &&
+                            item.preorder_fulfillment_mode ===
+                                'upline_transit' &&
+                            (item.display_shipping_method ||
+                                item.shipping_method) === 'pickup'
+                        "
+                    >
                         Ambil di Upline
                     </template>
                 </BaseBadge>
@@ -237,20 +232,6 @@ const headers = [
         filter: true,
     },
     {
-        title: "Tipe Pesanan",
-        key: "order_type.code",
-        filterKey: "is_preorder",
-        align: "center",
-        type: "select",
-        sortable: false,
-        filter: true,
-        options: [
-            { label: "Reguler", value: 0 },
-            { label: "Pre-Order", value: 1 },
-        ],
-        placeholder: "Pilih Tipe",
-    },
-    {
         title: "Mitra",
         key: "buyer.name",
         type: "text",
@@ -279,9 +260,15 @@ const headers = [
         sortable: false,
         filter: true,
         options: getBadgeOptions("shipping_method", [
-            "courier_manual", "courier_express", "courier_instant", "pickup",
-        ]).map(option => option.value === "pickup"
-            ? { ...option, label: "Ambil Sendiri / Ambil di Upline" } : option),
+            "courier_manual",
+            "courier_express",
+            "courier_instant",
+            "pickup",
+        ]).map((option) =>
+            option.value === "pickup"
+                ? { ...option, label: "Ambil Sendiri / Ambil di Upline" }
+                : option,
+        ),
         placeholder: "Pilih Metode",
     },
     {
@@ -292,7 +279,12 @@ const headers = [
         sortable: false,
         filter: true,
         options: getBadgeOptions("transaction_status", [
-            "processing", "shipped", "reship_required", "ready_to_pickup", "received", "completed",
+            "processing",
+            "shipped",
+            "reship_required",
+            "ready_to_pickup",
+            "received",
+            "completed",
         ]),
         placeholder: "Pilih Status",
     },

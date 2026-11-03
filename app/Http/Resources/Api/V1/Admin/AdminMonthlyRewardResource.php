@@ -13,6 +13,8 @@ class AdminMonthlyRewardResource extends ApiResource
     {
         $reward = $this->resource instanceof RewardPointMonthly ? $this->resource : null;
         $level = $reward?->memberLevel;
+        $bankAccount = $reward?->member?->defaultBankAccount;
+        $bankId = $bankAccount?->member_bank_account_bank_id ?? $this->resource->bank_id ?? null;
 
         return [
             'id' => (int) ($reward?->reward_point_monthly_id ?? $this->resource->id),
@@ -25,6 +27,13 @@ class AdminMonthlyRewardResource extends ApiResource
                     'code' => $level?->member_level_code ?? $this->resource->member_level_code,
                     'name' => $level?->member_level_name ?? $this->resource->member_level_name,
                 ],
+            ],
+            'bank' => [
+                'id' => (int) ($bankId ?? 0),
+                'code' => $bankAccount?->bank?->bank_code ?? $this->resource->bank_code ?? '-',
+                'name' => $bankAccount?->bank?->bank_name ?? $this->resource->bank_name ?? '-',
+                'account_name' => $bankAccount?->member_bank_account_name ?? $this->resource->bank_account_name ?? '-',
+                'account_number' => $bankAccount?->member_bank_account_number ?? $this->resource->bank_account_number ?? '-',
             ],
             'upline_id' => (int) ($reward?->reward_point_monthly_upline_id ?? $this->resource->upline_id),
             'year' => (int) ($reward?->reward_point_monthly_year ?? $this->resource->year),

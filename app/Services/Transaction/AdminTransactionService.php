@@ -92,10 +92,20 @@ class AdminTransactionService
             ->selectRaw('current_pickup_status.shipping_pickup_status_value AS pickup_status');
 
         $preorderFulfillmentMode = "COALESCE(preorder_root.trx_preorder_fulfillment_mode, preorder_parent.trx_preorder_fulfillment_mode, {$trxTable}.trx_preorder_fulfillment_mode, 'direct')";
-        $displayShippingMethod = "CASE WHEN {$trxTable}.trx_is_preorder = 1
+        $isUplinePickup = "({$trxTable}.trx_is_preorder = 1
             AND {$preorderFulfillmentMode} = 'upline_transit'
-            AND COALESCE(preorder_root.trx_shipping_method, preorder_parent.trx_shipping_method, {$trxTable}.trx_shipping_method) = 'pickup'
-            THEN 'pickup' ELSE {$trxTable}.trx_shipping_method END";
+            AND COALESCE(preorder_root.trx_shipping_method, preorder_parent.trx_shipping_method, {$trxTable}.trx_shipping_method) = 'pickup')";
+        $displayShippingMethod = "CASE WHEN {$isUplinePickup} THEN 'pickup' ELSE {$trxTable}.trx_shipping_method END";
+        $destinationType = "CASE WHEN {$isUplinePickup}
+            THEN COALESCE(preorder_root.trx_seller_type, preorder_parent.trx_seller_type, {$trxTable}.trx_seller_type)
+            WHEN {$trxTable}.trx_is_preorder = 1
+            THEN COALESCE(preorder_root.trx_buyer_type, preorder_parent.trx_buyer_type, {$trxTable}.trx_buyer_type)
+            ELSE {$trxTable}.trx_buyer_type END";
+        $destinationId = "CASE WHEN {$isUplinePickup}
+            THEN COALESCE(preorder_root.trx_seller_id, preorder_parent.trx_seller_id, {$trxTable}.trx_seller_id)
+            WHEN {$trxTable}.trx_is_preorder = 1
+            THEN COALESCE(preorder_root.trx_buyer_id, preorder_parent.trx_buyer_id, {$trxTable}.trx_buyer_id)
+            ELSE {$trxTable}.trx_buyer_id END";
 
         $query = DataTable::select([
             "{$trxTable}.trx_id as id",
@@ -121,6 +131,10 @@ class AdminTransactionService
             'buyer_member.member_code as buyer_member_code',
             'buyer_member.member_name as buyer_member_name',
             "{$customerTable}.customer_name as buyer_customer_name",
+            DB::raw($destinationType.' as shipment_destination_party_type'),
+            DB::raw($destinationId.' as shipment_destination_party_id'),
+            DB::raw("(SELECT destination_member.member_code FROM {$memberTable} as destination_member
+                WHERE destination_member.member_id = ({$destinationId})) as shipment_destination_member_code"),
             "{$trxTable}.trx_total_price as product_total",
             DB::raw("COALESCE({$trxTable}.trx_total_monthly_points, (SELECT SUM(trx_detail_qty * trx_detail_product_monthly_points) FROM {$detailTable} WHERE trx_detail_trx_id = {$trxTable}.trx_id), 0) as total_monthly_points"),
             DB::raw("COALESCE({$trxTable}.trx_total_annual_points, (SELECT SUM(trx_detail_qty * trx_detail_product_annual_points) FROM {$detailTable} WHERE trx_detail_trx_id = {$trxTable}.trx_id), 0) as total_annual_points"),
@@ -351,7 +365,7 @@ class AdminTransactionService
     }
 
     /** @param array<string, mixed> $params */
-    public function payments(array $params): array
+    public function payments(array $params, bool $historyOnly = false): array
     {
         $detailTable = (new TrxDetail)->getTable();
         $paymentTable = (new TrxPaymentTransfer)->getTable();
@@ -446,10 +460,29 @@ class AdminTransactionService
             ->defaultSort('-id')
             ->allowUnpaginated();
 
-        $this->applyDateRange($query, "{$paymentTable}.payment_transfer_datetime", $params);
+        if ($historyOnly) {
+            $query->whereIn("{$paymentTable}.payment_transfer_approval_status", ['approved', 'rejected'])
+                ->where("{$trxTable}.trx_seller_type", 'warehouse')
+                ->where("{$trxTable}.trx_buyer_type", 'distributor');
+        }
+
+        $this->applyDateRange($query, $historyOnly
+            ? "{$paymentTable}.payment_transfer_approval_datetime"
+            : "{$paymentTable}.payment_transfer_datetime", $params);
         $this->applyBuyerFilters($query, $params, $memberTable);
 
         return $query->get($params);
+    }
+
+    public function paymentHistoryDetail(TrxPaymentTransfer $payment): TrxPaymentTransfer
+    {
+        $verifiedPayment = TrxPaymentTransfer::query()->whereKey($payment->getKey())
+            ->whereIn('payment_transfer_approval_status', ['approved', 'rejected'])
+            ->whereHas('trx', fn ($query) => $query->where('trx_seller_type', 'warehouse')
+                ->where('trx_buyer_type', 'distributor'))
+            ->firstOrFail();
+
+        return $this->payment($verifiedPayment);
     }
 
     public function payment(TrxPaymentTransfer $payment): TrxPaymentTransfer

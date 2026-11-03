@@ -1,5 +1,5 @@
 <template>
-    <v-dialog v-model="isOpen" max-width="400" persistent>
+    <v-dialog v-model="isOpen" :max-width="maxWidth" persistent>
         <v-card class="rounded-xl">
             <v-card-title
                 class="text-h6 font-weight-bold pt-5 px-6 d-flex align-center gap-2"
@@ -39,6 +39,7 @@ const confirmText = ref("Ya");
 const confirmColor = ref("primary");
 const icon = ref("mdi-help-circle-outline");
 const iconColor = ref("primary");
+const maxWidth = ref<number | string>(400);
 
 let resolvePromise: ((value: boolean) => void) | null = null;
 
@@ -49,6 +50,7 @@ const open = (options: {
     confirmColor?: string;
     icon?: string;
     iconColor?: string;
+    maxWidth?: number | string;
 }) => {
     title.value = options.title || "Konfirmasi";
     message.value = options.message;
@@ -56,6 +58,7 @@ const open = (options: {
     confirmColor.value = options.confirmColor || "primary";
     icon.value = options.icon || "mdi-help-circle-outline";
     iconColor.value = options.iconColor || options.confirmColor || "primary";
+    maxWidth.value = options.maxWidth || 400;
     isOpen.value = true;
 
     return new Promise<boolean>((resolve) => {
