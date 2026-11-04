@@ -45,11 +45,14 @@ class AdminTransactionInventoryWorkflowTest extends TestCase
             'trx_status' => 'processing',
             'trx_supply_chain_code' => 'C0126090000004',
         ]);
+        Product::query()->findOrFail(1)->update(['product_weight' => 900]);
+        DB::table('trx_detail')->where('trx_detail_id', 1)->update(['trx_detail_product_weight' => 450]);
         DB::table('trx_detail')->insert([
             'trx_detail_trx_id' => 1,
             'trx_detail_product_id' => 1,
             'trx_detail_product_code' => 'SRM-001',
             'trx_detail_product_name' => 'Serum DNY',
+            'trx_detail_product_weight' => 450,
             'trx_detail_qty' => 3,
         ]);
 
@@ -73,11 +76,15 @@ class AdminTransactionInventoryWorkflowTest extends TestCase
                 'shipping_'.$method.'_ref_id' => 1,
                 'shipping_'.$method.'_origin_address' => 'Jakarta',
                 'shipping_'.$method.'_destination_address' => 'Surabaya',
+                'shipping_'.$method.'_package_weight' => 2400,
                 ...($method === 'courier_express' ? [
                     'shipping_courier_express_origin_subdistrict_id' => 0,
                     'shipping_courier_express_destination_subdistrict_id' => 0,
                 ] : []),
             ]);
+        } else {
+            DB::table('shipping_courier_manual')->where('shipping_courier_manual_ref_id', 1)
+                ->update(['shipping_courier_manual_package_weight' => 2400]);
         }
 
         $response = $this->getJson('/api/v1/admin/inventory/shipments/1')
@@ -92,13 +99,21 @@ class AdminTransactionInventoryWorkflowTest extends TestCase
                 'batch_number' => '',
                 'expiry_date' => '',
             ]])
+            ->assertJsonPath('data.details.0.product.weight', 450)
             ->assertJsonPath('data.details.0.product.batches', [])
             ->assertJsonPath('data.details.1.product.batches', []);
 
         if ($method === 'pickup') {
             $response->assertJsonPath('data.shipping.verification_status', 'pending')
-                ->assertJsonPath('data.shipping.schedule_at', null);
+                ->assertJsonPath('data.shipping.schedule_at', null)
+                ->assertJsonMissingPath('data.shipping.weight');
+        } else {
+            $response->assertJsonPath('data.shipping.weight', 2400);
         }
+
+        $this->getJson('/api/v1/admin/transactions/orders/1/document')
+            ->assertOk()
+            ->assertJsonPath('data.details.0.product.weight', 450);
 
         $this->assertDatabaseCount('shipping_detail', 0);
         $this->assertDatabaseHas('shipping_'.$method, [
@@ -1368,6 +1383,7 @@ class AdminTransactionInventoryWorkflowTest extends TestCase
         $this->getJson('/api/v1/admin/inventory/shipments/1')
             ->assertOk()
             ->assertJsonPath('data.status', 'reship_required')
+            ->assertJsonPath('data.shipping.weight', 200)
             ->assertJsonPath('data.actions.can_reship', true)
             ->assertJsonPath('data.actions.requires_courier_selection', true);
         $this->getJson('/api/v1/admin/inventory/shipments?filter[status]=reship_required')
@@ -1409,6 +1425,7 @@ class AdminTransactionInventoryWorkflowTest extends TestCase
             ->assertJsonPath('data.id', 1)
             ->assertJsonPath('data.status', 'shipped')
             ->assertJsonPath('data.shipping.courier', 'jnt')
+            ->assertJsonPath('data.shipping.weight', 200)
             ->assertJsonPath('data.shipping.pickup_number', 'PU-NEW-001');
 
         $this->assertDatabaseHas('shipping_courier_express', [

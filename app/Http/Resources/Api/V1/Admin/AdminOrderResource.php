@@ -171,6 +171,7 @@ class AdminOrderResource extends ApiResource
                     'id' => (int) $detail->trx_detail_product_id,
                     'code' => $detail->trx_detail_product_code,
                     'name' => $detail->trx_detail_product_name,
+                    'weight' => (int) $detail->trx_detail_product_weight,
                     'monthly_points' => (int) $detail->trx_detail_product_monthly_points,
                     'annual_points' => (int) $detail->trx_detail_product_annual_points,
                     'bpom_number' => $detail->trx_detail_product_bpom_number
@@ -276,6 +277,7 @@ class AdminOrderResource extends ApiResource
         return match ($trx->trx_shipping_method) {
             'courier_express' => $trx->shippingExpress ? [
                 'method' => 'courier_express',
+                'weight' => (int) $trx->shippingExpress->shipping_courier_express_package_weight,
                 'courier' => $trx->shippingExpress->shipping_courier_express_expedition_name,
                 'service' => $trx->shippingExpress->shipping_courier_express_expedition_service,
                 'order_id' => $trx->shippingExpress->shipping_courier_express_order_id ?: $trackingOrderId,
@@ -292,6 +294,7 @@ class AdminOrderResource extends ApiResource
             ] : null,
             'courier_instant' => $trx->shippingInstant ? [
                 'method' => 'courier_instant',
+                'weight' => (int) $trx->shippingInstant->shipping_courier_instant_package_weight,
                 'courier' => $trx->shippingInstant->shipping_courier_instant_expedition_name,
                 'service' => $trx->shippingInstant->shipping_courier_instant_expedition_service,
                 'vehicle' => $trx->shippingInstant->shipping_courier_instant_expedition_vehicle,
@@ -310,6 +313,7 @@ class AdminOrderResource extends ApiResource
             ] : null,
             'courier_manual' => $trx->shippingManual ? [
                 'method' => 'courier_manual',
+                'weight' => (int) $trx->shippingManual->shipping_courier_manual_package_weight,
                 'courier' => $trx->shippingManual->shipping_courier_manual_name,
                 'service' => $trx->shippingManual->shipping_courier_manual_service,
                 'delivery_note_number' => $deliveryNoteNumber,

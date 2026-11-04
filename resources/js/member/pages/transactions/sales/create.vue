@@ -352,12 +352,13 @@
                         >
                             <span style="font-size: 12px; color: var(--muted)"
                                 >{{ item.quantity }} × Rp{{
-                                    formatPrice(item.product.price)
+                                    formatPrice(item.product.customer_price)
                                 }}</span
                             ><strong style="font-size: 13px"
                                 >Rp{{
                                     formatPrice(
-                                        item.quantity * item.product.price,
+                                        item.quantity *
+                                            item.product.customer_price,
                                     )
                                 }}</strong
                             >
@@ -1346,7 +1347,7 @@ const totalQuantity = computed(() => {
 
 const subtotal = computed(() => {
     return cartProducts.value.reduce(
-        (total, item) => total + item.quantity * item.product.price,
+        (total, item) => total + item.quantity * item.product.customer_price,
         0,
     );
 });

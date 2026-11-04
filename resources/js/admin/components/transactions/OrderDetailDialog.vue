@@ -788,17 +788,37 @@ const printDocument = async (
             snackbar.showMessage("Data dokumen tidak tersedia", "error");
             return;
         } else if (type === "resi") {
-            const totalWeight =
+            const rawWeight =
+                data.shipping?.weight ??
                 data.details?.reduce(
                     (acc: number, item: any) =>
-                        acc + item.quantity * (item.product?.weight || 0),
+                        acc +
+                        (Number(item.quantity) || 0) *
+                            (Number(item.product?.weight) || 0),
                     0,
-                ) || 1000;
-            const weightInKg = Math.max(1, Math.ceil(totalWeight / 1000));
+                ) ??
+                0;
+            const weightInKg = rawWeight > 0 ? rawWeight / 1000 : 0;
+            const formattedWeight =
+                weightInKg > 0
+                    ? weightInKg % 1 === 0
+                        ? weightInKg.toString()
+                        : weightInKg.toFixed(2).replace(/\.?0+$/, "")
+                    : "0";
+
+            const courierService =
+                data.shipping?.service ||
+                data.tracking?.service ||
+                "REGULER";
+
             const shippingCost =
                 data.shipping?.shipping_cost ||
                 data.totals?.shipping_cost_total ||
                 0;
+            const trackingNumber =
+                data.tracking?.tracking_number ||
+                data.shipping?.tracking_number ||
+                data.code;
 
             printContent = `
                 <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 10px; font-size: 11px; color: #000; border: 1px solid #ddd;">
@@ -834,8 +854,8 @@ const printDocument = async (
                         <div style="width: 70%; border-right: 1px solid black;">
                             <table style="width: 100%; font-size: 12px; border-collapse: collapse;">
                                 <tr>
-                                    <td style="padding: 8px; border-bottom: 1px solid black; border-right: 1px solid black; text-align: center; font-weight: bold;">${weightInKg} KG</td>
-                                    <td style="padding: 8px; border-bottom: 1px solid black; border-right: 1px solid black; text-align: center; font-weight: bold;">EZ</td>
+                                    <td style="padding: 8px; border-bottom: 1px solid black; border-right: 1px solid black; text-align: center; font-weight: bold;">${formattedWeight} KG</td>
+                                    <td style="padding: 8px; border-bottom: 1px solid black; border-right: 1px solid black; text-align: center; font-weight: bold;">${escapeHtml(courierService.toUpperCase())}</td>
                                     <td style="padding: 8px; border-bottom: 1px solid black; border-right: 1px solid black; text-align: center; font-weight: bold;">TUNAI</td>
                                     <td style="padding: 8px; border-bottom: 1px solid black; text-align: center; font-weight: bold;">Non COD</td>
                                 </tr>
@@ -854,7 +874,7 @@ const printDocument = async (
                             </table>
                         </div>
                         <div style="width: 30%; display: flex; align-items: center; justify-content: center; padding: 10px;">
-                            <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${escapeHtml(data.tracking?.tracking_number)}" alt="QR Code" style="width: 100px; height: 100px;"/>
+                            <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${escapeHtml(trackingNumber)}" alt="QR Code" style="width: 100px; height: 100px;"/>
                         </div>
                     </div>
 
