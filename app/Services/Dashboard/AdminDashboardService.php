@@ -274,7 +274,7 @@ class AdminDashboardService
             'distributors' => 'DST',
             'agents' => 'AGT',
         ])->mapWithKeys(fn (string $levelCode, string $key): array => [
-            $key => $this->recruitmentRanking(
+            $key => $this->downlineRanking(
                 $memberTable,
                 $levelTable,
                 $levelCode,
@@ -416,33 +416,46 @@ class AdminDashboardService
             ]);
     }
 
-    private function recruitmentRanking(
+    private function downlineRanking(
         string $memberTable,
         string $levelTable,
         string $levelCode,
         CarbonImmutable $dateFrom,
         CarbonImmutable $dateTo,
     ): Collection {
-        return DB::table("{$memberTable} as sponsor")
-            ->join("{$levelTable} as sponsor_level", 'sponsor_level.member_level_id', '=', 'sponsor.member_member_level_id')
-            ->join("{$memberTable} as recruit", function ($join) use ($dateFrom, $dateTo): void {
-                $join->on('recruit.member_parent_member_id', '=', 'sponsor.member_id')
-                    ->where('recruit.member_status', '!=', 3)
-                    ->whereBetween('recruit.member_join_datetime', [$dateFrom, $dateTo]);
-            })
-            ->where('sponsor_level.member_level_code', $levelCode)
-            ->where('sponsor.member_status', '!=', 3)
-            ->groupBy(['sponsor.member_id', 'sponsor.member_code', 'sponsor.member_name'])
-            ->orderByDesc('total_recruits')
-            ->orderBy('sponsor.member_name')
-            ->limit(10)
-            ->get([
-                'sponsor.member_id as id',
-                'sponsor.member_code as code',
-                'sponsor.member_name as name',
-                DB::raw('COUNT(recruit.member_id) as total_recruits'),
-            ])
-            ->values()
+        $rankings = DB::select(<<<SQL
+            WITH RECURSIVE downline_network (ancestor_id, descendant_id) AS (
+                SELECT member_parent_member_id, member_id
+                FROM {$memberTable}
+                WHERE member_parent_member_id > 0
+                  AND member_parent_member_id <> member_id
+                  AND member_status <> 3
+                UNION
+                SELECT network.ancestor_id, child.member_id
+                FROM {$memberTable} AS child
+                JOIN downline_network AS network
+                  ON child.member_parent_member_id = network.descendant_id
+                WHERE child.member_status <> 3
+                  AND child.member_id <> network.ancestor_id
+            )
+            SELECT sponsor.member_id AS id,
+                   sponsor.member_code AS code,
+                   sponsor.member_name AS name,
+                   COUNT(DISTINCT network.descendant_id) AS total_recruits
+            FROM downline_network AS network
+            JOIN {$memberTable} AS sponsor ON sponsor.member_id = network.ancestor_id
+            JOIN {$levelTable} AS sponsor_level
+              ON sponsor_level.member_level_id = sponsor.member_member_level_id
+            JOIN {$memberTable} AS downline ON downline.member_id = network.descendant_id
+            WHERE sponsor_level.member_level_code = ?
+              AND sponsor.member_status <> 3
+              AND downline.member_join_datetime BETWEEN ? AND ?
+            GROUP BY sponsor.member_id, sponsor.member_code, sponsor.member_name
+            ORDER BY total_recruits DESC, sponsor.member_name, sponsor.member_id
+            LIMIT 10
+            SQL, [$levelCode, $dateFrom, $dateTo]);
+
+        return collect($rankings)
             ->map(fn (object $row, int $index): array => [
                 'rank' => $index + 1,
                 'id' => (int) $row->id,

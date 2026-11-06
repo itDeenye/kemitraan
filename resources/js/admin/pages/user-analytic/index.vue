@@ -61,7 +61,7 @@
             </v-row>
 
             <div class="text-h6 font-weight-bold mb-3">
-                Peringkat Bulanan Penjualan & Recruitment
+                Peringkat Penjualan & Downline Sesuai Periode
             </div>
             <AnalyticMemberRankings
                 class="mb-4"

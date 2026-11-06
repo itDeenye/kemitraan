@@ -59,7 +59,7 @@ class AdminFinalMenuApiTest extends TestCase
             ->assertJsonPath('data.member_sales_rankings.distributors.0.code', 'DST-001')
             ->assertJsonPath('data.member_sales_rankings.agents.0.code', 'AGT-001')
             ->assertJsonPath('data.member_sales_rankings.resellers.0.code', 'RSL-001')
-            ->assertJsonPath('data.recruitment_rankings.distributors.0.total_recruits', 1)
+            ->assertJsonPath('data.recruitment_rankings.distributors.0.total_recruits', 2)
             ->assertJsonPath('data.recruitment_rankings.agents.0.total_recruits', 1);
 
         $this->getJson('/api/v1/admin/partnership/genealogy?member_id=1&depth=2')
@@ -139,6 +139,74 @@ class AdminFinalMenuApiTest extends TestCase
                     ],
                 ],
             ]);
+    }
+
+    public function test_downline_rankings_count_all_network_levels_but_filter_each_members_join_date(): void
+    {
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $this->createData();
+        Member::query()->findOrFail(2)->update(['member_join_datetime' => '2026-06-15 08:00:00']);
+
+        foreach ([
+            [4, 2, 1, '2026-07-02 08:00:00', 1],
+            [5, 3, 4, '2026-07-31 23:59:59', 2],
+            [6, 3, 4, '2026-08-01 00:00:00', 1],
+            [7, 3, 1, '2026-07-01 00:00:00', 1],
+            [8, 2, 1, '2026-07-10 08:00:00', 3],
+            [9, 3, 8, '2026-07-11 08:00:00', 1],
+            [10, 1, 0, '2026-06-01 08:00:00', 1],
+            [11, 2, 10, '2026-07-05 08:00:00', 1],
+            [12, 3, 11, '2026-07-06 08:00:00', 1],
+            [13, 1, 0, '2026-07-01 00:00:00', 1],
+        ] as [$id, $levelId, $parentId, $joinedAt, $status]) {
+            Member::query()->create([
+                'member_id' => $id,
+                'member_code' => 'NETWORK-'.$id,
+                'member_member_level_id' => $levelId,
+                'member_parent_member_id' => $parentId,
+                'member_name' => 'Mitra '.$id,
+                'member_join_datetime' => $joinedAt,
+                'member_status' => $status,
+            ]);
+        }
+
+        foreach (['dashboard/analytics', 'user-analytics/statistics'] as $endpoint) {
+            $response = $this->getJson('/api/v1/admin/'.$endpoint.'?date_from=2026-07-01&date_to=2026-07-31')
+                ->assertOk()
+                ->assertJsonPath('data.recruitment_rankings.distributors.0.id', 1)
+                ->assertJsonPath('data.recruitment_rankings.distributors.0.total_recruits', 4)
+                ->assertJsonPath('data.recruitment_rankings.distributors.1.id', 10)
+                ->assertJsonPath('data.recruitment_rankings.distributors.1.total_recruits', 2)
+                ->assertJsonCount(2, 'data.recruitment_rankings.distributors');
+
+            $this->assertSame([2 => 1, 4 => 1, 11 => 1], collect($response->json('data.recruitment_rankings.agents'))
+                ->pluck('total_recruits', 'id')->sortKeys()->all());
+        }
+
+        $response = $this->getJson('/api/v1/admin/user-analytics/statistics?year=2026&month=8')
+            ->assertOk()
+            ->assertJsonPath('data.recruitment_rankings.distributors.0.id', 1)
+            ->assertJsonPath('data.recruitment_rankings.distributors.0.total_recruits', 1)
+            ->assertJsonCount(1, 'data.recruitment_rankings.distributors')
+            ->assertJsonPath('data.recruitment_rankings.agents.0.id', 4)
+            ->assertJsonPath('data.recruitment_rankings.agents.0.total_recruits', 1);
+
+        $this->getJson('/api/v1/admin/user-analytics/statistics?year=2026&month=9')
+            ->assertOk()
+            ->assertJsonPath('data.recruitment_rankings.distributors', [])
+            ->assertJsonPath('data.recruitment_rankings.agents', []);
+    }
+
+    public function test_downline_rankings_do_not_count_the_root_or_repeat_members_in_cyclic_network_data(): void
+    {
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $this->createData();
+        Member::query()->findOrFail(1)->update(['member_parent_member_id' => 2]);
+
+        $this->getJson('/api/v1/admin/user-analytics/statistics?date_from=2026-07-01&date_to=2026-07-31')
+            ->assertOk()
+            ->assertJsonPath('data.recruitment_rankings.distributors.0.total_recruits', 2)
+            ->assertJsonPath('data.recruitment_rankings.agents.0.total_recruits', 2);
     }
 
     private function createData(): void

@@ -85,8 +85,8 @@ const sections = computed<RankingSection[]>(() => [
     { key: "sales-distributor", title: "Penjualan Distributor Terbanyak", kind: "sales", icon: "mdi-store", color: "primary", items: props.sales.distributors },
     { key: "sales-agent", title: "Penjualan Agen Utama Terbanyak", kind: "sales", icon: "mdi-account-star", color: "info", items: props.sales.agents },
     { key: "sales-reseller", title: "Penjualan Reseller Terbanyak", kind: "sales", icon: "mdi-account-group", color: "warning", items: props.sales.resellers },
-    { key: "recruit-distributor", title: "Top Recruitment Distributor", kind: "recruitment", icon: "mdi-account-multiple-plus", color: "success", items: props.recruitment.distributors },
-    { key: "recruit-agent", title: "Top Recruitment Agen Utama", kind: "recruitment", icon: "mdi-account-plus", color: "secondary", items: props.recruitment.agents },
+    { key: "recruit-distributor", title: "Top Downline Distributor", kind: "recruitment", icon: "mdi-account-multiple-plus", color: "success", items: props.recruitment.distributors },
+    { key: "recruit-agent", title: "Top Downline Agen Utama", kind: "recruitment", icon: "mdi-account-plus", color: "secondary", items: props.recruitment.agents },
 ]);
 </script>
 
