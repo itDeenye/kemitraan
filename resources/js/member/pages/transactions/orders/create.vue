@@ -843,14 +843,16 @@
                         style="display: flex; flex-direction: column; gap: 8px"
                     >
                         <div
-                            v-for="rate in availableRates"
-                            :key="rate.service_type"
+                            v-for="(rate, index) in availableRates"
+                            :key="`${rate.courier_code}-${rate.service_type}-${index}`"
                             @click="selectRate(rate)"
                             class="rate-option card"
                             :class="{
                                 active:
+                                    selectedRate?.courier_code ===
+                                        rate.courier_code &&
                                     selectedRate?.service_type ===
-                                    rate.service_type,
+                                        rate.service_type,
                             }"
                         >
                             <div
@@ -865,8 +867,10 @@
                                     class="rate-radio"
                                     :class="{
                                         selected:
+                                            selectedRate?.courier_code ===
+                                                rate.courier_code &&
                                             selectedRate?.service_type ===
-                                            rate.service_type,
+                                                rate.service_type,
                                     }"
                                 ></div>
                                 <img
