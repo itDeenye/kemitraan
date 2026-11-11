@@ -14,6 +14,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class MemberLevelChangeTest extends TestCase
@@ -25,6 +26,56 @@ class MemberLevelChangeTest extends TestCase
         Carbon::setTestNow();
 
         parent::tearDown();
+    }
+
+    #[DataProvider('downgradeMemberQueries')]
+    public function test_downgrade_list_uses_the_members_name_and_code_instead_of_the_uplines(array $query): void
+    {
+        Carbon::setTestNow('2026-07-29 10:00:00');
+        [$distributorLevel, $agentLevel, $resellerLevel] = $this->levels();
+        $distributor = $this->member('DST-UPLINE', 'Distributor Upline', $distributorLevel);
+        $replacement = $this->member('AGT-UPLINE', 'Sponsor Baru', $agentLevel, $distributor);
+        $member = $this->member('AGT-EKO', 'Eko Syamsudin', $agentLevel, $distributor);
+        $other = $this->member('AGT-ANDI', 'Andi', $agentLevel, $distributor);
+        foreach ([$member, $other] as $applicant) {
+            MemberNetworkSwitch::query()->create([
+                'network_switch_upgrade_qualified_id' => 0,
+                'network_switch_member_id' => $applicant->getKey(),
+                'network_switch_from_parent_member_id' => $distributor->getKey(),
+                'network_switch_to_parent_member_id' => $replacement->getKey(),
+                'network_switch_from_level_id' => $agentLevel->getKey(),
+                'network_switch_to_level_id' => $resellerLevel->getKey(),
+                'network_switch_type' => 'downgrade',
+                'network_switch_status' => 'scheduled',
+                'network_switch_admin_id' => 0,
+                'network_switch_effective_date' => '2026-08-01',
+                'network_switch_created_datetime' => now(),
+            ]);
+        }
+        $this->actingAs($this->administrator(), 'admin_api');
+        $url = '/api/v1/admin/partnership/downgrades';
+
+        $this->getJson($url.'?'.http_build_query(['page' => 1, 'limit' => 10, ...$query]))
+            ->assertOk()
+            ->assertJsonCount(1, 'data.results')
+            ->assertJsonPath('data.results.0.member.id', $member->getKey())
+            ->assertJsonPath('data.pagination.total_data', 1);
+
+        $this->getJson($url.'?sort=member.name&limit=1')
+            ->assertOk()
+            ->assertJsonPath('data.results.0.member.id', $other->getKey());
+    }
+
+    public static function downgradeMemberQueries(): array
+    {
+        return [
+            'default search' => [['search' => 'eko']],
+            'nested member name' => [['search' => 'eko', 'field_search' => 'member.name']],
+            'member name alias' => [['search' => 'eko', 'field_search' => 'member_name']],
+            'nested member code' => [['search' => 'AGT-EKO', 'field_search' => 'member.code']],
+            'name filter' => [['filter' => ['member.name' => 'Eko Syamsudin']]],
+            'code filter' => [['filter' => ['member.code' => 'AGT-EKO']]],
+        ];
     }
 
     public function test_admin_approves_upgrade_for_next_month_and_schedules_network_transfer(): void

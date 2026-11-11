@@ -8,6 +8,7 @@ use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class AdminStcApiTest extends TestCase
@@ -155,6 +156,63 @@ class AdminStcApiTest extends TestCase
         ]);
     }
 
+    #[DataProvider('stcSearchFields')]
+    public function test_stc_search_is_forwarded_with_registered_provider_fields(string $endpoint, ?string $fields, string $expectedFields): void
+    {
+        Http::fake([
+            'stc.example.test/api/saldo/list-mutasi*' => Http::response([
+                'data' => ['results' => [], 'pagination' => $this->pagination()],
+            ]),
+        ]);
+        $params = ['search' => '  PAY_123456  ', 'page' => 2, 'limit' => 5];
+        if ($fields !== null) {
+            $params['field_search'] = $fields;
+        }
+
+        $this->getJson('/api/v1/admin/stc/'.$endpoint.'?'.http_build_query($params))
+            ->assertOk()
+            ->assertJsonPath('data.results', [])
+            ->assertJsonPath('data.pagination.total_data', 1);
+
+        Http::assertSent(fn (Request $request): bool => ($request['search'] ?? null) === 'PAY_123456'
+            && ($request['field_search'] ?? null) === $expectedFields
+            && $request['page'] === 2
+            && $request['limit'] === 5
+            && ($endpoint !== 'top-ups' || $request['filter'][0]['value'] === 'topup'));
+    }
+
+    public static function stcSearchFields(): array
+    {
+        $defaultFields = 'ewallet_log_id,ewallet_log_transaction_id,ewallet_log_category,ewallet_log_type,ewallet_log_value,ewallet_log_note';
+
+        return [
+            'mutations default' => ['mutations', null, $defaultFields],
+            'top-ups default' => ['top-ups', null, $defaultFields],
+            'note' => ['mutations', 'note', 'ewallet_log_note'],
+            'bank and payment reference share the note' => ['top-ups', 'bank_name,payment_reference', 'ewallet_log_note'],
+            'unknown fields are not forwarded' => ['mutations', 'amount,unknown_column', 'ewallet_log_value'],
+        ];
+    }
+
+    public function test_table_note_and_date_filters_are_translated_to_stc_v1_filters(): void
+    {
+        Http::fake(['stc.example.test/api/saldo/list-mutasi*' => Http::response([
+            'data' => ['results' => [], 'pagination' => $this->pagination()],
+        ])]);
+
+        $this->getJson('/api/v1/admin/stc/mutations?'.http_build_query([
+            'filter' => ['note' => ['like' => '%PAY_123%'], 'type' => 'out',
+                'datetime' => ['gte' => '2026-11-01', 'lt' => '2026-12-01']],
+        ]))->assertOk();
+
+        Http::assertSentCount(1);
+        $filters = Http::recorded()[0][0]['filter'];
+        $this->assertContainsEquals(['type' => 'string', 'field' => 'ewallet_log_note', 'comparison' => '<>', 'value' => 'PAY_123'], $filters);
+        $this->assertContainsEquals(['type' => 'date', 'field' => 'ewallet_log_datetime', 'comparison' => 'bet',
+            'value' => '2026-11-01 00:00:00::2026-11-30 23:59:59'], $filters);
+        $this->assertContainsEquals(['type' => 'string', 'field' => 'ewallet_log_type', 'comparison' => '=', 'value' => 'out'], $filters);
+    }
+
     public function test_stc_provider_failure_returns_process_error(): void
     {
         Http::fake([
@@ -165,6 +223,42 @@ class AdminStcApiTest extends TestCase
             ->assertStatus(502)
             ->assertJsonPath('error_code', 'process_error')
             ->assertJsonPath('message', 'Data layanan pengiriman belum dapat dimuat. Silakan coba kembali.');
+    }
+
+    #[DataProvider('invalidStcFilters')]
+    public function test_invalid_stc_filters_are_rejected_without_contacting_provider(array $filter): void
+    {
+        $this->getJson('/api/v1/admin/stc/mutations?'.http_build_query(['filter' => $filter]))->assertUnprocessable();
+        Http::assertNothingSent();
+    }
+
+    public static function invalidStcFilters(): array
+    {
+        return [
+            'invalid date' => [['datetime' => ['gte' => 'not-a-date']]],
+            'reversed range' => [['datetime' => ['gte' => '2026-12-01', 'lt' => '2026-11-01']]],
+            'unsupported note operator' => [['note' => ['raw' => 'PAY_123']]],
+            'multiple note operators' => [['note' => ['eq' => 'PAY_123', 'ne' => 'PAY_456']]],
+        ];
+    }
+
+    #[DataProvider('singleStcFilters')]
+    public function test_single_table_filters_use_the_equivalent_stc_v1_operator(array $filter, array $expected): void
+    {
+        Http::fake(['stc.example.test/api/saldo/list-mutasi*' => Http::response(['data' => ['results' => []]])]);
+        $this->getJson('/api/v1/admin/stc/mutations?'.http_build_query(['filter' => $filter]))->assertOk();
+        Http::assertSentCount(1);
+        $this->assertContainsEquals($expected, Http::recorded()[0][0]['filter']);
+    }
+
+    public static function singleStcFilters(): array
+    {
+        return [
+            'exact note' => [['note' => 'PAY_123'], ['type' => 'string', 'field' => 'ewallet_log_note', 'comparison' => '=', 'value' => 'PAY_123']],
+            'excluded note' => [['note' => ['ne' => 'PAY_123']], ['type' => 'string', 'field' => 'ewallet_log_note', 'comparison' => '!=', 'value' => 'PAY_123']],
+            'date lower bound' => [['datetime' => ['gte' => '2026-11-01']], ['type' => 'date', 'field' => 'ewallet_log_datetime', 'comparison' => '>=', 'value' => '2026-11-01']],
+            'date exclusive upper bound' => [['datetime' => ['lt' => '2026-12-01']], ['type' => 'date', 'field' => 'ewallet_log_datetime', 'comparison' => '<', 'value' => '2026-12-01']],
+        ];
     }
 
     /** @return array<string, int|bool|array<int, int>> */

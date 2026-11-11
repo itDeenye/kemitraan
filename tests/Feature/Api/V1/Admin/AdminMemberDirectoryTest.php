@@ -32,6 +32,51 @@ class AdminMemberDirectoryTest extends TestCase
 {
     use RefreshDatabase;
 
+    #[DataProvider('distributorSearchTerms')]
+    public function test_administrator_can_search_distributors_by_registered_fields(string $search, ?string $field): void
+    {
+        $this->actingAs($this->createAdministrator(), 'admin_api');
+        $distributor = $this->createMember('DST-MATCH', 'Eko Syamsudin', 'distributor', 1);
+        $distributor->update(['member_mobilephone' => '081790123456']);
+        $this->createMember('DST-OTHER', 'Andi', 'distributor', 1);
+        $this->createMember('DST-DELETED', 'Eko Deleted', 'distributor', 3);
+        $this->createMember('AGT-MATCH', 'Eko Agent', 'agent', 1);
+        $this->createMember('RSL-MATCH', 'Eko Reseller', 'reseller', 1);
+        DB::table('ref_province')->insert(['province_id' => 9999, 'province_name' => 'Jawa Timur']);
+        DB::table('ref_city')->insert([
+            'city_id' => 9999, 'city_province_id' => 9999, 'city_name' => 'Malang',
+            'city_type' => 'Kota', 'city_is_active' => 1,
+        ]);
+        $distributor->addresses()->update(['member_address_province_id' => 9999, 'member_address_city_id' => 9999]);
+        $params = ['page' => 1, 'limit' => 10, 'search' => $search];
+        if ($field !== null) {
+            $params['field_search'] = $field;
+        }
+
+        $this->getJson('/api/v1/admin/partnership/distributors?'.http_build_query($params))
+            ->assertOk()
+            ->assertJsonCount(1, 'data.results')
+            ->assertJsonPath('data.results.0.code', 'DST-MATCH')
+            ->assertJsonPath('data.pagination.total_data', 1);
+
+        $this->getJson('/api/v1/admin/partnership/distributors?search=not-found')
+            ->assertOk()
+            ->assertJsonCount(0, 'data.results')
+            ->assertJsonPath('data.pagination.total_data', 0);
+    }
+
+    public static function distributorSearchTerms(): array
+    {
+        return [
+            'default name search' => ['eko', null],
+            'name alias' => ['eko', 'name'],
+            'code alias' => ['DST-MATCH', 'code'],
+            'phone alias' => ['790123456', 'mobile_phone'],
+            'city alias' => ['Malang', 'city_name'],
+            'province alias' => ['Jawa Timur', 'province_name'],
+        ];
+    }
+
     #[DataProvider('duplicatePrimaryPhones')]
     public function test_admin_edit_rejects_another_members_primary_phone_in_equivalent_formats(string $storedPhone): void
     {

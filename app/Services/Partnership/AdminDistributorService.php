@@ -60,7 +60,7 @@ class AdminDistributorService
             ->leftJoin('ref_city', 'ref_city.city_id = default_address.member_address_city_id')
             ->where('member.member_status', '!=', 3)
             ->where('member_level.member_level_code', 'DST')
-            ->search(['member.member_code', 'member.member_name', 'member.member_mobilephone', 'ref_city.city_name', 'ref_province.province_name'])
+            ->search(['code', 'name', 'mobile_phone', 'city_name', 'province_name'])
             ->defaultSort('-id')
             ->get($params);
     }

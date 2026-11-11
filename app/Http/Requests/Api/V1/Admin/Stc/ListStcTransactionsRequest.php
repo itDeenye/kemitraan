@@ -26,6 +26,13 @@ class ListStcTransactionsRequest extends FormRequest
             ])],
             'filter.type' => ['nullable', Rule::in(['in', 'out'])],
             'filter.category' => ['nullable', Rule::in(['topup', 'trx', 'wd', 'void', 'adj'])],
+            'filter.note' => ['nullable', Rule::when(is_array($this->input('filter.note')),
+                ['array:eq,ne,like', 'max:1'], ['string', 'max:100'])],
+            'filter.note.*' => ['nullable', 'string', 'max:100'],
+            'filter.datetime' => ['nullable', 'array:gte,lt'],
+            'filter.datetime.gte' => ['nullable', 'date_format:Y-m-d'],
+            'filter.datetime.lt' => ['nullable', 'date_format:Y-m-d',
+                Rule::when($this->filled('filter.datetime.gte'), ['after:filter.datetime.gte'])],
             'date_from' => ['nullable', 'date_format:Y-m-d'],
             'date_to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:date_from'],
         ];

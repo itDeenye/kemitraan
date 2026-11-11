@@ -4,6 +4,7 @@ namespace App\Integrations\Stc;
 
 use App\Contracts\Integrations\StcGateway;
 use App\Exceptions\ProcessException;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\RequestException;
@@ -22,6 +23,18 @@ class HttpStcGateway implements StcGateway
         'amount' => 'ewallet_log_value',
         'type' => 'ewallet_log_type',
         'category' => 'ewallet_log_category',
+    ];
+
+    /** @var array<string, string> */
+    private const SEARCH_FIELDS = [
+        'id' => 'ewallet_log_id',
+        'transaction_id' => 'ewallet_log_transaction_id',
+        'category' => 'ewallet_log_category',
+        'type' => 'ewallet_log_type',
+        'amount' => 'ewallet_log_value',
+        'note' => 'ewallet_log_note',
+        'bank_name' => 'ewallet_log_note',
+        'payment_reference' => 'ewallet_log_note',
     ];
 
     public function balance(): array
@@ -266,6 +279,16 @@ class HttpStcGateway implements StcGateway
         ];
         $providerFilters = [];
 
+        $search = trim((string) ($params['search'] ?? ''));
+        if ($search !== '') {
+            $fields = array_filter(array_map('trim', explode(',', (string) ($params['field_search'] ?? ''))));
+            $columns = $fields === []
+                ? self::SEARCH_FIELDS
+                : array_intersect_key(self::SEARCH_FIELDS, array_flip($fields));
+            $query['search'] = $search;
+            $query['field_search'] = implode(',', array_unique($columns !== [] ? $columns : self::SEARCH_FIELDS));
+        }
+
         if (is_array($filters) && isset($filters['type'])) {
             $providerFilters[] = [
                 'type' => 'string',
@@ -284,7 +307,34 @@ class HttpStcGateway implements StcGateway
             ];
         }
 
-        if (isset($params['date_from']) || isset($params['date_to'])) {
+        $note = is_array($filters) ? ($filters['note'] ?? null) : null;
+        foreach (is_array($note) ? $note : ['eq' => $note] as $operator => $value) {
+            $comparison = match ($operator) {
+                'eq' => '=', 'ne' => '!=', 'like' => '<>', default => null,
+            };
+            if ($comparison === null || $value === null || $value === '') {
+                continue;
+            }
+            $providerFilters[] = [
+                'type' => 'string',
+                'field' => 'ewallet_log_note',
+                'comparison' => $comparison,
+                'value' => $operator === 'like' ? trim((string) $value, '%') : $value,
+            ];
+        }
+
+        $dateFrom = Arr::get($filters, 'datetime.gte');
+        $dateBefore = Arr::get($filters, 'datetime.lt');
+        if (filled($dateFrom) || filled($dateBefore)) {
+            $providerFilters[] = [
+                'type' => 'date',
+                'comparison' => filled($dateFrom) && filled($dateBefore) ? 'bet' : (filled($dateFrom) ? '>=' : '<'),
+                'field' => 'ewallet_log_datetime',
+                'value' => filled($dateFrom) && filled($dateBefore)
+                    ? CarbonImmutable::parse($dateFrom)->startOfDay()->format('Y-m-d H:i:s').'::'.CarbonImmutable::parse($dateBefore)->startOfDay()->subSecond()->format('Y-m-d H:i:s')
+                    : ($dateFrom ?: $dateBefore),
+            ];
+        } elseif (isset($params['date_from']) || isset($params['date_to'])) {
             $providerFilters[] = [
                 'type' => 'date',
                 'comparison' => 'bet',

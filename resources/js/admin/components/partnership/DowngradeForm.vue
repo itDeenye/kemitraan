@@ -222,9 +222,12 @@ const loadingParents = ref(false);
 
 let searchMembersTimeout: any = null;
 let searchParentsTimeout: any = null;
+let memberSearchVersion = 0;
+let parentSearchVersion = 0;
 
 const searchMembers = (query: string) => {
     if (query === null || query === undefined) query = "";
+    const version = ++memberSearchVersion;
     clearTimeout(searchMembersTimeout);
     searchMembersTimeout = setTimeout(async () => {
         loadingMembers.value = true;
@@ -235,6 +238,7 @@ const searchMembers = (query: string) => {
                     limit: 20,
                 },
             });
+            if (version !== memberSearchVersion) return;
             const results = data?.data?.results;
             const items = data?.data;
             members.value = Array.isArray(results)
@@ -243,9 +247,10 @@ const searchMembers = (query: string) => {
                   ? items
                   : [];
         } catch (e: any) {
+            if (version !== memberSearchVersion) return;
             console.error("Failed to fetch members", e);
         } finally {
-            loadingMembers.value = false;
+            if (version === memberSearchVersion) loadingMembers.value = false;
         }
     }, 500);
 };
@@ -259,16 +264,22 @@ const filteredLevelOptions = computed(() => {
     );
 });
 
-const onMemberChange = () => {
-    form.member_id = selectedMember.value?.id || null;
-    form.to_level_id = null;
+const resetParentSearch = () => {
+    ++parentSearchVersion;
+    clearTimeout(searchParentsTimeout);
+    loadingParents.value = false;
     form.to_parent_member_id = null;
     parents.value = [];
 };
 
+const onMemberChange = () => {
+    form.member_id = selectedMember.value?.id || null;
+    form.to_level_id = null;
+    resetParentSearch();
+};
+
 const onLevelChange = () => {
-    form.to_parent_member_id = null;
-    parents.value = [];
+    resetParentSearch();
     if (form.member_id && form.to_level_id) {
         searchParents("");
     }
@@ -283,6 +294,8 @@ const searchParents = (query: string) => {
         return;
     }
     const memberId = form.member_id;
+    const levelId = form.to_level_id;
+    const version = ++parentSearchVersion;
 
     if (query === null || query === undefined) query = "";
     clearTimeout(searchParentsTimeout);
@@ -294,12 +307,13 @@ const searchParents = (query: string) => {
                 {
                     params: {
                         member_id: memberId,
-                        to_level_id: form.to_level_id,
+                        to_level_id: levelId,
                         search: query,
                         limit: 20,
                     },
                 },
             );
+            if (version !== parentSearchVersion) return;
             const responseData = data?.data;
             parents.value = Array.isArray(responseData?.results)
                 ? responseData.results
@@ -307,13 +321,14 @@ const searchParents = (query: string) => {
                   ? responseData
                   : [];
         } catch (e: any) {
+            if (version !== parentSearchVersion) return;
             console.error("Failed to fetch parents", e);
             snackbar.showMessage(
                 e.response?.data?.message || "Gagal memuat data sponsor",
                 "error",
             );
         } finally {
-            loadingParents.value = false;
+            if (version === parentSearchVersion) loadingParents.value = false;
         }
     }, 500);
 };
@@ -328,6 +343,7 @@ const getNextMonthFirstDay = () => {
 };
 
 const open = async () => {
+    resetParentSearch();
     dialog.value = true;
     loading.value = true;
     members.value = [];
@@ -345,6 +361,10 @@ const open = async () => {
 };
 
 const close = () => {
+    ++memberSearchVersion;
+    clearTimeout(searchMembersTimeout);
+    loadingMembers.value = false;
+    resetParentSearch();
     dialog.value = false;
     formRef.value?.reset();
 };

@@ -483,7 +483,7 @@ class DataTable
             }
 
             $fields[$fieldAlias] = $column;
-            $fields[$this->unqualified($column)] = $column;
+            $fields[$this->unqualified($column)] ??= $column;
         }
 
         return $fields;
