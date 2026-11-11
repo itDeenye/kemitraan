@@ -36,6 +36,7 @@
         url="/admin/stc/mutations"
         :headers="headers"
         v-model:search="search"
+        :show-search="false"
     >
         <template #item.datetime="{ item }">
             {{ formatDateTime(item.datetime) }}
@@ -55,27 +56,6 @@
             </span>
         </template>
 
-        <!-- <template #item.service_fee="{ item }">
-            {{ item.service_fee != null ? formatPrice(item.service_fee) : "0" }}
-        </template>
-
-        <template #item.recorded_balance="{ item }">
-            {{
-                item.recorded_balance != null
-                    ? formatPrice(item.recorded_balance)
-                    : "0"
-            }}
-        </template>
-
-        <template #item.ending_balance="{ item }">
-            <span
-                v-if="item.ending_balance != null"
-                class="font-weight-bold text-primary"
-                >{{ formatPrice(item.ending_balance) }}</span
-            >
-            <span v-else>0</span>
-        </template> -->
-
         <template #item.note="{ item }">
             <span
                 class="text-truncate d-inline-block"
@@ -85,20 +65,6 @@
                 {{ item.note || "-" }}
             </span>
         </template>
-
-        <!-- <template #item.actions="{ item }">
-            <div class="d-flex ga-2 justify-center">
-                <v-btn
-                    v-tooltip:top="'Detail Mutasi'"
-                    icon="mdi-eye-outline"
-                    variant="outlined"
-                    size="small"
-                    class="rounded"
-                    color="primary"
-                    @click="viewDetail(item)"
-                />
-            </div>
-        </template> -->
     </BaseDataTable>
 </template>
 
@@ -159,39 +125,15 @@ const headers = [
         sortable: false,
         align: "right",
     },
-    // {
-    //     title: "Biaya Layanan (Rp)",
-    //     key: "service_fee",
-    //     sortable: false,
-    //     align: "right",
-    // },
-    // {
-    //     title: "Saldo Tercatat (Rp)",
-    //     key: "recorded_balance",
-    //     sortable: false,
-    //     align: "right",
-    // },
-    // {
-    //     title: "Saldo Akhir (Rp)",
-    //     key: "ending_balance",
-    //     sortable: false,
-    //     align: "right",
-    // },
     {
         title: "Catatan",
         key: "note",
         type: "text",
         align: "start",
         sortable: false,
-        filter: true,
+        filter: false,
         placeholder: "Masukkan Catatan",
     },
-    // {
-    //     title: "Aksi",
-    //     key: "actions",
-    //     sortable: false,
-    //     align: "center",
-    // },
 ];
 
 const fetchBalance = async () => {

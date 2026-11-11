@@ -12,6 +12,7 @@
         url="/admin/stc/top-ups"
         :headers="headers"
         v-model:search="search"
+        :show-search="false"
     >
         <template #header-actions>
             <v-btn
