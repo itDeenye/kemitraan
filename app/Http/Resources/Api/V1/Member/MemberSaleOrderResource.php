@@ -747,6 +747,7 @@ class MemberSaleOrderResource extends ApiResource
         return match ($status) {
             'waiting_payment' => 'Menunggu Pembayaran',
             'cancelled' => 'Dibatalkan',
+            'expired' => 'Kedaluwarsa',
             'processing' => 'Diproses',
             'shipped' => 'Dikirim',
             'reship_required' => 'Perlu Dikirim Ulang',

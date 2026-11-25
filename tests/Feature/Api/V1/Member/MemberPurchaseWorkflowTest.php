@@ -28,6 +28,18 @@ class MemberPurchaseWorkflowTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_new_regular_distributor_company_order_enables_timeout_without_starting_before_screening(): void
+    {
+        $account = $this->createMemberAccount();
+        [$product] = $this->createPurchaseReferences();
+        $this->actingAs($account, 'member_api');
+        $regular = $this->postJson('/api/v1/member/purchases/orders', [
+            'bank_company_id' => 1, 'shipping_method' => 'pickup',
+            'items' => [['product_id' => $product->getKey(), 'quantity' => 1]],
+        ])->assertOk()->assertJsonPath('data.payment_upload_expires_at', null);
+        $this->assertTrue(Trx::query()->findOrFail($regular->json('data.id'))->trx_payment_upload_timeout_enabled);
+    }
+
     public function test_checkout_does_not_subtract_pending_transfer_twice_from_available_stock(): void
     {
         $account = $this->createMemberAccount();
@@ -268,6 +280,7 @@ class MemberPurchaseWorkflowTest extends TestCase
         $this->assertDatabaseHas('trx', [
             'trx_id' => $checkout->json('data.id'),
             'trx_voucher_value' => 120500,
+            'trx_payment_upload_timeout_enabled' => false,
             'trx_grand_total_price' => 0,
             'trx_shipping_cost' => 20500,
             'trx_grand_total_nett_price' => 0,

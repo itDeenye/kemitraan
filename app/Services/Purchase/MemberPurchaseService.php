@@ -55,6 +55,7 @@ class MemberPurchaseService
         private readonly PartnershipEmailService $partnershipEmailService,
         private readonly MemberNotificationService $memberNotificationService,
         private readonly MemberRewardEligibility $rewardEligibility,
+        private readonly PaymentUploadExpiryService $paymentUploadExpiryService,
     ) {}
 
     /**
@@ -155,6 +156,7 @@ class MemberPurchaseService
             "{$trxTable}.trx_payment_method as payment_method",
             "{$trxTable}.trx_shipping_method as shipping_method",
             "{$trxTable}.trx_status as status",
+            "{$trxTable}.trx_payment_upload_expires_at as payment_upload_expires_at",
             "{$trxTable}.trx_status_datetime as status_at",
             "{$trxTable}.trx_datetime as ordered_at",
             'detail_summary.product_count as product_count',
@@ -349,7 +351,7 @@ class MemberPurchaseService
             ->selectRaw("COUNT(CASE WHEN trx_status = 'processing' THEN 1 END) as processing")
             ->selectRaw("COUNT(CASE WHEN trx_status IN ('shipped', 'reship_required', 'ready_to_pickup', 'received') THEN 1 END) as delivery")
             ->selectRaw("COUNT(CASE WHEN trx_status = 'completed' THEN 1 END) as completed")
-            ->selectRaw("COUNT(CASE WHEN trx_status IN ('cancelled', 'rejected') THEN 1 END) as cancelled")
+            ->selectRaw("COUNT(CASE WHEN trx_status IN ('cancelled', 'rejected', 'expired') THEN 1 END) as cancelled")
             ->selectRaw("COUNT(CASE WHEN trx_parent_trx_id = 0
                 AND goods_receive.goods_receive_id IS NULL AND (
                 trx_status = 'received'
@@ -398,7 +400,7 @@ class MemberPurchaseService
         // sebelumnya disetujui. Riwayat pembatalan tetap terlihat.
         return "({$trxTable}.trx_is_preorder = 0
             OR {$trxTable}.trx_parent_trx_id = 0
-            OR {$trxTable}.trx_status IN ('cancelled', 'rejected')
+            OR {$trxTable}.trx_status IN ('cancelled', 'rejected', 'expired')
             OR EXISTS (
                 SELECT 1 FROM trx_payment_transfer previous_payment
                 WHERE previous_payment.payment_transfer_trx_id = {$trxTable}.trx_parent_trx_id
@@ -735,6 +737,8 @@ class MemberPurchaseService
                 'trx_payment_method' => 'transfer',
                 'trx_shipping_method' => $data['shipping_method'],
                 'trx_status' => $initialStatus,
+                'trx_payment_upload_timeout_enabled' => ! $hasPreorder && $seller['type'] === 'warehouse'
+                    && $buyerType === 'distributor' && $billAmount > 0,
                 'trx_status_datetime' => $now,
                 'trx_datetime' => $now,
             ]);
@@ -788,12 +792,19 @@ class MemberPurchaseService
     {
         $member = $this->member($account);
 
-        $submittedPayment = DB::transaction(function () use ($member, $trx, $data): TrxPaymentTransfer {
+        $submittedPayment = DB::transaction(function () use ($member, $trx, $data): ?TrxPaymentTransfer {
             $lockedTrx = $this->orderQuery($member)
                 ->whereKey($trx->getKey())
                 ->lockForUpdate()
                 ->firstOrFail();
 
+            if ($lockedTrx->paymentUploadDeadlinePassed()
+                && $this->paymentUploadExpiryService->expire((int) $lockedTrx->getKey())) {
+                return null;
+            }
+            if ($lockedTrx->trx_status === 'expired') {
+                throw new ProcessException('Pesanan kedaluwarsa karena batas waktu upload bukti transfer telah berakhir.');
+            }
             if ($lockedTrx->trx_status === 'waiting_stock_screening') {
                 throw new ProcessException(
                     'Bukti pembayaran dapat dikirim setelah screening stok perusahaan disetujui.',
@@ -860,6 +871,9 @@ class MemberPurchaseService
                 'trx.spreadPayments.bank',
             );
         });
+        if ($submittedPayment === null) {
+            throw new ProcessException('Pesanan kedaluwarsa karena batas waktu upload bukti transfer telah berakhir.');
+        }
         $this->partnershipEmailService->sendPaymentSubmitted($submittedPayment);
 
         return $submittedPayment;

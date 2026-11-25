@@ -26,6 +26,7 @@ class ListPurchaseOrdersRequest extends FormRequest
                 'waiting_payment',
                 'waiting_payment_approval',
                 'cancelled',
+                'expired',
                 'processing',
                 'shipped',
                 'reship_required',

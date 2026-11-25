@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\V1\Admin\Product\PriceController as AdminProductPri
 use App\Http\Controllers\Api\V1\Admin\Product\ProductController as AdminProductController;
 use App\Http\Controllers\Api\V1\Admin\Report\CashIncomeReportController as AdminCashIncomeReportController;
 use App\Http\Controllers\Api\V1\Admin\Report\MemberBatchStockReportController as AdminMemberBatchStockReportController;
+use App\Http\Controllers\Api\V1\Admin\Report\MemberRankingReportController;
 use App\Http\Controllers\Api\V1\Admin\Report\PartnershipReportController as AdminPartnershipReportController;
 use App\Http\Controllers\Api\V1\Admin\Report\PartnershipSalesController as AdminPartnershipSalesController;
 use App\Http\Controllers\Api\V1\Admin\Report\SalesReportController as AdminSalesReportController;
@@ -278,6 +279,7 @@ Route::prefix('v1')->middleware('throttle:dny-api')->group(function () use ($med
 
             Route::get('reports/sales', [AdminSalesReportController::class, 'index']);
             Route::get('reports/partnerships', [AdminPartnershipReportController::class, 'index']);
+            Route::get('reports/member-rankings', MemberRankingReportController::class);
             Route::get('reports/partnership-sales', [AdminPartnershipSalesController::class, 'index']);
             Route::get('reports/partnership-sales/{trx}', [AdminPartnershipSalesController::class, 'show']);
             Route::get('reports/stocks', [AdminStockReportController::class, 'index']);

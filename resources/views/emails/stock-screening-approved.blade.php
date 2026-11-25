@@ -6,6 +6,9 @@
 @section('content')
     <p style="font-size:16px;line-height:1.6;margin:0 0 18px;">Halo <strong>{{ $trx->buyer?->member_name }}</strong>,</p>
     <p style="font-size:15px;line-height:1.7;margin:0 0 24px;">Screening stok untuk pesanan Anda telah disetujui. Anda sekarang dapat mengunggah bukti pembayaran.</p>
+    @if ($trx->trx_payment_upload_expires_at)
+        <p style="font-size:15px;line-height:1.7;margin:0 0 24px;">Unggah bukti transfer paling lambat <strong>{{ $trx->trx_payment_upload_expires_at->copy()->timezone('Asia/Jakarta')->locale('id')->translatedFormat('d F Y H:i') }} WIB</strong>. Jika batas waktu berakhir, pesanan dibatalkan otomatis dengan status Kedaluwarsa.</p>
+    @endif
 
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#fff4f6;border:1px solid #f5ccd5;border-radius:12px;margin-bottom:26px;">
         <tr>

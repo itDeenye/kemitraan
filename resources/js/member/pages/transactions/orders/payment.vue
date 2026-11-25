@@ -1,6 +1,6 @@
 <template>
     <div class="screen-body" v-if="order">
-        <div class="card invoice-success" v-if="$route.query.success === '1'">
+        <div class="card invoice-success" v-if="$route.query.success === '1' && !isPaymentExpired">
             <span class="row-icon">
                 <v-icon icon="mdi-check-circle" color="white" size="24" />
             </span>
@@ -57,7 +57,7 @@
                 </div>
                 <BaseBadge
                     type="transaction_status"
-                    :value="order.status?.code"
+                    :value="isPaymentExpired ? 'expired' : order.status?.code"
                     inline
                     chip-class="font-semibold"
                 />
@@ -260,7 +260,7 @@
 
                 <div
                     class="invoice-meta-row"
-                    v-if="!isZeroPayment && order.payment && order.payment.bank"
+                    v-if="!isPaymentExpired && !isZeroPayment && order.payment && order.payment.bank"
                     style="
                         margin-top: 8px;
                         padding-top: 8px;
@@ -306,7 +306,7 @@
                 <!-- Spread Payment Bank Info -->
                 <div
                     class="invoice-meta-row"
-                    v-if="order.payment?.spread_payment?.bank"
+                    v-if="!isPaymentExpired && order.payment?.spread_payment?.bank"
                     style="
                         margin-top: 8px;
                         padding-top: 8px;
@@ -365,7 +365,32 @@
             </div>
         </div>
 
-        <template v-if="order.actions?.waiting_for_stock_screening">
+        <div
+            v-if="showPaymentCountdown"
+            class="card mb-4"
+            style="padding: 18px; border-color: var(--primary)"
+        >
+            <div class="d-flex justify-space-between align-center ga-3">
+                <span style="font-size: 13px">Sisa waktu upload bukti transfer</span>
+                <strong style="font-size: 22px; font-variant-numeric: tabular-nums">{{ countdown }}</strong>
+            </div>
+            <p style="font-size: 12px; color: var(--muted); margin-top: 8px">
+                Batas upload: {{ paymentDeadlineLabel }} WIB.
+                Pesanan dibatalkan otomatis jika bukti belum dikirim sebelum batas waktu upload berakhir.
+            </p>
+        </div>
+
+        <div v-if="isPaymentExpired" class="card mb-4" style="padding: 20px">
+            <h3 style="font-size: 16px; margin-bottom: 8px">Batas Waktu Pembayaran Berakhir</h3>
+            <p style="font-size: 14px; color: var(--muted); line-height: 1.5">
+                Pesanan kedaluwarsa dan tidak dapat dilanjutkan. Silakan buat pesanan baru.
+                Jika sudah melakukan transfer, hubungi admin dengan bukti transfer dan kode transaksi.
+            </p>
+            <router-link to="/member/transactions/orders" class="primary-button block mt-4">
+                Kembali ke Pesanan
+            </router-link>
+        </div>
+        <template v-else-if="order.actions?.waiting_for_stock_screening">
             <div
                 class="card mt-4 mb-4"
                 style="padding: 24px; text-align: center"
@@ -649,6 +674,7 @@ import OrderShippingInfo from "@/member/components/transactions/OrderShippingInf
 import { decodeRouteId, encodeRouteId } from "@/shared/utils/route-id";
 
 import { useMediaUpload } from "@/shared/composables/useMediaUpload";
+import { usePaymentUploadCountdown } from "@/member/composables/usePaymentUploadCountdown";
 
 const router = useRouter();
 const route = useRoute();
@@ -660,6 +686,15 @@ const spreadUpload = useMediaUpload();
 const orderId = decodeRouteId(route.query.id);
 
 const order = ref<any>(null);
+const { countdown, expired, hasDeadline, setDeadline, tick } = usePaymentUploadCountdown();
+const isPaymentExpired = computed(() => order.value?.status?.code === "expired"
+    || (order.value?.status?.code === "waiting_payment" && expired.value));
+const showPaymentCountdown = computed(() => hasDeadline.value
+    && order.value?.status?.code === "waiting_payment" && !isPaymentExpired.value);
+const paymentDeadlineLabel = computed(() => hasDeadline.value
+    ? new Intl.DateTimeFormat("id-ID", {
+        timeZone: "Asia/Jakarta", dateStyle: "long", timeStyle: "medium",
+    }).format(new Date(order.value.payment_upload_expires_at)) : "-");
 const isPickupOrder = computed(
     () =>
         order.value?.shipping?.method === "pickup" ||
@@ -702,6 +737,7 @@ const isZeroPayment = computed(() => {
 });
 
 const canSubmit = computed(() => {
+    if (isPaymentExpired.value || order.value?.actions?.can_upload_payment === false) return false;
     if (isZeroPayment.value) return true;
     if (!selectedFile.value) return false;
     if (hasSpreadPayment.value && !spreadSelectedFile.value) return false;
@@ -724,9 +760,12 @@ const fetchOrder = async () => {
     try {
         const response = await purchaseService.getOrderDetail(orderId);
         if (response.success && response.data) {
+            setDeadline(response.data.payment_upload_expires_at, response.data.server_time);
             if (
                 !response.data.actions?.can_upload_payment &&
-                !response.data.actions?.waiting_for_stock_screening
+                !response.data.actions?.waiting_for_stock_screening &&
+                response.data.status?.code !== "expired" &&
+                !(response.data.status?.code === "waiting_payment" && expired.value)
             ) {
                 snackbar.showMessage(
                     "Bukti pembayaran tidak perlu diunggah kembali.",
@@ -780,6 +819,7 @@ const onSpreadFileSelected = (event: Event) => {
 };
 
 const submitPaymentProof = async () => {
+    tick();
     if (!order.value || !canSubmit.value) return;
 
     try {
@@ -804,6 +844,11 @@ const submitPaymentProof = async () => {
             }
 
             const urls = await Promise.all(uploadPromises);
+            tick();
+            if (isPaymentExpired.value) {
+                snackbar.showMessage("Batas waktu upload bukti transfer telah berakhir.", "error");
+                return;
+            }
             payload.receipt_url = urls[0];
 
             if (hasSpreadPayment.value && urls[1]) {

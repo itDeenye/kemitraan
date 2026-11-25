@@ -193,6 +193,7 @@ export function useBadge() {
                     'received': 'success',
                     'completed': 'success',
                     'cancelled': 'error',
+                    'expired': 'error',
                     'reship_required': 'warning',
                 };
                 const transactionLabels: Record<string, string> = {
@@ -209,6 +210,7 @@ export function useBadge() {
                     'received': 'Siap Diterima',
                     'completed': 'Selesai',
                     'cancelled': 'Dibatalkan',
+                    'expired': 'Kedaluwarsa',
                     'reship_required': 'Perlu Dikirim Ulang',
                 };
                 return {

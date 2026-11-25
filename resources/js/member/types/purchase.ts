@@ -193,6 +193,8 @@ export interface PurchaseCheckoutOptions {
 }
 
 export interface PurchaseOrder {
+    payment_upload_expires_at?: string | null;
+    server_time?: string;
     id: number;
     code: string;
     parent_transaction_id?: number;

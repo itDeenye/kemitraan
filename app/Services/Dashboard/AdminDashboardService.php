@@ -24,6 +24,7 @@ class AdminDashboardService
         'waiting_payment_approval',
         'cancelled',
         'rejected',
+        'expired',
     ];
 
     /** @var list<string> */
@@ -39,6 +40,7 @@ class AdminDashboardService
         'completed',
         'cancelled',
         'rejected',
+        'expired',
     ];
 
     /** @param array<string, mixed> $params */
@@ -55,10 +57,10 @@ class AdminDashboardService
 
         $orders = DB::table($trxTable)
             ->whereBetween('trx_datetime', [$dateFrom, $dateTo])
-            ->whereNotIn('trx_status', ['cancelled', 'rejected'])
+            ->whereNotIn('trx_status', ['cancelled', 'rejected', 'expired'])
             ->selectRaw('COUNT(*) as total_orders')
             ->selectRaw('COALESCE(SUM(trx_grand_total_nett_price), 0) as turnover')
-            ->selectRaw("COUNT(CASE WHEN trx_status NOT IN ('completed', 'cancelled', 'rejected') THEN 1 END) as active_orders")
+            ->selectRaw("COUNT(CASE WHEN trx_status NOT IN ('completed', 'cancelled', 'rejected', 'expired') THEN 1 END) as active_orders")
             ->first();
 
         $productsSold = DB::table($detailTable)
@@ -98,7 +100,7 @@ class AdminDashboardService
 
         $salesTrend = DB::table($trxTable)
             ->whereBetween('trx_datetime', [$dateFrom, $dateTo])
-            ->whereNotIn('trx_status', ['cancelled', 'rejected'])
+            ->whereNotIn('trx_status', ['cancelled', 'rejected', 'expired'])
             ->selectRaw('DATE(trx_datetime) as date')
             ->selectRaw('COUNT(*) as total_orders')
             ->selectRaw('COALESCE(SUM(trx_grand_total_nett_price), 0) as turnover')
@@ -478,6 +480,7 @@ class AdminDashboardService
             'received' => 'Siap Diterima',
             'completed' => 'Selesai',
             'cancelled' => 'Dibatalkan',
+            'expired' => 'Kedaluwarsa',
             'rejected' => 'Ditolak',
             default => $status,
         };

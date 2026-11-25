@@ -312,7 +312,7 @@ class AdminTransactionService
             ->selectRaw("COUNT(CASE WHEN trx_status IN ('shipped', 'reship_required', 'ready_to_pickup', 'received') THEN 1 END) as delivery")
             ->selectRaw("COUNT(CASE WHEN trx_status = 'reship_required' THEN 1 END) as reship_required")
             ->selectRaw("COUNT(CASE WHEN trx_status = 'completed' THEN 1 END) as completed")
-            ->selectRaw("COUNT(CASE WHEN trx_status IN ('cancelled', 'rejected') THEN 1 END) as cancelled")
+            ->selectRaw("COUNT(CASE WHEN trx_status IN ('cancelled', 'rejected', 'expired') THEN 1 END) as cancelled")
             ->first();
 
         return collect((array) $summary)->map(fn (mixed $value): int => (int) $value)->all();

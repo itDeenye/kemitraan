@@ -8,6 +8,7 @@ use App\Mail\MemberRegistrationApprovedMail;
 use App\Mail\MemberRegistrationRejectedMail;
 use App\Mail\OrderShippedMail;
 use App\Mail\PaymentApprovedMail;
+use App\Mail\PaymentExpiredMail;
 use App\Mail\PaymentRejectedMail;
 use App\Mail\PaymentSubmittedMail;
 use App\Models\Member;
@@ -153,6 +154,27 @@ class PartnershipEmailService
                 orderCancelled: $orderCancelled,
             ));
         }
+    }
+
+    public function sendPaymentExpired(Trx $trx): void
+    {
+        $trx->loadMissing('buyer');
+        $buyer = $this->partnerBuyer($trx);
+        if ($buyer === null) {
+            return;
+        }
+        $this->memberNotificationService->transactionBuyer(
+            $trx,
+            'Pesanan Kedaluwarsa',
+            "Pesanan {$trx->trx_code} dibatalkan otomatis karena batas waktu upload bukti transfer telah berakhir.",
+            'payment',
+        );
+        $this->send($buyer->member_email, new PaymentExpiredMail(
+            buyerName: $buyer->member_name,
+            orderNumber: $trx->trx_code,
+            expiredAt: $this->formatDate($trx->trx_payment_upload_expires_at?->copy()->timezone('Asia/Jakarta')),
+            orderUrl: $this->orderUrl($trx),
+        ));
     }
 
     public function sendOrderShipped(Trx $trx): void

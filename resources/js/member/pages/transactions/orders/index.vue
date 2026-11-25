@@ -436,6 +436,7 @@ const purchaseStatusFilters = [
     { id: 4, name: "Dikirim" },
     { id: 5, name: "Siap Diterima" },
     { id: 6, name: "Selesai" },
+    { id: 7, name: "Kedaluwarsa" },
 ];
 const currentFilterId = computed(
     () =>
@@ -494,6 +495,8 @@ const getStatusFilter = () => {
             return "received";
         case "Selesai":
             return "completed";
+        case "Kedaluwarsa":
+            return "expired";
         default:
             return undefined;
     }
@@ -535,6 +538,8 @@ const loadMore = () => {
 };
 
 const getOrderNote = (order: any) => {
+    if (order.status?.code === "expired")
+        return "Batas upload bukti transfer berakhir. Pesanan dibatalkan otomatis.";
     if (order.actions?.waiting_for_previous_approval)
         return "Menunggu pembayaran PO tahap sebelumnya disetujui.";
     if (

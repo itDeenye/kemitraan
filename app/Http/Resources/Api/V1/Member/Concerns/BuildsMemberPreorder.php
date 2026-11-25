@@ -146,6 +146,7 @@ trait BuildsMemberPreorder
             'received' => 'Siap Diterima',
             'completed' => 'Selesai',
             'cancelled' => 'Dibatalkan',
+            'expired' => 'Kedaluwarsa',
             'rejected' => 'Ditolak',
             default => $status,
         };

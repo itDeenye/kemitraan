@@ -24,12 +24,12 @@ class ListPaymentsRequest extends FormRequest
             'filter.transaction_status' => ['nullable', 'array'],
             'filter.transaction_status.eq' => ['nullable', Rule::in([
                 'rejected', 'waiting_stock_screening', 'waiting_payment', 'waiting_payment_approval',
-                'cancelled', 'processing', 'shipped', 'reship_required', 'ready_to_pickup',
+                'cancelled', 'expired', 'processing', 'shipped', 'reship_required', 'ready_to_pickup',
                 'received', 'completed',
             ])],
             'filter.transaction_status.ne' => ['nullable', Rule::in([
                 'rejected', 'waiting_stock_screening', 'waiting_payment', 'waiting_payment_approval',
-                'cancelled', 'processing', 'shipped', 'reship_required', 'ready_to_pickup',
+                'cancelled', 'expired', 'processing', 'shipped', 'reship_required', 'ready_to_pickup',
                 'received', 'completed',
             ])],
             'filter.bank_id' => ['nullable', 'integer', 'min:1'],

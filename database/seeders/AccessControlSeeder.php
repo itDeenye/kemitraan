@@ -89,6 +89,21 @@ class AccessControlSeeder extends Seeder
         $historyMenuId = SiteAdministratorMenu::query()->where('administrator_menu_link', '/transactions/payment-verification-history')->value('administrator_menu_id')
             ?? max(166, (int) $reportMenuId + 1, ((int) SiteAdministratorMenu::query()->max('administrator_menu_id')) + 1);
         $menus[] = [(int) $historyMenuId, 7, 'Riwayat Verifikasi Pembayaran', 'Riwayat pembayaran yang telah disetujui atau ditolak, hanya untuk dilihat.', '/transactions/payment-verification-history', 'mdi-cash-clock', 4];
+        $nextMenuId = max(167, (int) $historyMenuId + 1, ((int) SiteAdministratorMenu::query()->max('administrator_menu_id')) + 1);
+        $rankingsParentId = SiteAdministratorMenu::query()
+            ->where('administrator_menu_par_id', 0)->where('administrator_menu_title', 'Laporan')
+            ->value('administrator_menu_id') ?? $nextMenuId++;
+        $menus[] = [(int) $rankingsParentId, 0, 'Laporan', 'Laporan peringkat mitra.', '#', 'mdi-file-chart-outline', 12];
+        foreach ([
+            ['Top Pembelanjaan', 'purchases', 'mdi-cart-outline', 1],
+            ['Top Rekrutan', 'recruitment', 'mdi-account-plus-outline', 2],
+            ['Top Reward Bulanan', 'monthly-rewards', 'mdi-calendar-star', 3],
+            ['Poin Tahunan', 'annual-points', 'mdi-star-circle-outline', 4],
+        ] as [$title, $report, $icon, $order]) {
+            $link = '/report/member-rankings/'.$report;
+            $id = SiteAdministratorMenu::query()->where('administrator_menu_link', $link)->value('administrator_menu_id') ?? $nextMenuId++;
+            $menus[] = [(int) $id, (int) $rankingsParentId, $title, '', $link, $icon, $order];
+        }
         $menuIds = array_column($menus, 0);
         $parentIds = array_values(array_unique(array_filter(array_column($menus, 1))));
 

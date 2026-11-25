@@ -22,7 +22,7 @@ class ListOrdersRequest extends FormRequest
             ...$this->dataTableRules(),
             'filter.status' => ['nullable', Rule::in([
                 'rejected', 'waiting_stock_screening', 'waiting_payment', 'waiting_payment_approval',
-                'cancelled', 'processing', 'shipped', 'reship_required', 'ready_to_pickup',
+                'cancelled', 'expired', 'processing', 'shipped', 'reship_required', 'ready_to_pickup',
                 'received', 'completed',
             ])],
             'filter.type' => ['nullable', Rule::in(['registration', 'activation', 'stock', 'retail', 'upgrade'])],

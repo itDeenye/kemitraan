@@ -20,6 +20,10 @@ class Trx extends Model
 
     public $timestamps = false;
 
+    protected $attributes = [
+        'trx_payment_upload_timeout_enabled' => false,
+    ];
+
     protected $fillable = [
         'trx_code',
         'trx_supply_chain_code',
@@ -49,6 +53,8 @@ class Trx extends Model
         'trx_payment_method',
         'trx_shipping_method',
         'trx_status',
+        'trx_payment_upload_timeout_enabled',
+        'trx_payment_upload_expires_at',
         'trx_status_datetime',
         'trx_datetime',
     ];
@@ -56,6 +62,18 @@ class Trx extends Model
     public function buyer(): BelongsTo
     {
         return $this->belongsTo(Member::class, 'trx_buyer_id', 'member_id');
+    }
+
+    public function paymentUploadDeadlinePassed(): bool
+    {
+        return $this->trx_payment_upload_timeout_enabled
+            && $this->trx_seller_type === 'warehouse'
+            && $this->trx_buyer_type === 'distributor'
+            && $this->trx_type === 'stock'
+            && ! $this->trx_is_preorder
+            && $this->trx_status === 'waiting_payment'
+            && $this->trx_payment_upload_expires_at !== null
+            && $this->trx_payment_upload_expires_at->lessThanOrEqualTo(now());
     }
 
     public function buyerCustomer(): BelongsTo
@@ -202,6 +220,8 @@ class Trx extends Model
             'trx_bill_augment' => 'integer',
             'trx_bill_amount' => 'integer',
             'trx_status_datetime' => 'datetime',
+            'trx_payment_upload_timeout_enabled' => 'boolean',
+            'trx_payment_upload_expires_at' => 'datetime',
             'trx_datetime' => 'datetime',
         ];
     }

@@ -18,6 +18,7 @@ class AdminSharingProfitService
         'waiting_payment_approval',
         'rejected',
         'cancelled',
+        'expired',
     ];
 
     /** @param array<string, mixed> $params */

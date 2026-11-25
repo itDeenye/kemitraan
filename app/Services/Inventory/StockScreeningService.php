@@ -37,6 +37,9 @@ class StockScreeningService
 
             $lockedTrx->update([
                 'trx_status' => 'waiting_payment',
+                'trx_payment_upload_expires_at' => $lockedTrx->trx_payment_upload_timeout_enabled
+                    && ! $lockedTrx->trx_is_preorder
+                        ? now()->addMinutes((int) config('orders.payment_upload_timeout_minutes', 1440)) : null,
                 'trx_status_datetime' => now(),
             ]);
 

@@ -31,6 +31,7 @@ class MemberDashboardService
             'waiting_payment_approval',
             'rejected',
             'cancelled',
+            'expired',
         ];
 
         $salesSummary = Trx::query()
@@ -39,7 +40,7 @@ class MemberDashboardService
             ->whereBetween('trx_datetime', [$dateFrom, $dateTo])
             ->selectRaw(
                 'COALESCE(SUM(CASE WHEN trx_status NOT IN '
-                ."('waiting_stock_screening', 'waiting_payment', 'waiting_payment_approval', 'rejected', 'cancelled') "
+                ."('waiting_stock_screening', 'waiting_payment', 'waiting_payment_approval', 'rejected', 'cancelled', 'expired') "
                 .'THEN trx_grand_total_price ELSE 0 END), 0) as product_value'
             )
             ->first();
@@ -76,6 +77,7 @@ class MemberDashboardService
                 'waiting_payment_approval',
                 'rejected',
                 'cancelled',
+                'expired',
             ])
             ->sum('trx_grand_total_price');
 

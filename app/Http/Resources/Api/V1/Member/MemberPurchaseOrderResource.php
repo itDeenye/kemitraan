@@ -7,6 +7,7 @@ use App\Http\Resources\Api\V1\Member\Concerns\BuildsMemberTracking;
 use App\Http\Resources\ApiResource;
 use App\Models\Trx;
 use App\Support\MediaUrl;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 
 class MemberPurchaseOrderResource extends ApiResource
@@ -34,6 +35,8 @@ class MemberPurchaseOrderResource extends ApiResource
             default => null,
         };
         $previousStepApproved = $this->previousStepApproved($trx);
+        $paymentUploadDeadline = $trx?->trx_payment_upload_expires_at
+            ?? ($this->resource->payment_upload_expires_at ?? null);
 
         return [
             'id' => (int) ($trx?->trx_id ?? $this->resource->id),
@@ -80,6 +83,9 @@ class MemberPurchaseOrderResource extends ApiResource
             ],
             'product_preview' => $this->productPreview($trx),
             'payment_method' => $trx?->trx_payment_method ?? $this->resource->payment_method,
+            'payment_upload_expires_at' => $paymentUploadDeadline
+                ? Carbon::parse($paymentUploadDeadline)->toAtomString() : null,
+            'server_time' => now()->toAtomString(),
             'shipping_method' => $shippingMethod,
             'pickup_location' => $this->when(
                 $trx !== null,
@@ -495,7 +501,10 @@ class MemberPurchaseOrderResource extends ApiResource
             default => false,
         });
 
-        $canUploadPayment = $status === 'waiting_payment' && $previousStepApproved;
+        $deadline = $trx?->trx_payment_upload_expires_at
+            ?? ($this->resource->payment_upload_expires_at ?? null);
+        $canUploadPayment = $status === 'waiting_payment' && $previousStepApproved
+            && (! $deadline || Carbon::parse($deadline)->isFuture());
         $canCancel = ! $isPreorder && $parentTransactionId === 0
             && ($canUploadPayment || $status === 'waiting_stock_screening');
 
@@ -741,6 +750,7 @@ class MemberPurchaseOrderResource extends ApiResource
             'waiting_payment' => 'Menunggu Pembayaran',
             'waiting_payment_approval' => 'Menunggu Verifikasi Pembayaran',
             'cancelled' => 'Dibatalkan',
+            'expired' => 'Kedaluwarsa',
             'processing' => 'Diproses',
             'shipped' => 'Dikirim',
             'reship_required' => 'Perlu Dikirim Ulang',

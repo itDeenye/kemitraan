@@ -9,6 +9,10 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('telescope:prune --hours=48')->daily();
+Schedule::command('orders:expire-unpaid-distributor')
+    ->everyMinute()
+    ->withoutOverlapping()
+    ->onOneServer();
 Schedule::command('media:prune-unused')
     ->dailyAt('01:30')
     ->withoutOverlapping()

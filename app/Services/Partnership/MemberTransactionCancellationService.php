@@ -19,7 +19,7 @@ class MemberTransactionCancellationService
         'processing',
     ];
 
-    private const TERMINAL_STATUSES = ['completed', 'cancelled', 'rejected'];
+    private const TERMINAL_STATUSES = ['completed', 'cancelled', 'rejected', 'expired'];
 
     public function __construct(
         private readonly StockAllocationService $stockAllocationService,

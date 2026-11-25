@@ -65,6 +65,7 @@ const getColor = (code: string) => {
         received: "success",
         completed: "success",
         cancelled: "error",
+        expired: "error",
         rejected: "error",
     };
     return colors[code] || "grey";

@@ -258,6 +258,7 @@ const headers = [
             { value: "received", label: "Siap Diterima" },
             { value: "completed", label: "Selesai" },
             { value: "cancelled", label: "Dibatalkan" },
+            { value: "expired", label: "Kedaluwarsa" },
             { value: "rejected", label: "Ditolak" },
         ],
         placeholder: "Pilih Status",

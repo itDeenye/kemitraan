@@ -198,6 +198,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    '/admin/report/member-rankings/[report]': RouteRecordInfo<
+      '/admin/report/member-rankings/[report]',
+      '/admin/report/member-rankings/:report',
+      { report: ParamValue<true> },
+      { report: ParamValue<false> },
+      | never
+    >,
     '/admin/report/profit-loss': RouteRecordInfo<
       '/admin/report/profit-loss',
       '/admin/report/profit-loss',
@@ -841,6 +848,12 @@ declare module 'vue-router/auto-routes' {
     'resources/js/admin/pages/report/inventory-value.vue': {
       routes:
         | '/admin/report/inventory-value'
+      views:
+        | never
+    }
+    'resources/js/admin/pages/report/member-rankings/[report].vue': {
+      routes:
+        | '/admin/report/member-rankings/[report]'
       views:
         | never
     }

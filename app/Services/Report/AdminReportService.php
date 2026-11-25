@@ -53,15 +53,15 @@ class AdminReportService
             "{$memberTable}.member_join_datetime as joined_at",
         ])
             ->selectRaw(
-                "(SELECT COUNT(*) FROM {$trxTable} WHERE {$trxTable}.trx_buyer_id = {$memberTable}.member_id AND {$trxTable}.trx_buyer_type IN ('distributor','agent','reseller') AND {$trxTable}.trx_status NOT IN ('cancelled','rejected') AND {$trxTable}.trx_datetime BETWEEN ? AND ?) as total_purchases",
+                "(SELECT COUNT(*) FROM {$trxTable} WHERE {$trxTable}.trx_buyer_id = {$memberTable}.member_id AND {$trxTable}.trx_buyer_type IN ('distributor','agent','reseller') AND {$trxTable}.trx_status NOT IN ('cancelled','rejected','expired') AND {$trxTable}.trx_datetime BETWEEN ? AND ?) as total_purchases",
                 [$dateFrom, $dateTo],
             )
             ->selectRaw(
-                "(SELECT COALESCE(SUM({$trxTable}.trx_grand_total_nett_price), 0) FROM {$trxTable} WHERE {$trxTable}.trx_buyer_id = {$memberTable}.member_id AND {$trxTable}.trx_buyer_type IN ('distributor','agent','reseller') AND {$trxTable}.trx_status NOT IN ('cancelled','rejected') AND {$trxTable}.trx_datetime BETWEEN ? AND ?) as purchase_amount",
+                "(SELECT COALESCE(SUM({$trxTable}.trx_grand_total_nett_price), 0) FROM {$trxTable} WHERE {$trxTable}.trx_buyer_id = {$memberTable}.member_id AND {$trxTable}.trx_buyer_type IN ('distributor','agent','reseller') AND {$trxTable}.trx_status NOT IN ('cancelled','rejected','expired') AND {$trxTable}.trx_datetime BETWEEN ? AND ?) as purchase_amount",
                 [$dateFrom, $dateTo],
             )
             ->selectRaw(
-                "(SELECT COALESCE(SUM({$trxTable}.trx_grand_total_nett_price), 0) FROM {$trxTable} WHERE {$trxTable}.trx_seller_id = {$memberTable}.member_id AND {$trxTable}.trx_seller_type IN ('distributor','agent','reseller') AND {$trxTable}.trx_status NOT IN ('cancelled','rejected') AND {$trxTable}.trx_datetime BETWEEN ? AND ?) as sales_amount",
+                "(SELECT COALESCE(SUM({$trxTable}.trx_grand_total_nett_price), 0) FROM {$trxTable} WHERE {$trxTable}.trx_seller_id = {$memberTable}.member_id AND {$trxTable}.trx_seller_type IN ('distributor','agent','reseller') AND {$trxTable}.trx_status NOT IN ('cancelled','rejected','expired') AND {$trxTable}.trx_datetime BETWEEN ? AND ?) as sales_amount",
                 [$dateFrom, $dateTo],
             )
             ->from($memberTable)
